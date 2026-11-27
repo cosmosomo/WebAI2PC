@@ -23,7 +23,7 @@
 
 > **AI Agent / 助手直达安装教程**：如果你是帮用户安装配置的 AI（Cursor、Claude Code、Codex、豆包工作、WorkBuddy 等），请直接读取 **[docs/AI_SETUP_GUIDE.md](docs/AI_SETUP_GUIDE.md)**（Raw 直链：`https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md`）。
 
-**WebAI2PC** 是一个运行在个人电脑上的本地 MCP 服务端与可视化控制台。把启动后生成的 HTTPS 地址粘贴进 **网页版 Google Gemini**（含同账号手机端 Gemini App）或 **网页版 ChatGPT** 的自定义连接器，无需另买 API 密钥即可直接复用已有网页会员：接入网页版 ChatGPT 后，除 `Work` 模式长程与定时任务外，**连日常普通 `Chat` 模式也能直接调本地工具改多文件工程、原样修订 Word / Excel / PPT、跑测试脚本，不消耗 `Work / Codex` 智能体额度**。
+**WebAI2PC** 是一个运行在个人电脑上的本地 MCP 服务端与可视化控制台。把启动后生成的 HTTPS 地址粘贴进 **网页版 Google Gemini**（含同账号手机端 Gemini App）或 **网页版 ChatGPT** 的自定义连接器，无需另买 API 密钥即可直接复用已有网页会员：接入网页版 ChatGPT 后，除 `Work` 模式长程与定时任务外，**连日常普通 `Chat` 模式也能直接调本地工具改多文件工程、原样修订 Word / Excel、提取 PPT 结构与文本、跑测试脚本，不消耗 `Work / Codex` 智能体额度**。
 
 ## 为什么用 WebAI2PC
 
@@ -37,7 +37,7 @@
 ## 30 秒上手
 
 1. **下载并完整解压**：前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，其余环境选标准 `zip`），完整解压到普通文件夹。
-2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`。
+2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`（首次双击若弹出 Windows SmartScreen 蓝屏保护提示，点击「更多信息 -> 仍要运行」即可）。
 3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开；控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue**）：
    - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
    - **网页版 ChatGPT（本机插件页直绑最快，日常干活用 `Chat` 省额度）**：首选在控制台网关就绪后点 **「复制地址并打开 ChatGPT 插件页」**，在已登录本机浏览器打开 `https://chatgpt.com/plugins` -> `＋ -> 添加自定义 MCP 服务器`（`Add custom MCP server`），名称填 `WebAI2PC`、认证选 `OAuth`，粘贴 `/mcp`（工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 只读），在授权页点「本机一键允许连接」并点击 `Install` 安装（遇到连接或 `403` 权限问题点旁侧 **「复制给 ChatGPT 接入 / 排障」**；装好后日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证）。
