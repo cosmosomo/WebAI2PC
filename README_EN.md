@@ -21,6 +21,8 @@
   <img alt="WebAI2PC 3-step quick start: Launch & Copy URL, Paste into Web AI, Control Your PC" src="assets/readme/quickstart-flow-en-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
+> **AI Agent Setup Entry**: If you are an AI agent helping a user install or configure this repo (Cursor, Claude Code, Codex, Windsurf, WorkBuddy, etc.), read **[docs/AI_SETUP_GUIDE.md](docs/AI_SETUP_GUIDE.md)** first (Raw URL: `https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md`).
+
 **WebAI2PC** is a local MCP (Model Context Protocol) server and visual control console for your computer. Paste the generated HTTPS URL into a custom connector in **Web Google Gemini** (including the same-account mobile Gemini App) or **Web ChatGPT** with `$0` extra API keys: once connected to Web ChatGPT, **even everyday `Chat` mode (alongside `Work` mode) directly runs multi-file local projects, edits Office files with formatting/formulas intact, and runs tests without burning `Work / Codex` quota**.
 
 ## Why WebAI2PC
@@ -40,18 +42,15 @@
    - **Web Gemini**: Open [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) (or bottom-left menu `Personal Intelligence -> Connected Apps`), click `+ Custom`, paste `https://<domain>/mcp` into **`MCP Server URL`**, click `Next` to approve OAuth 2.1, then set `App actions` to `Always allow`. Start a chat with `@Cosmos`; your same-account mobile Gemini App syncs automatically.
    - **Web ChatGPT (`Work` to auto-connect · `Chat` for daily coding)**: For first-time setup, once the gateway is ready in Studio, click **`复制给 Work 模式帮我连接` (Copy for Work Mode to Connect)** and send it in ChatGPT **`Work` mode** so its controlled browser fills the `Plugins` form (`Chat` mode has no controlled browser and can only reply with text steps; `Take over` in the web `Work` cloud browser prompts for the 6-digit pairing code shown in Studio), or manually open `Plugins -> + -> Add custom MCP server` in your local browser, add `/mcp` (Workspace full access) or `/mcp/readonly` (Personal Plus / Pro read-only) as `WebAI2PC`, approve via 1-click local loopback, and click `Install`. Once installed, both modes share `@WebAI2PC`: switch back to **`Chat` mode** for fast daily coding, Office edits, and tests without burning `Work / Codex` quota, or use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
 
-<details>
-<summary><strong>Prefer guided setup? Copy this prompt to any Web Gemini or ChatGPT</strong></summary>
+### Let Your AI Agent Set It Up for You
+
+Copy and send this one-liner to **Cursor, Claude Code, Codex, Windsurf, Trae, GitHub Copilot, Cline / Roo Code, Antigravity, Qoder, OpenCode, Doubao Work, WorkBuddy, OpenClaw, Manus, Web Gemini, or Web ChatGPT** (**local agents with shell access will download, extract, launch, and hand you the `/mcp` URL automatically; chat-only AIs will walk you through step by step**):
 
 ```text
-Act as my WebAI2PC setup guide. First read the official setup guide at https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md, then walk me through setup one step at a time:
-1. Ask my OS, whether I have already downloaded and extracted the release zip from https://github.com/cosmosomo/WebAI2PC/releases, and whether I want to connect Web Gemini or Web ChatGPT (Workspace vs Personal Plus/Pro, and whether I am currently in Chat or Work mode).
-2. Guide me to launch the local console (http://127.0.0.1:8096/). For Web Gemini, add `/mcp` in `https://gemini.google.com/customize/connectors (or Personal Intelligence -> Connected Apps -> + Custom, paste into MCP Server URL without opening /mcp in the browser bar)`. For Web ChatGPT, explain that only `Work` mode has a controlled browser to fill `Plugins -> + -> Add custom MCP server` via the "复制给 Work 模式帮我连接" button (`Take over` in the cloud browser uses the 6-digit pairing code, zero secrets/paths in the copied prompt; `Chat` mode has no browser and gives step-by-step instructions), or I can manually create and `Install` the `WebAI2PC` plugin in my local browser for 1-click loopback approval. Once installed, tell me to switch back to `Chat` mode with `@WebAI2PC` for fast daily coding without using `Work / Codex` quota (or `Work` mode for cross-app tasks and `Scheduled Tasks`), and verify by calling `pc_get_status`.
-3. Help me choose a workspace folder and security tier (L1–L4), and optionally upgrade to a permanent free Cloudflare Workers gateway (*.workers.dev/mcp).
-Start by asking 3 short questions to check where I am.
+Please install and configure https://github.com/cosmosomo/WebAI2PC for me. First read https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md . If you have local shell access, download, extract, and start it to get my /mcp URL, then guide me step by step to connect Web Gemini or Web ChatGPT.
 ```
 
-</details>
+> Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md) right at the top of the README.
 
 ## Supported Web Hosts
 

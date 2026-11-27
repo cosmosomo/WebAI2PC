@@ -1,5 +1,8 @@
 # AGENTS.md（项目架构与网页连接器维护规范）
 
+> **帮用户安装 / 配置 WebAI2PC 的 AI Agent 请先读**：[`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)（含本地 Agent 自动下载启动流程与网页版 Gemini `https://gemini.google.com/customize/connectors` / ChatGPT `Plugins` 零分叉绑定步骤）。
+
+
 本文档说明 Cosmos MCP 的目标宿主范围、多网关与安全分层契约、四层模块职责以及非交互运维与测试门禁。
 
 ## 一、目标宿主与产品边界

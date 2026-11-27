@@ -1,16 +1,28 @@
-# WebAI2PC (Cosmos MCP) 公开配置教程（供任意网页版 Gemini / ChatGPT 直读陪配）
+# WebAI2PC 公开安装与配置教程（供任意 AI 助手 / 本地 Agent 直读执行）
 
-本文档采用固定英文文件名，方便任何网页版 Google Gemini 或网页版 ChatGPT 直接读取并一步步指导用户完成下载、首次连接与 Cloudflare 固定网址配置：
+本文档采用固定英文文件名，方便 **Cursor、Claude Code、Codex、Windsurf、Trae、GitHub Copilot、Cline / Roo Code、Antigravity、Qoder、通义灵码、OpenCode、豆包电脑版 / 豆包工作、WorkBuddy、OpenClaw、Manus、网页版 Google Gemini、网页版 ChatGPT** 等任意 AI 助手直接读取并帮用户完成安装、启动与绑定：
 - GitHub 页面链接：`https://github.com/cosmosomo/WebAI2PC/blob/main/docs/AI_SETUP_GUIDE.md`
 - Raw 纯文本链接：`https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md`
 
-## 一、给当前 AI 助手的陪配引导职责
+## 一、给当前 AI 助手 / Agent 的执行分工（先判断你有没有本机命令权限）
 
-如果你正在对话中协助用户安装或配置 WebAI2PC（Cosmos MCP），请遵守以下交互原则：
-1. **先问清 3 项基本情况**：若用户尚未说明，先用简短列表问清：① 电脑系统是 Windows、macOS 还是 Linux；② 是否已经下载并解压缩发行包；③ 准备连接网页版 Gemini，还是网页版 ChatGPT（Team / Enterprise 工作区账号还是个人 Plus / Pro 账号，以及当前处于 `Chat` 模式还是 `Work` 模式）。
-2. **每次只教当前这一步**：根据用户的回答，每次只给出当前步骤的 3 至 5 行具体操作与按钮名称，等用户回复「好了」或发来报错截图后再讲下一步，不要一次性把全文刷满屏幕。
-3. **如实说明 ChatGPT `Work` 与 `Chat` 的代连边界**：若用户正在 ChatGPT 对话中找你帮忙连接，先说明只有 `Work` 模式具备受控浏览器可代填 `Plugins` 页面（`Chat` 模式无受控浏览器，只能一步步提示点击位置，或请用户切换到顶部 `Work` 模式）；且配对码、口令、令牌与本机路径切勿发进聊天框。
-4. **已连上 `[at]Cosmos` 或 `@WebAI2PC` 时直接接管打开设置页**：一旦用户已经绑定好连接器，提示用户可以直接在对话里说：`[at]Cosmos 帮我在电脑上打开网关设置页，教我怎么配 Cloudflare 固定网址`（ChatGPT 用 `@WebAI2PC`）。已连上的 AI 可直接调用本地工具帮用户在电脑浏览器弹出对应配置页并核对实时状态。
+### 模式 A：你具备本机文件与终端执行权限（Cursor、Claude Code、Codex、Windsurf、Trae、Cline / Roo Code、豆包工作、WorkBuddy、OpenClaw、OpenCode 等）
+请**直接替用户完成本机下载、解压、启动与健康检查**，把需要用户手动操作的步骤压缩到最后 2 次点击：
+1. **自动识别系统与目录**：检测操作系统（Windows / macOS / Linux）与 Python 版本；若尚未下载，优先从 GitHub Releases（`https://api.github.com/repos/cosmosomo/WebAI2PC/releases/latest`）拉取最新包（Windows 未装 Python 3.10+ 选 `*win64-full.zip`，其余环境选标准 `.zip` 或直接 `git clone https://github.com/cosmosomo/WebAI2PC.git`），**完整解压到普通目录**（如 `D:\WebAI2PC` 或 `~/WebAI2PC`）。
+2. **后台启动并核验就绪**：
+   - Windows：在解压目录后台运行 `一键启动_Cosmos_MCP.bat`（或直接用自带 `python-embed/python.exe` / 系统 Python 启动服务）；
+   - macOS / Linux：执行 `chmod +x start_cosmos_mcp.sh && ./start_cosmos_mcp.sh`。
+   - 轮询 `http://127.0.0.1:8096/healthz` 确认本地控制台已就绪，并读取已生成的公网 `/mcp`（及 `/mcp/readonly`）地址返回给用户。
+3. **安全红线（严禁越权）**：
+   - **不要**在聊天记录或外部日志里打印用户的 6 位配对码、20 位备用口令、管理令牌或 Cloudflare API Token；
+   - 网页端登录和 OAuth 授权确认页的「本机一键允许连接」**必须由用户本人点击确认**。
+4. **交接最后一步**：把拿到的 `https://<域名>/mcp` 交给用户，并**明确提醒：不要把这个 `/mcp` 地址直接粘贴到浏览器地址栏里打开**，按下方第三节把地址粘进网页版 Gemini（`https://gemini.google.com/customize/connectors`）或 ChatGPT（`Plugins -> + -> Add custom MCP server`）配置栏即可。
+
+### 模式 B：你是纯网页聊天 AI（无本机终端权限，如网页版 Gemini、网页版 ChatGPT `Chat` 模式、豆包网页版等）
+请遵守以下分步陪配原则：
+1. **先问清 3 项基本情况**：若用户尚未说明，先用简短列表问清：① 电脑系统是 Windows、macOS 还是 Linux；② 是否已经下载并解压缩发行包；③ 准备连接网页版 Gemini 还是网页版 ChatGPT（Team / Enterprise 工作区账号还是个人 Plus / Pro 账号）。
+2. **每次只教当前这一步**：每次只给出当前步骤的 3 至 5 行具体操作与按钮名称，等用户回复「好了」或发来报错截图后再讲下一步，不要一次性把全文刷满屏幕。
+3. **已连上 `@Cosmos` 时直接接管打开设置页**：一旦用户已经绑定好 `@Cosmos` 连接器，提示用户可以直接发：`@Cosmos 帮我在电脑上打开网关设置页，教我怎么配 Cloudflare 固定网址`。已连上的 AI 可直接调用本地工具帮用户在电脑浏览器弹出对应配置页并核对实时状态。
 
 ## 二、下载选包与完整解压启动
 
