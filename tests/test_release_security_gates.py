@@ -119,3 +119,40 @@ def test_git_diff_range_scanner_catches_added_secret_and_internal_ref(tmp_path: 
     errs = br.scan_git_diff_range(tmp_path, "HEAD~1..HEAD")
     assert any("github_token" in e for e in errs), errs
     assert any("internal_agent_or_worktree_ref" in e for e in errs), errs
+
+
+def test_ci_preflight_catches_py311_fstring_backslash_winreg_and_pwsh_continuation():
+    pf_path = REPO_ROOT / "scripts" / "ci_preflight.py"
+    spec = importlib.util.spec_from_file_location("ci_preflight_sec_test", pf_path)
+    assert spec is not None and spec.loader is not None
+    pf = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = pf
+    spec.loader.exec_module(pf)
+
+    # 1) Bad sample: backslash inside f-string expression (valid PEP 701 on 3.12+, SyntaxError on Python <3.12)
+    bad_fstr = "val = f\"{'\\\\n'.join(items)}\"\n"
+    fstr_errs = pf.check_python_source_compat(bad_fstr, "sample_fstr.py")
+    assert any("[PY311-FSTRING]" in e for e in fstr_errs), fstr_errs
+
+    # 2) Bad sample: unguarded top-level `import winreg`
+    bad_winreg = "import os\nimport winreg\n"
+    winreg_errs = pf.check_python_source_compat(bad_winreg, "sample_winreg.py")
+    assert any("[POSIX-IMPORT]" in e for e in winreg_errs), winreg_errs
+
+    # Guarded `import winreg` inside `if sys.platform == "win32":` passes cleanly
+    ok_winreg = 'import sys\nif sys.platform == "win32":\n    import winreg\n'
+    assert pf.check_python_source_compat(ok_winreg, "ok_winreg.py") == []
+
+    # 3) Bad sample: trailing `\` continuation in cross-platform workflow step without `shell: bash`
+    bad_wf = (
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ${{ matrix.os }}\n"
+        "    steps:\n"
+        "      - run: |\n"
+        "          python -m pytest tests/a.py \\\n"
+        "            tests/b.py\n"
+    )
+    wf_errs = pf.check_workflow_yaml_compat(bad_wf, ".github/workflows/ci.yml")
+    assert any("[WORKFLOW-PWSH]" in e for e in wf_errs), wf_errs
+

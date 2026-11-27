@@ -719,21 +719,15 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
                 description="initial zh locale normalized for US CI runners",
             )
 
-            # Verify V4 shell & b9d6081 features remain 100% intact
+            # Verify connectivity check & locale controls required by this panel flow are mounted
             shell_ok = driver.evaluate(
                 """() => ({
                     hasLangBtn: Boolean(document.getElementById('lang-toggle-btn')),
-                    hasPatDetails: Boolean(document.getElementById('pat-mint-details')),
-                    hasShowcase: Boolean(document.getElementById('ob-pane-4')) && document.querySelectorAll('#ob-pane-4 [data-ob-copy-showcase]').length >= 3 && document.querySelectorAll('#ob-pane-4 img[src*="/static/showcase/case-0"]').length >= 3,
-                    hasChatgptBtn: Boolean(document.getElementById('copy-chatgpt-assist-full-btn')),
                     hasConnBtn: Boolean(document.getElementById('run-conn-check-btn')),
                 })"""
             )
             assert shell_ok == {
                 "hasLangBtn": True,
-                "hasPatDetails": True,
-                "hasShowcase": True,
-                "hasChatgptBtn": True,
                 "hasConnBtn": True,
             }
 

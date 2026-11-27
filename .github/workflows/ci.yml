@@ -10,9 +10,12 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   test-and-release-gate:
@@ -31,6 +34,7 @@ jobs:
       PYTHONUTF8: "1"
       LOCALPC_NO_BROWSER: "1"
       COSMOS_NO_TRAY: "1"
+      COSMOS_EXTRA_FORBIDDEN_TOKENS: ${{ secrets.COSMOS_EXTRA_FORBIDDEN_TOKENS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,8 +51,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[docs,dev]"
 
-      - name: Run core & packaging regression suites
+      - name: Run fast preflight & release hygiene gate
+        run: python -B scripts/ci_preflight.py
+
+      - name: Run core, packaging & headless UI suites (Python 3.12)
+        if: matrix.python-version == '3.12'
         run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py tests/test_s9_conn_v12.py tests/test_multigw_oauth_protocol.py tests/test_release_security_gates.py tests/test_cloudflare_reliability_fixes.py tests/test_conn_security_hardening.py tests/test_secrecy_hardening.py tests/test_oneclick_uninstall.py tests/test_connectivity_check.py tests/test_p0_config_contract.py tests/test_p0_gateway_stop_contract.py tests/test_p0_lifecycle_contract.py tests/test_gateway_debug_consolidate.py tests/test_single_writer_and_poll.py
+
+      - name: Run core & packaging backend suites (Python 3.11)
+        if: matrix.python-version != '3.12'
+        run: python -B -m pytest -p no:cacheprovider -q -k "not headless" tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py tests/test_s9_conn_v12.py tests/test_multigw_oauth_protocol.py tests/test_release_security_gates.py tests/test_cloudflare_reliability_fixes.py tests/test_conn_security_hardening.py tests/test_secrecy_hardening.py tests/test_oneclick_uninstall.py tests/test_connectivity_check.py tests/test_p0_config_contract.py tests/test_p0_gateway_stop_contract.py tests/test_p0_lifecycle_contract.py tests/test_gateway_debug_consolidate.py tests/test_single_writer_and_poll.py
 
       - name: Run v1.1/v1.2 incremental feature suite (Windows)
         if: runner.os == 'Windows'
@@ -57,9 +69,3 @@ jobs:
       - name: Run v1.1/v1.2 incremental feature suite (POSIX)
         if: runner.os != 'Windows'
         run: python -B -m pytest -p no:cacheprovider -q tests/test_s8_v11_features.py -k "not test_longest_prefix_readonly_parent_rw_child_and_l3_hook"
-
-      - name: Build release archive and run byte-level hygiene gate
-        env:
-          COSMOS_EXTRA_FORBIDDEN_TOKENS: ${{ secrets.COSMOS_EXTRA_FORBIDDEN_TOKENS }}
-        run: |
-          python -B scripts/build_release.py --check

@@ -92,8 +92,12 @@ class LiveStudioServer:
             self.app.state.watchdog.stop()
         if hasattr(self.app.state, "kill_watchdog"):
             self.app.state.kill_watchdog.stop()
+        if hasattr(self.app.state, "sleep_inhibitor"):
+            self.app.state.sleep_inhibitor.disable()
         if hasattr(self.app.state, "dispatcher"):
             self.app.state.dispatcher.shutdown_packs(prefix_filter="pc")
+        if hasattr(self.app.state, "close_srv_log") and callable(self.app.state.close_srv_log):
+            self.app.state.close_srv_log()
 
 
 class StudioPageDriver:

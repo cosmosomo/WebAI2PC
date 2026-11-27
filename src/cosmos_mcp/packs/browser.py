@@ -1179,7 +1179,14 @@ class _HeadlessCdpPage:
             "--disable-crash-reporter",
             "--disable-breakpad",
         ]
-        if sys.platform.startswith("linux"):
+        if sys.platform == "darwin":
+            argv.extend(
+                [
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                ]
+            )
+        elif sys.platform.startswith("linux"):
             raw_dbus = clean_env.get("DBUS_SESSION_BUS_ADDRESS", "").strip()
             if not raw_dbus or not raw_dbus.startswith(("unix:", "tcp:")):
                 clean_env.pop("DBUS_SESSION_BUS_ADDRESS", None)

@@ -1702,6 +1702,8 @@ def create_standalone_app(
 
     policy.add_policy_listener(_sync_public_url_from_cfg)
     app.state.watchdog = watchdog
+    app.state.sleep_inhibitor = sleep_inhibitor
+    app.state.close_srv_log = close_srv_log
     return app
 
 
