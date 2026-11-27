@@ -18,21 +18,15 @@
 ## 2. 连接原理与宿主边界
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/architecture-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="../assets/readme/architecture-light.svg" />
-    <img alt="WebAI2PC 连接原理与宿主边界图" src="../assets/readme/architecture-light.svg" width="100%" />
-  </picture>
+  <img alt="WebAI2PC 连接原理与宿主边界图" src="../assets/readme/architecture-dark.svg#gh-dark-mode-only" width="100%" />
+  <img alt="WebAI2PC 连接原理与宿主边界图" src="../assets/readme/architecture-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
 ## 3. 安全兜底机制
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/safety-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="../assets/readme/safety-light.svg" />
-    <img alt="WebAI2PC 四道安全兜底护栏" src="../assets/readme/safety-light.svg" width="100%" />
-  </picture>
+  <img alt="WebAI2PC 四道安全兜底护栏" src="../assets/readme/safety-dark.svg#gh-dark-mode-only" width="100%" />
+  <img alt="WebAI2PC 四道安全兜底护栏" src="../assets/readme/safety-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
 ## 4. 核心场景与同机授权界面

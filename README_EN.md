@@ -1,12 +1,9 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/webai2pc-logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="assets/brand/webai2pc-logo-light.svg" />
-  <img alt="WebAI2PC" src="assets/brand/webai2pc-logo-light.svg" width="360" />
-</picture>
+<img alt="WebAI2PC" src="assets/brand/webai2pc-logo-dark.svg#gh-dark-mode-only" width="360" />
+<img alt="WebAI2PC" src="assets/brand/webai2pc-logo-light.svg#gh-light-mode-only" width="360" />
 
-<p><strong>Turn your existing Web Gemini / ChatGPT subscription into a local PC assistant · $0 extra API bills</strong></p>
+<p><strong>Connect the latest Web Gemini &amp; ChatGPT models directly to your local PC · Skip desktop client proxy/quota hassles · $0 extra API bills</strong></p>
 
 <p>
   <a href="https://github.com/cosmosomo/WebAI2PC/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/cosmosomo/WebAI2PC?color=10B981&label=Release" /></a>
@@ -20,14 +17,20 @@
 </div>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickstart-flow-en-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/readme/quickstart-flow-en-light.svg" />
-    <img alt="WebAI2PC 3-step quick start: Launch & Copy URL, Paste into Web AI, Control Your PC" src="assets/readme/quickstart-flow-en-light.svg" width="100%" />
-  </picture>
+  <img alt="WebAI2PC 3-step quick start: Launch & Copy URL, Paste into Web AI, Control Your PC" src="assets/readme/quickstart-flow-en-dark.svg#gh-dark-mode-only" width="100%" />
+  <img alt="WebAI2PC 3-step quick start: Launch & Copy URL, Paste into Web AI, Control Your PC" src="assets/readme/quickstart-flow-en-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
-**WebAI2PC** is a local MCP (Model Context Protocol) server and visual control console for your computer. Paste the generated HTTPS URL into a custom connector in **Web Google Gemini** (including the same-account mobile Gemini App) or **Web ChatGPT** to read and edit local code, update Word / Excel / PPT files, and run terminal commands or Python scripts with zero extra API keys.
+**WebAI2PC** is a local MCP (Model Context Protocol) server and visual control console for your computer. Paste the generated HTTPS URL into a custom connector in **Web Google Gemini** (including the same-account mobile Gemini App) or **Web ChatGPT** to build and run local multi-file projects, edit Word / Excel / PPT files with formatting and formulas intact, and run scheduled tasks or open Skills with `$0` extra API keys.
+
+## Why WebAI2PC
+
+| Dimension | Desktop Clients / API Agents | WebAI2PC (Open Source) |
+| :- | :- | :- |
+| **Models & Cost** | Extra `$30–$100/mo` API keys or tight desktop quotas | **Reuse your existing web subscription** (e.g., Gemini 4), **`$0` extra API bills** |
+| **Setup & Network** | Proxy issues, region blocks, env vars, session drops | **30-second double-click launch**, works over your browser's own connection, no CLI |
+| **Local Execution** | Copy-paste snippets only, or Office edits break layout | **Run multi-file local projects + preserve Office formatting/formulas + phone push** |
+| **Safety Guardrails** | Broad disk access with risky deletes | **Single-folder sandbox · auto-snapshot undo · `.trash/` recovery · 0.1s tray read-only stop** |
 
 ## 30-Second Quick Start
 
@@ -49,13 +52,6 @@ Start by asking 3 short questions to check where I am.
 ```
 
 </details>
-
-## Key Capabilities & Local Guardrails
-
-- **Code & Runtime**: Cross-file search, RepoMap indexing, targeted file patching, headless terminal & Python execution, plus automatic background handoff for long-running jobs.
-- **Office & Multimodal**: Edit `.docx` (preserving layout) and `.xlsx` (preserving formulas with open-file lock protection); inspect local images and extract PDF / `.pptx` text.
-- **3 Coexisting Gateways**: Zero-login instant URL (`*.srv.us` / `trycloudflare`), 3-second free Cloudflare Workers permanent URL (`*.workers.dev`), or your own 24/7 VPS hub.
-- **4 Local Safety Guardrails**: `L1–L4` workspace isolation (parent read-only / child read-write layering), automatic pre-write snapshots with one-click `undo`, recoverable `.trash/` instead of hard deletes, and a Windows 4-color tray icon for instant read-only stop.
 
 ## Supported Web Hosts
 

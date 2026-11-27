@@ -1,12 +1,9 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/webai2pc-logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="assets/brand/webai2pc-logo-light.svg" />
-  <img alt="WebAI2PC" src="assets/brand/webai2pc-logo-light.svg" width="360" />
-</picture>
+<img alt="WebAI2PC" src="assets/brand/webai2pc-logo-dark.svg#gh-dark-mode-only" width="360" />
+<img alt="WebAI2PC" src="assets/brand/webai2pc-logo-light.svg#gh-light-mode-only" width="360" />
 
-<p><strong>把已买的网页版 Gemini / ChatGPT 会员，变成你的本地电脑助手 · $0 额外 API 账单</strong></p>
+<p><strong>把网页版 Gemini / ChatGPT 最强新模型直接接进本地电脑 · 避开桌面客户端代理与额度折腾 · $0 额外 API 账单</strong></p>
 
 <p>
   <a href="https://github.com/cosmosomo/WebAI2PC/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/cosmosomo/WebAI2PC?color=10B981&label=Release" /></a>
@@ -20,14 +17,20 @@
 </div>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickstart-flow-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/readme/quickstart-flow-light.svg" />
-    <img alt="WebAI2PC 三步接入示意图：启动复制、粘贴进网页 AI、直接操作本地电脑" src="assets/readme/quickstart-flow-light.svg" width="100%" />
-  </picture>
+  <img alt="WebAI2PC 三步接入示意图：启动复制、粘贴进网页 AI、直接操作本地电脑" src="assets/readme/quickstart-flow-dark.svg#gh-dark-mode-only" width="100%" />
+  <img alt="WebAI2PC 三步接入示意图：启动复制、粘贴进网页 AI、直接操作本地电脑" src="assets/readme/quickstart-flow-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
-**WebAI2PC** 是一个运行在个人电脑上的本地 MCP 服务端与可视化控制台。你只需把启动后生成的 HTTPS 地址粘贴进 **网页版 Google Gemini**（含同账号手机端 Gemini App）或 **网页版 ChatGPT** 的自定义连接器，即可直接用现有网页订阅读写本地代码、修改 Word / Excel / PPT、运行终端与 Python，无需额外购买 API 密钥。
+**WebAI2PC** 是一个运行在个人电脑上的本地 MCP 服务端与可视化控制台。把启动后生成的 HTTPS 地址粘贴进 **网页版 Google Gemini**（含同账号手机端 Gemini App）或 **网页版 ChatGPT** 的自定义连接器，就能直接用已买网页会员在本地生成并运行多文件工程、原样修改 Word / Excel / PPT、配合网页定时任务与开放 Skill 干活，无需另买 API 密钥。
+
+## 为什么用 WebAI2PC
+
+| 对比维度 | 传统桌面客户端 / API 工具 | WebAI2PC（开源直连） |
+| :- | :- | :- |
+| **模型与费用** | 另买 API Key 每月多花 `$30–$100`，或受限于客户端额度 | **直接复用已有网页会员**（如 Gemini 4 系列），**`$0` 额外 API 费** |
+| **安装与网络** | 卡代理、地区限制、配环境变量、换网断流 | **30 秒双击启动**，浏览器自带网络即开即用，免命令行 |
+| **本地干活能力** | 网页里只能贴代码片段，改文档易丢排版与公式 | **本地多文件工程实跑 + Office 原样保留排版/公式 + 定时任务推手机** |
+| **安全边界** | 全盘高权限读写，误删改乱难回退 | **单目录隔离 · 改前自动快照一键撤回 · 删文件进回收站 · 托盘 0.1s 只读急停** |
 
 ## 30 秒上手
 
@@ -51,13 +54,6 @@
 ```
 
 </details>
-
-## 核心能力与安全护栏
-
-- **代码与运行**：跨文件符号检索、RepoMap 工程索引、精准补丁修改、无黑窗终端与 Python 执行，长耗时任务自动转后台轮询。
-- **Office 与多模态**：原地修改 `.docx`（保留排版）与 `.xlsx`（保留公式，文件打开时自动锁表保护），直接查看本地图片及提取 PDF / `.pptx` 内容。
-- **3 类连接通道并存**：开箱免登录固定通道（`*.srv.us` / `trycloudflare`）、Cloudflare 免费 3 秒终身固定网关（`*.workers.dev`）、自有 VPS 24 小时主站，可独立开关。
-- **四道本地安全护栏**：`L1–L4` 分级隔离（默认锁定单工作区，支持父只读 / 子读写）、每次改文件前自动留快照并支持一键 `undo`、删除统一进 `.trash/` 回收箱、Windows 托盘四色灯一键切只读或急停。
 
 ## 支持宿主范围
 
