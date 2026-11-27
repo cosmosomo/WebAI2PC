@@ -706,6 +706,18 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
         with StudioPageDriver(tmp_path / "cdp_conn_ui") as driver:
             driver.set_viewport(1440, 900, mobile=False, device_scale_factor=1)
             driver.goto(f"{srv.base_url}/")
+            driver.evaluate(
+                """() => {
+                    if (window.WebAI2PCI18n && typeof window.WebAI2PCI18n.setLang === 'function') {
+                        window.WebAI2PCI18n.setLang('zh');
+                    }
+                }"""
+            )
+            driver.wait_until(
+                "() => (document.documentElement.getAttribute('data-lang') || 'zh') === 'zh'",
+                timeout_sec=3.0,
+                description="initial zh locale normalized for US CI runners",
+            )
 
             # Verify V4 shell & b9d6081 features remain 100% intact
             shell_ok = driver.evaluate(
