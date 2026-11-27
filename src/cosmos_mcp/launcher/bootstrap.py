@@ -106,7 +106,10 @@ def resolve_windows_system_exe(exe_name: str) -> str:
     clean = str(exe_name or "").strip()
     if not clean:
         return ""
-    found = shutil.which(clean)
+    try:
+        found = shutil.which(clean) if (os.name == "nt" or sys.platform != "win32") else None
+    except Exception:
+        found = None
     if found and Path(found).is_file():
         return str(Path(found).resolve())
     if sys.platform != "win32":

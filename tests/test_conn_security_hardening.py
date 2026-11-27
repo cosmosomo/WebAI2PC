@@ -85,20 +85,18 @@ def _isolate_global_state() -> Any:
 
 
 def _assert_no_py310_fstring_backslash(src_text: str, rel_path: str) -> None:
+    # On Python < 3.12, `ast.parse` itself raises SyntaxError if any f-string `{...}` expression
+    # contains a backslash (whereas `FormattedValue.lineno`/`col_offset` points to the outer JoinedStr).
     tree = ast.parse(src_text, filename=rel_path)
-    lines = src_text.splitlines()
+    if sys.version_info < (3, 12):
+        return
     bs = chr(92)
     for node in ast.walk(tree):
         if isinstance(node, ast.JoinedStr):
             for part in node.values:
                 if isinstance(part, ast.FormattedValue):
-                    sl = (part.lineno or 1) - 1
-                    el = (getattr(part, "end_lineno", part.lineno) or part.lineno) - 1
-                    sc = part.col_offset or 0
-                    ec = getattr(part, "end_col_offset", None)
-                    if sl == el and ec is not None and 0 <= sl < len(lines):
-                        seg = lines[sl][sc:ec]
-                        assert bs not in seg, f"Backslash in f-string expression at {rel_path}:{part.lineno}: {seg}"
+                    seg = ast.get_source_segment(src_text, part) or ""
+                    assert bs not in seg, f"Backslash in f-string expression at {rel_path}:{part.lineno}: {seg}"
 
 
 def test_core_stdlib_purity_and_fstring_compat_gate() -> None:
@@ -608,7 +606,7 @@ RESULT["outcomes"] = outcomes
         capture_output=True,
         text=True,
         encoding="utf-8",
-        creationflags=CREATE_NO_WINDOW,
+        creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     assert proc.returncode == 0, proc.stderr
     assert "L3_HF_OK" in proc.stdout

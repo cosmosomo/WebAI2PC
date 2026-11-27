@@ -2039,7 +2039,8 @@ def _shortcut_belongs_to_state_root(
         decoded_blobs.append(raw.decode("latin-1", errors="ignore"))
     combined_norm = "\n".join(os.path.normcase(b).replace("/", "\\") for b in decoded_blobs)
 
-    if st_norm_slash and st_norm_slash in combined_norm:
+    st_clean = st_norm_slash.rstrip("\\")
+    if st_clean and re.search(re.escape(st_clean) + r"(?:\\|['\"\s]|$)", combined_norm):
         return True
 
     low = combined_norm.lower()
@@ -2053,8 +2054,9 @@ def _shortcut_belongs_to_state_root(
         or "\\.localpc-mcp" in low
         or "\\.venv\\" in low
         or "\\app_src" in low
+        or "\\bin\\uninstall_cosmos_mcp" in low
         or re.search(r"[a-z]:\\", low)
-        or re.search(r"\\(?:users|home)\\", low)
+        or re.search(r"\\(?:users|home|tmp|var|private|opt|srv)\\", low)
     )
 
     if is_default_state_root:

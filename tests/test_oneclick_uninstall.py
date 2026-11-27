@@ -26,13 +26,16 @@ def test_launcher_python310_fstring_compat_and_script_line_endings() -> None:
     for mod_name in ("autostart.py", "doctor.py", "cli.py", "cf_workers_gateway.py"):
         mod_path = REPO_ROOT / "src" / "cosmos_mcp" / "launcher" / mod_name
         src = mod_path.read_text(encoding="utf-8")
+        # On Python < 3.12, `ast.parse` itself raises SyntaxError on any backslash inside `{...}`;
+        # on Python >= 3.12 (PEP 701), `ast.get_source_segment` isolates each `{...}` expression.
         tree = ast.parse(src, filename=str(mod_path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.JoinedStr):
-                for val in node.values:
-                    if isinstance(val, ast.FormattedValue):
-                        seg = ast.get_source_segment(src, val) or ""
-                        assert "\\" not in seg, f"Python <3.12 f-string backslash in {mod_name}:{val.lineno}: {seg}"
+        if sys.version_info >= (3, 12):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.JoinedStr):
+                    for val in node.values:
+                        if isinstance(val, ast.FormattedValue):
+                            seg = ast.get_source_segment(src, val) or ""
+                            assert "\\" not in seg, f"Python <3.12 f-string backslash in {mod_name}:{val.lineno}: {seg}"
 
     bat_path = REPO_ROOT / "一键卸载_Cosmos_MCP.bat"
     sh_path = REPO_ROOT / "uninstall_cosmos_mcp.sh"
