@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebAI2PC · 交互式使用教程</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <style id="tutorials-offline-fallback">
+    :root, [data-theme="light"] {
+      color-scheme: light;
+      --bg: #F7F6F2; --surface: #FFFFFF; --surface-glass: rgba(247,246,242,0.92);
+      --surface-alt: #FAF9F5; --surface-inset: #EFECE4;
+      --secondary-btn: #EAE6DC; --secondary-btn-soft: #F1EFE7; --secondary-btn-hover: #DFDBD0;
+      --segmented-track: #EAE6DC; --border: #E2DFD5; --border-strong: #CFCBC0;
+      --text: #14181F; --text-secondary: #3E4552; --muted: #5F6775;
+      --primary: #1F6E58; --primary-hover: #175644; --link-accent: #1F6E58;
+      --primary-soft: rgba(31,110,88,0.09); --primary-ring: rgba(31,110,88,0.20);
+      --bridge-amber: #E9A820; --bridge-amber-soft: rgba(233,168,32,0.15);
+      --ok: #1F6E58; --ok-dot: #10A37F; --ok-bg: rgba(16,163,127,0.11); --ok-text: #145A47; --ok-border: rgba(31,110,88,0.28);
+      --edit: #2563EB; --edit-bg: rgba(37,99,235,0.10); --edit-text: #1D4ED8; --edit-border: rgba(37,99,235,0.24);
+      --warn: #D97706; --warn-bg: rgba(233,168,32,0.16); --warn-text: #92400E; --warn-border: rgba(217,119,6,0.32);
+      --danger: #DC2626; --danger-bg: rgba(220,38,38,0.09); --danger-text: #B91C1C; --danger-border: rgba(220,38,38,0.26);
+      --term-bg: #14181F; --term-fg: #F0F6FC;
+      --radius-lg: 12px; --radius-md: 9px; --radius-sm: 7px;
+      --shadow-sm: 0 1px 3px rgba(20,24,31,0.04);
+      --ease-out: cubic-bezier(0.23,1,0.32,1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+      --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", "SF Mono", Consolas, Menlo, monospace;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0E1116; --surface: #161B22; --surface-glass: rgba(14,17,22,0.92);
+      --surface-alt: #1C2129; --surface-inset: #0B0E13;
+      --secondary-btn: #21262D; --secondary-btn-soft: #1B2027; --secondary-btn-hover: #292F38;
+      --segmented-track: #0B0E13; --border: #262C36; --border-strong: #363E4B;
+      --text: #F0F6FC; --text-secondary: #C9D1D9; --muted: #8B949E;
+      --primary: #2B8A6E; --primary-hover: #34A080; --link-accent: #3FB693;
+      --primary-soft: rgba(52,160,128,0.14); --primary-ring: rgba(52,160,128,0.28);
+      --bridge-amber: #F4BE4F; --bridge-amber-soft: rgba(244,190,79,0.16);
+      --ok: #2B8A6E; --ok-dot: #3FB950; --ok-bg: rgba(46,160,67,0.15); --ok-text: #56D364; --ok-border: rgba(52,160,128,0.36);
+      --edit: #58A6FF; --edit-bg: rgba(56,139,253,0.15); --edit-text: #79C0FF; --edit-border: rgba(56,139,253,0.34);
+      --warn: #D29922; --warn-bg: rgba(210,153,34,0.16); --warn-text: #E3B341; --warn-border: rgba(210,153,34,0.36);
+      --danger: #F85149; --danger-bg: rgba(248,81,73,0.15); --danger-text: #FF7B72; --danger-border: rgba(248,81,73,0.34);
+      --term-bg: #090C10; --term-fg: #E6EDF3;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+    }
+    * { box-sizing: border-box; }
+    html { margin: 0; padding: 0; max-width: 100%; background: var(--bg); }
+    body { margin: 0; padding: 0; max-width: 100%; overflow-x: clip; background: var(--bg); color: var(--text); font: 14px/1.52 var(--font-sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+    a { color: var(--link-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-inset); border: 1px solid var(--border); color: var(--text); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+    .top-header { position: sticky; top: 0; z-index: 100; width: 100%; background: var(--surface-glass); -webkit-backdrop-filter: saturate(160%) blur(16px); backdrop-filter: saturate(160%) blur(16px); border-bottom: 1px solid var(--border); }
+    .top-header-inner { max-width: 1180px; width: 100%; margin: 0 auto; padding: 10px 20px; }
+    .top-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0; }
+    .brand-block { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-logo { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 2px 4px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+    .brand-mark-svg { display: block; width: 88px; height: 35px; }
+    .brand-titles { min-width: 0; }
+    .brand-titles h1 { margin: 0; font-size: 16.5px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: var(--text); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+    .brand-two { color: var(--primary); margin: 0 1px; }
+    .brand-studio-tag { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+    .brand-sub { color: var(--muted); font-size: 11.5px; margin-top: 2px; overflow-wrap: anywhere; }
+    .header-right-group { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; max-width: 100%; }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px; font-weight: 600; font-size: 12px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text-secondary); max-width: 100%; white-space: nowrap; }
+    .status-badge.online { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
+    .status-badge.editonly { background: var(--edit-bg); color: var(--edit-text); border-color: var(--edit-border); }
+    .status-badge.readonly { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+    .status-badge.offline { background: var(--surface-inset); color: var(--muted); border-color: var(--border); }
+    .status-dot { width: 7.5px; height: 7.5px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+    .status-dot.online { background: var(--ok-dot); }
+    .status-dot.editonly { background: var(--edit); }
+    .status-dot.readonly { background: var(--warn); }
+    .status-dot.offline { background: var(--muted); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--secondary-btn); color: var(--text); font: 600 13px/1.2 var(--font-sans); cursor: pointer; text-decoration: none; transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), transform 100ms var(--ease-out); white-space: nowrap; }
+    .btn:hover { background: var(--secondary-btn-hover); text-decoration: none; }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    .btn-sm { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #FFFFFF; }
+    .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: #FFFFFF; }
+    .btn-tonal { background: var(--primary-soft); border-color: var(--ok-border); color: var(--primary); }
+    .btn-tonal:hover { background: var(--ok-bg); }
+    .btn-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; box-shadow: var(--shadow-sm); margin-bottom: 14px; }
+    .card-title { margin: 0 0 4px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+    .card-desc { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+    .callout { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); font-size: 12.5px; line-height: 1.5; margin-bottom: 10px; }
+    .callout-ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+    .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+    .callout-info { background: var(--primary-soft); border-color: var(--ok-border); color: var(--text); }
+    .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); background: var(--surface-inset); color: var(--text-secondary); }
+    .tag-ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+    .tag-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+    .tag-info { background: var(--edit-bg); border-color: var(--edit-border); color: var(--edit-text); }
+    .toast-banner { position: fixed; bottom: 20px; right: 20px; z-index: 999; max-width: min(380px, calc(100vw - 24px)); padding: 9px 14px; border-radius: 9px; background: var(--term-bg); color: var(--term-fg); border: 1px solid var(--border-strong); font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+    .toast-banner.visible, .toast-banner.show { opacity: 1; transform: translateY(0); }
+  </style>
+  <link rel="stylesheet" href="/static/studio.css">
+  <link rel="stylesheet" href="/static/themes.css">
+  <style id="tutorials-layout-style">
+    body { overflow-x: clip; }
+    .top-header-inner { max-width: 1180px; }
+    .top-bar-row { margin-bottom: 0; }
+    .tut-appearance-mount { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .tut-fallback-pose-bar { display: inline-flex; align-items: center; gap: 3px; padding: 2px; border-radius: 8px; background: var(--segmented-track); border: 1px solid var(--border); }
+    .tut-pose-chip { border: 0; background: transparent; color: var(--muted); font: 600 11.5px/1 var(--font-sans); padding: 5px 8px; border-radius: 6px; cursor: pointer; transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out); }
+    .tut-pose-chip.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-sm); }
+    #tut-fallback-svg .bot-head-group, #tut-fallback-svg .bot-eyes-group { transition: transform 180ms var(--ease-out); }
+    [data-fallback-pose="turn-right"] #tut-fallback-svg .bot-eyes-group { transform: translateX(3.2px); }
+    [data-fallback-pose="front"] #tut-fallback-svg .bot-eyes-group { transform: translateX(0); }
+    [data-fallback-pose="working"] #tut-fallback-svg .bot-head-group { transform: translate(2px, -1px); }
+    [data-fallback-pose="working"] #tut-fallback-svg .bot-eyes-group { transform: translate(4.2px, 0.5px); }
+    [data-fallback-pose="working"] #tut-fallback-svg .bridge-pill { fill: var(--primary); }
+
+    .tut-shell { max-width: 1180px; width: 100%; margin: 0 auto; padding: 14px 20px 56px; }
+    .live-endpoint-strip { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+    .live-strip-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+    .live-strip-left { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+    .live-strip-meta { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+    .tut-gw-row { display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 8px; background: var(--surface-alt); border: 1px dashed var(--border-strong); }
+    .tut-gw-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+    .tut-gw-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font: 600 11.8px/1.2 var(--font-sans); cursor: pointer; transition: border-color 120ms var(--ease-out), background-color 120ms var(--ease-out); }
+    .tut-gw-pill:hover:not(:disabled) { border-color: var(--primary); color: var(--text); }
+    .tut-gw-pill.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+    .tut-gw-pill.is-pending { opacity: 0.68; cursor: default; }
+    .live-urls-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .live-url-cell { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--border); }
+    .live-url-label { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); }
+    .live-url-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .tut-mono-box { flex: 1 1 auto; min-width: 0; padding: 6px 9px; border-radius: var(--radius-sm); background: var(--surface-inset); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; word-break: break-all; cursor: pointer; user-select: all; }
+    .tut-mono-box:hover { border-color: var(--primary); }
+
+    .tut-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .tut-sidebar { position: sticky; top: 68px; display: flex; flex-direction: column; gap: 10px; width: 240px; min-width: 0; }
+    .tut-side-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; box-shadow: var(--shadow-sm); }
+    .tut-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .tut-progress-track { width: 100%; height: 7px; border-radius: 999px; background: var(--surface-inset); overflow: hidden; margin-bottom: 8px; }
+    .tut-progress-bar { height: 100%; width: 0%; background: var(--primary); border-radius: 999px; transition: width 180ms var(--ease-out); }
+    .tut-search-wrap { position: relative; display: flex; align-items: center; gap: 6px; }
+    .tut-input { width: 100%; min-height: 36px; padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-inset); color: var(--text); font: 500 13px/1.3 var(--font-sans); }
+    .tut-input:focus { outline: 2px solid var(--primary-ring); border-color: var(--primary); }
+    .tut-nav-list { display: flex; flex-direction: column; gap: 4px; }
+    .tut-nav-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-secondary); font: 600 12.8px/1.35 var(--font-sans); cursor: pointer; transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out); }
+    .tut-nav-btn:hover { background: var(--surface-inset); color: var(--text); }
+    .tut-nav-btn.active { background: var(--primary-soft); border-color: var(--ok-border); color: var(--primary); }
+    .tut-nav-title { min-width: 0; flex: 1 1 auto; }
+    .tut-nav-count { flex-shrink: 0; padding: 2px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--surface-inset); color: var(--muted); }
+    .tut-nav-btn.active .tut-nav-count, .tut-nav-count.done { background: var(--ok-bg); color: var(--ok-text); }
+
+    .tut-mobile-topbar { display: none; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .tut-mobile-search-row { display: flex; align-items: center; gap: 8px; }
+    .tut-mobile-seg-bar { display: flex; align-items: center; gap: 6px; overflow-x: auto; max-width: 100%; padding: 2px 1px 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .tut-mobile-seg-bar::-webkit-scrollbar { display: none; }
+    .tut-mobile-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; min-height: 38px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font: 600 13px/1 var(--font-sans); cursor: pointer; }
+    .tut-mobile-pill.active { background: var(--primary); border-color: var(--primary); color: #FFFFFF; }
+
+    .tut-main { min-width: 0; }
+    .tut-module { display: none; }
+    .tut-module.active, body.tut-show-all .tut-module:not(.search-hidden) { display: block; }
+    .tut-module.search-hidden { display: none !important; }
+    .tut-mod-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .tut-mod-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--primary); margin-bottom: 3px; }
+    .tut-workbench-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.92fr); gap: 14px; align-items: start; }
+
+    .tut-step-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .tut-step-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-alt); transition: border-color 120ms var(--ease-out), background-color 120ms var(--ease-out); }
+    .tut-step-item.completed { background: var(--ok-bg); border-color: var(--ok-border); }
+    .tut-step-chk { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
+    .tut-step-body { min-width: 0; flex: 1 1 auto; }
+    .tut-step-title { font-size: 13.5px; font-weight: 700; color: var(--text); margin: 0 0 3px; }
+    .tut-step-desc { font-size: 12.8px; color: var(--text-secondary); margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+
+    .tut-terminal-box { background: var(--term-bg); color: var(--term-fg); border: 1px solid var(--border-strong); border-radius: 10px; padding: 12px 13px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .tut-term-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 7px; border-bottom: 1px solid rgba(240,246,252,0.12); }
+    .tut-term-dots { display: inline-flex; align-items: center; gap: 5px; }
+    .tut-term-dots span { width: 8px; height: 8px; border-radius: 50%; }
+    .tut-term-dots span:nth-child(1) { background: #EF4444; }
+    .tut-term-dots span:nth-child(2) { background: #F59E0B; }
+    .tut-term-dots span:nth-child(3) { background: #10B981; }
+    .tut-term-label { font-family: var(--font-mono); font-size: 11.5px; color: #9CA3AF; }
+    .tut-term-pre { margin: 0; padding: 9px 10px; border-radius: 7px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); font-family: var(--font-mono); font-size: 12.2px; line-height: 1.52; color: #F0F6FC; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+    .tut-term-note { font-size: 12px; color: #C9D1D9; line-height: 1.48; }
+    .tut-sub-seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 8px; background: rgba(255,255,255,0.08); }
+    .tut-sub-seg-light { background: var(--segmented-track); border: 1px solid var(--border); }
+    .tut-sub-btn { flex: 1 1 120px; min-height: 32px; padding: 5px 10px; border-radius: 6px; border: 0; background: transparent; color: #C9D1D9; font: 600 12px/1.2 var(--font-sans); cursor: pointer; }
+    .tut-sub-seg-light .tut-sub-btn { color: var(--text-secondary); }
+    .tut-sub-btn.active { background: var(--primary); color: #FFFFFF; }
+
+    .tut-dual-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .tut-ep-card { padding: 12px 13px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-alt); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .tut-ep-card.recommended { border-color: var(--ok-border); background: var(--primary-soft); }
+    .tut-matrix-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .tut-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .tut-table th, .tut-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+    .tut-table th { background: var(--surface-inset); font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
+    .tut-table tr:last-child td { border-bottom: 0; }
+
+    .pain-selector-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .pain-option-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); text-align: left; cursor: pointer; transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out); }
+    .pain-option-btn:hover { border-color: var(--primary); }
+    .pain-option-btn.active { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 1px var(--primary); }
+    .pain-option-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+    .pain-option-sub { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .channel-guide-pane { display: none; padding: 13px 14px; border-radius: 10px; border: 1px solid var(--ok-border); background: var(--surface-alt); }
+    .channel-guide-pane.active { display: block; }
+
+    .prompt-cards-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+    .prompt-card { display: flex; flex-direction: column; justify-content: space-between; gap: 9px; padding: 12px 13px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-alt); min-width: 0; transition: border-color 140ms var(--ease-out); }
+    .prompt-card:hover { border-color: var(--primary); }
+    .prompt-card.filtered-out { display: none; }
+    .prompt-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .prompt-card-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); }
+    .prompt-code-box { margin: 0; padding: 9px 10px; border-radius: 7px; background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    .safety-tier-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+    .safety-tier-pill { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 11px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-alt); cursor: pointer; text-align: left; }
+    .safety-tier-pill.active { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 1px var(--primary); }
+    .safety-tier-name { font-size: 13px; font-weight: 700; color: var(--text); }
+    .safety-tier-code { font-size: 11.5px; color: var(--muted); }
+    .safety-detail-box { padding: 11px 13px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-inset); margin-bottom: 12px; }
+    .ws-layer-diagram { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 9px; border: 1px dashed var(--border-strong); background: var(--surface-alt); }
+    .ws-layer-inner { margin-left: 14px; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--ok-border); background: var(--ok-bg); color: var(--ok-text); font-size: 12.5px; }
+    .diff-demo-box { border-radius: 8px; background: var(--term-bg); color: var(--term-fg); padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+    .diff-del { display: block; background: rgba(248,81,73,0.20); color: #FFA198; padding: 1px 6px; border-radius: 4px; margin-bottom: 2px; }
+    .diff-add { display: block; background: rgba(46,160,67,0.22); color: #7EE787; padding: 1px 6px; border-radius: 4px; }
+
+    .ts-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .ts-pills-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .ts-pill { min-height: 30px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text-secondary); font: 600 12px/1 var(--font-sans); cursor: pointer; }
+    .ts-pill.active { background: var(--primary); border-color: var(--primary); color: #FFFFFF; }
+    .ts-list { display: flex; flex-direction: column; gap: 9px; }
+    .ts-item { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-alt); padding: 11px 13px; }
+    .ts-item.filtered-out { display: none; }
+    .ts-item summary { cursor: pointer; font-weight: 700; font-size: 13.8px; color: var(--text); list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .ts-item summary::-webkit-details-marker { display: none; }
+    .ts-item-body { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px; }
+
+    @media (max-width: 920px) {
+      .tut-layout { grid-template-columns: minmax(0, 1fr); }
+      .tut-sidebar { display: none; }
+      .tut-mobile-topbar { display: flex; }
+      .tut-workbench-grid, .live-urls-grid, .tut-dual-cards, .pain-selector-grid, .prompt-cards-grid { grid-template-columns: minmax(0, 1fr); }
+      .safety-tier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .top-header-inner { padding: 9px 12px; }
+      .tut-shell { padding: 10px 12px 44px; }
+      .card { padding: 12px; }
+      .btn { min-height: 40px; }
+      .btn-sm { min-height: 36px; }
+      .tut-input { min-height: 42px; font-size: 16px; }
+      .live-url-row { flex-direction: column; align-items: stretch; }
+      .safety-tier-grid { grid-template-columns: minmax(0, 1fr); }
+      .header-right-group { width: 100%; justify-content: space-between; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body data-fallback-pose="turn-right">
+  <header class="top-header">
+    <div class="top-header-inner">
+      <div class="top-bar-row">
+        <div class="brand-block">
+          <div class="brand-logo" id="tut-header-logo" data-brand-slot="header-mark" aria-hidden="true">
+            <svg id="tut-fallback-svg" class="brand-mark-svg" viewBox="0 0 182 72" fill="none" aria-hidden="true">
+              <path d="M9 48 A40 16 -22 0 1 83 24" stroke="#C9C3B4" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+              <g class="bot-head-group">
+                <rect x="24" y="19" width="44" height="34" rx="11" fill="#1F6E58"/>
+                <g class="bot-eyes-group">
+                  <circle cx="38.5" cy="36" r="4.4" fill="#F7F6F2"/>
+                  <circle cx="53.5" cy="36" r="4.4" fill="#F7F6F2"/>
+                </g>
+              </g>
+              <path d="M83 24 A40 16 -22 0 1 9 48" stroke="#C9C3B4" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+              <path d="M15 10 Q15 20 25 20 Q15 20 15 30 Q15 20 5 20 Q15 20 15 10Z" fill="#3B82F6"/>
+              <g transform="translate(77,25) scale(0.880)">
+                <circle cx="0" cy="0" r="10.8" fill="#10A37F"/>
+                <g transform="scale(0.84)">
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(0)"/>
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(60)"/>
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(120)"/>
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(180)"/>
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(240)"/>
+                  <rect x="-3.4" y="-8.2" width="6.8" height="9.2" rx="3.4" fill="none" stroke="#FFFFFF" stroke-width="1.75" transform="rotate(300)"/>
+                </g>
+                <circle cx="0" cy="0" r="2.2" fill="#10A37F"/>
+              </g>
+              <rect class="bridge-pill" x="91" y="26" width="18" height="20" rx="5.5" fill="#E9A820"/>
+              <text x="100" y="40" text-anchor="middle" fill="#FFFFFF" font-family="ui-monospace,monospace" font-weight="800" font-size="12.5">2</text>
+              <rect x="116" y="15" width="54" height="42" rx="10" fill="#1F6E58"/>
+              <circle cx="126" cy="24" r="1.9" fill="#EF4444"/>
+              <circle cx="132.5" cy="24" r="1.9" fill="#F59E0B"/>
+              <circle cx="139" cy="24" r="1.9" fill="#10B981"/>
+              <path d="M128 34L137 40.5L128 47" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <line class="cursor-blink term-cursor-line" x1="142" y1="47" x2="156" y2="47" stroke="#E9A820" stroke-width="3" stroke-linecap="round"/>
+              <rect x="170" y="26" width="5.5" height="20" rx="2.2" fill="#E9A820"/>
+            </svg>
+          </div>
+          <div class="brand-titles">
+            <h1>WebAI<span class="brand-two">2</span>PC <span class="brand-studio-tag">· 交互式使用教程</span></h1>
+            <div class="brand-sub" id="tut-brand-subtitle">正在检测本地 Studio 服务连接状态…</div>
+          </div>
+        </div>
+
+        <div class="header-right-group">
+          <div class="status-badge offline" id="tut-status-badge">
+            <span class="status-dot offline" id="tut-status-dot"></span>
+            <span id="tut-status-text">离线示例预览</span>
+          </div>
+          <div class="tut-appearance-mount" id="tut-appearance-switcher" data-appearance-switcher></div>
+          <button type="button" class="btn btn-sm theme-quick-btn" id="theme-toggle-btn" title="一键切换浅色与深色模式">深色模式</button>
+          <a href="/" class="btn btn-tonal btn-sm" id="back-to-studio-btn">返回 Studio 控制台</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="tut-shell">
+    <div id="toast-banner" class="toast-banner" role="status" aria-live="polite"></div>
+
+    <section class="live-endpoint-strip" id="live-endpoint-strip" aria-label="当前电脑连接端点">
+      <div class="live-strip-head">
+        <div class="live-strip-left">
+          <span class="tag tag-info" id="live-sync-badge">示例地址模式</span>
+          <span class="live-strip-meta" id="live-device-meta">在本地 Studio 打开本页时自动读取当前选中的就绪网关地址（三类网关支持独立开关并存）；个人版 ChatGPT 请复制右侧 /mcp/readonly 只读地址。</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button type="button" class="btn btn-sm" id="sync-live-state-btn">重新同步本机地址</button>
+          <button type="button" class="btn btn-sm" id="toggle-view-mode-btn">展开全部 6 章</button>
+        </div>
+      </div>
+      <div class="tut-gw-row" id="live-gateway-switcher-row" aria-label="多网关并存状态切换"></div>
+      <div class="live-urls-grid">
+        <div class="live-url-cell">
+          <div class="live-url-label">
+            <span>主连接地址（网页版 Gemini / ChatGPT 工作区账号）</span>
+            <code>/mcp</code>
+          </div>
+          <div class="live-url-row">
+            <div class="tut-mono-box" id="live-mcp-url-text" data-live-url="mcp" data-copy-live="mcp" title="点击直接复制主连接地址">https://xxxxx.srv.us/mcp</div>
+            <button type="button" class="btn btn-primary btn-sm" id="copy-live-mcp-btn" data-copy-live="mcp">复制 /mcp 地址</button>
+          </div>
+        </div>
+        <div class="live-url-cell">
+          <div class="live-url-label">
+            <span>纯只读地址（ChatGPT 个人 Plus / Pro 账号 · 仅开放只读查阅）</span>
+            <code>/mcp/readonly</code>
+          </div>
+          <div class="live-url-row">
+            <div class="tut-mono-box" id="live-ro-url-text" data-live-url="readonly" data-copy-live="readonly" title="点击直接复制纯只读地址">https://xxxxx.srv.us/mcp/readonly</div>
+            <button type="button" class="btn btn-tonal btn-sm" id="copy-live-ro-btn" data-copy-live="readonly">复制只读地址</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="tut-mobile-topbar" aria-label="移动端教程导航">
+      <div class="tut-mobile-search-row">
+        <input type="search" id="tut-mobile-search" class="tut-input" placeholder="输入关键词筛选 6 大教程与排障项…">
+        <span class="tag" id="tut-mobile-progress-pill">0/24</span>
+      </div>
+      <nav class="tut-mobile-seg-bar" id="tut-mobile-seg-nav" role="tablist" aria-label="教程章节选择">
+        <button type="button" class="tut-mobile-pill active" role="tab" aria-selected="true" data-mod-target="mod-gemini">1. Gemini 与手机远控</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">2. ChatGPT 双模式</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-channels">3. 通道选型器</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-templates">4. 实战指令库</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-safety">5. 安全与快照</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-troubleshoot">6. 常见排障</button>
+      </nav>
+    </div>
+
+    <div class="tut-layout">
+      <aside class="tut-sidebar" aria-label="教程目录与完成进度">
+        <div class="tut-side-card">
+          <div class="tut-progress-head">
+            <span>实操步骤完成度</span>
+            <span id="tut-progress-text">0 / 24 步</span>
+          </div>
+          <div class="tut-progress-track" aria-hidden="true">
+            <div class="tut-progress-bar" id="tut-progress-fill"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <span style="font-size:11.5px;color:var(--muted);">进度自动保存在本地浏览器</span>
+            <button type="button" class="btn btn-sm" id="reset-progress-btn" style="padding:2px 7px;min-height:24px;font-size:11px;">重置</button>
+          </div>
+        </div>
+
+        <div class="tut-side-card">
+          <div class="tut-search-wrap" style="margin-bottom:8px;">
+            <input type="search" id="tut-global-search" class="tut-input" placeholder="搜索步骤、命令或报错词…">
+            <button type="button" class="btn btn-sm" id="clear-global-search-btn" style="display:none;padding:4px 8px;">清空</button>
+          </div>
+          <nav class="tut-nav-list" id="tut-side-nav" role="tablist" aria-label="6 大场景教程目录">
+            <button type="button" class="tut-nav-btn active" role="tab" aria-selected="true" data-mod-target="mod-gemini">
+              <span class="tut-nav-title">1. Gemini 与手机同步远控</span>
+              <span class="tut-nav-count" data-mod-badge="mod-gemini">0/5</span>
+            </button>
+            <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">
+              <span class="tut-nav-title">2. ChatGPT 双模式接入</span>
+              <span class="tut-nav-count" data-mod-badge="mod-chatgpt">0/4</span>
+            </button>
+            <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-channels">
+              <span class="tut-nav-title">3. 3 类连接通道选型器</span>
+              <span class="tut-nav-count" data-mod-badge="mod-channels">0/4</span>
+            </button>
+            <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-templates">
+              <span class="tut-nav-title">4. 多智能体与办公模板库</span>
+              <span class="tut-nav-count" data-mod-badge="mod-templates">0/3</span>
+            </button>
+            <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-safety">
+              <span class="tut-nav-title">5. 四档安全、技能与快照</span>
+              <span class="tut-nav-count" data-mod-badge="mod-safety">0/4</span>
+            </button>
+            <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-troubleshoot">
+              <span class="tut-nav-title">6. 常见排障与自检速查</span>
+              <span class="tut-nav-count" data-mod-badge="mod-troubleshoot">0/4</span>
+            </button>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="tut-main" id="tut-modules-container">
+        <div id="tut-search-status-bar" class="callout callout-info" style="display:none;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="tut-search-status-text">已按关键词过滤匹配章节</span>
+          <button type="button" class="btn btn-sm" id="tut-clear-filter-btn">清除筛选</button>
+        </div>
+
+        <!-- 教程 1：60 秒接入网页版 Gemini 与手机端同步远控 -->
+        <article class="card tut-module active" id="mod-gemini" data-module-id="mod-gemini">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 1 · 网页版 Google Gemini 任务模式 &amp; 手机端 App</div>
+              <h2 class="card-title">60 秒接入网页版 Gemini 与手机端同步远控</h2>
+              <p class="card-desc" style="margin-bottom:0;">电脑端完成一次连接器绑定后，登录同一 Google 账号的 Android 与 iOS 手机端 Gemini App 自动同步该连接器。</p>
+            </div>
+            <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer" class="btn btn-tonal btn-sm">打开 Gemini 连接器设置</a>
+          </div>
+
+          <div class="tut-workbench-grid">
+            <ul class="tut-step-list">
+              <li class="tut-step-item" data-step-wrap="g1">
+                <input type="checkbox" class="tut-step-chk" data-step-id="g1" aria-label="确认 Google 账号条件">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 1 步：确认 Google 账号条件</div>
+                  <p class="tut-step-desc">需使用年满 <code>18+</code> 周岁的 Google AI Pro / Ultra 订阅账号，或已由管理员开启自定义连接器权限的 Google Workspace 账号（免费个人账号暂未开放网页端自定义连接器入口）。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="g2">
+                <input type="checkbox" class="tut-step-chk" data-step-id="g2" aria-label="复制主连接地址并新建连接器">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 2 步：填入 <code>Cosmos</code> 名称与 <code>/mcp</code> 地址</div>
+                  <p class="tut-step-desc">在网页版 Gemini 左侧栏依次点击 <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; + Custom（添加自定义）</code>，<code>Name</code> 填 <code>Cosmos</code>，<code>URL</code> 粘贴 <code data-live-url="mcp">https://xxxxx.srv.us/mcp</code>；若展开 <code>Additional settings</code>，<code>Client ID</code> 与 <code>Client Secret</code> 均保持留空。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="g3">
+                <input type="checkbox" class="tut-step-chk" data-step-id="g3" aria-label="完成授权确认">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 3 步：本机 800ms 免口令放行 或 手机核对配对码</div>
+                  <p class="tut-step-desc">同机浏览器跳转授权页时，系统通过 800ms 顶层回环桥接校验同机身份，直接点「<strong>本机一键允许连接（免输口令）</strong>」完成绑定；手机或异地浏览器授权时，核对页面 4 位防钓鱼核对码并输入 6 位动态配对码。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="g4">
+                <input type="checkbox" class="tut-step-chk" data-step-id="g4" aria-label="将 App actions 设为 Always allow">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 4 步：将 <code>App actions</code> 设为 <code>Always allow（始终允许）</code> 并存入守则</div>
+                  <p class="tut-step-desc">在 <code>Connectors（连接器）</code> 列表点开 <code>Cosmos</code>，把 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>（请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，否则会覆盖其余工具免审批状态）；随后在 Studio 点击「复制 AI 操作守则（推荐存入 Skills）」保存到 <code>Customize（自定义） -&gt; Skills（技能）</code>。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="g5">
+                <input type="checkbox" class="tut-step-chk" data-step-id="g5" aria-label="发送首句唤醒词实测">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 5 步：新建对话首句输入 <code>@Cosmos</code> 实测</div>
+                  <p class="tut-step-desc">新建对话后，在输入框首句输入 <code>@Cosmos</code> 并点选弹出的连接器标签，发送右侧首句测试词即可读取本机目录。</p>
+                </div>
+              </li>
+            </ul>
+
+            <div class="tut-terminal-box" data-pose-trigger="terminal">
+              <div class="tut-term-top">
+                <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                <span class="tut-term-label">实操终端 · 悬停或复制联动 IP 专注态</span>
+              </div>
+
+              <div class="tut-sub-seg" role="tablist" aria-label="授权场景预览">
+                <button type="button" class="tut-sub-btn active" id="auth-tab-local" data-auth-mode="local">本机同浏览器（800ms 免输码）</button>
+                <button type="button" class="tut-sub-btn" id="auth-tab-mobile" data-auth-mode="mobile">手机 / 异地浏览器（配对码）</button>
+              </div>
+
+              <div id="auth-preview-local" class="tut-term-note">
+                1. 连接地址：<code data-live-url="mcp">https://xxxxx.srv.us/mcp</code><br>
+                2. 跳转 <code>/consent</code> 后自动完成 800ms 本机回环身份校验，直接点击绿色主按钮「本机一键允许连接（免输口令）」即可返回 Gemini。
+              </div>
+              <div id="auth-preview-mobile" class="tut-term-note" style="display:none;">
+                1. 先核对手机授权页显示的 <strong>4 位核对码</strong>（当前本机：<code id="live-pair-code-4">----</code>）与电脑 Studio 面板一致；<br>
+                2. 填入面板显示的 <strong>6 位动态配对码</strong>（当前本机：<code id="live-pair-code-6">------</code>）或 20 位固定备用口令完成授权。
+              </div>
+
+              <pre class="tut-term-pre" id="gemini-first-wake-code">@Cosmos 帮我看看当前工作目录里有哪些文件</pre>
+              <div style="display:flex;flex-wrap:wrap;gap:7px;">
+                <button type="button" class="btn btn-primary btn-sm" id="copy-gemini-wake-btn" data-copy-prompt="@Cosmos 帮我看看当前工作目录里有哪些文件">复制首句唤醒词</button>
+                <button type="button" class="btn btn-sm" data-copy-live="mcp">复制 /mcp 主地址</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 教程 2：网页版 ChatGPT 双模式接入 -->
+        <article class="card tut-module" id="mod-chatgpt" data-module-id="mod-chatgpt">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT 对话模式（读写与只读双地址隔离）</div>
+              <h2 class="card-title">网页版 ChatGPT 双模式接入（工作区读写 vs 个人版只读）</h2>
+              <p class="card-desc" style="margin-bottom:0;">根据您的 ChatGPT 订阅类型选择对应连接地址，服务端按连接地址自动隔离读写与纯只读权限（遵循 RFC 8707 资源受众隔离规范）。</p>
+            </div>
+            <div class="tut-sub-seg tut-sub-seg-light" role="tablist" aria-label="ChatGPT 账号类型选择">
+              <button type="button" class="tut-sub-btn active" id="cgpt-tab-workspace" data-cgpt-mode="workspace">工作区账号 (/mcp)</button>
+              <button type="button" class="tut-sub-btn" id="cgpt-tab-personal" data-cgpt-mode="personal">个人 Plus/Pro (/mcp/readonly)</button>
+            </div>
+          </div>
+
+          <div class="tut-dual-cards">
+            <div class="tut-ep-card recommended" id="cgpt-card-workspace">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+                <strong>Team / Business / Enterprise / Edu 工作区账号</strong>
+                <span class="tag tag-ok">完整读写与执行</span>
+              </div>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放文件读取、代码修改、Word/Excel 安全修订与后台无窗口命令执行能力。</p>
+              <div class="live-url-row">
+                <div class="tut-mono-box" data-live-url="mcp" data-copy-live="mcp">https://xxxxx.srv.us/mcp</div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-live="mcp">复制工作区地址</button>
+              </div>
+            </div>
+
+            <div class="tut-ep-card" id="cgpt-card-personal">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+                <strong>个人 Plus / Pro 订阅账号</strong>
+                <span class="tag tag-warn">纯只读安全保护</span>
+              </div>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">受平台个人号策略限制，请绑定 <code>/mcp/readonly</code>。该地址仅开放只读查询能力，越权调用写或执行接口会立即返回 <code>403</code> 拒绝。</p>
+              <div class="live-url-row">
+                <div class="tut-mono-box" data-live-url="readonly" data-copy-live="readonly">https://xxxxx.srv.us/mcp/readonly</div>
+                <button type="button" class="btn btn-tonal btn-sm" data-copy-live="readonly">复制个人版只读地址</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tut-workbench-grid">
+            <ul class="tut-step-list">
+              <li class="tut-step-item" data-step-wrap="c1">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="确认 ChatGPT 账号类型并复制对应端点">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 1 步：按账号类型复制上方对应端点</div>
+                  <p class="tut-step-desc">工作区账号复制 <code>/mcp</code>，个人 Plus / Pro 账号复制 <code>/mcp/readonly</code>，避免个人号绑入写工具导致平台隐藏调用入口。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="c2">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Settings Connectors 添加 Cosmos">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 2 步：在 <code>Settings（设置） -&gt; Connectors（连接器）</code> 添加 <code>Cosmos</code></div>
+                  <p class="tut-step-desc">填入名称 <code>Cosmos</code> 与复制的 HTTPS 地址，<code>Client ID</code> 与 <code>Client Secret</code> 留空，在弹出的中文授权页完成确认。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="c3">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="在对话输入框工具菜单勾选 Cosmos">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 3 步：点击输入框下方工具图标勾选 <code>Cosmos</code></div>
+                  <p class="tut-step-desc">新建对话发消息前，在输入框下方的连接器菜单勾选启用 <code>Cosmos</code>，随后直接输入任务指令。</p>
+                </div>
+              </li>
+              <li class="tut-step-item" data-step-wrap="c4">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c4" aria-label="验证双模式权限边界">
+                <div class="tut-step-body">
+                  <div class="tut-step-title">第 4 步：核对读写或只读响应</div>
+                  <p class="tut-step-desc">个人号只读令牌若被复用于请求 <code>/mcp</code> 主端点，协议层会直接返回 HTTP <code>403 forbidden_cross_resource</code> 阻断跨端点越权。</p>
+                </div>
+              </li>
+            </ul>
+
+            <div class="tut-terminal-box" data-pose-trigger="terminal">
+              <div class="tut-term-top">
+                <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                <span class="tut-term-label">双端点受众隔离对比 · 实操测试词</span>
+              </div>
+              <div class="tut-matrix-wrap" style="border-color:rgba(255,255,255,0.14);">
+                <table class="tut-table" style="color:#E6EDF3;">
+                  <thead>
+                    <tr style="background:rgba(255,255,255,0.08);">
+                      <th style="color:#C9D1D9;">能力维度</th>
+                      <th style="color:#7EE787;">/mcp (工作区)</th>
+                      <th style="color:#FCD34D;">/mcp/readonly (个人版)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>代码搜索 / 读文档看图 / 批量探针</td>
+                      <td>开放</td>
+                      <td>开放</td>
+                    </tr>
+                    <tr>
+                      <td>文件修改 / Word 与 Excel 修订</td>
+                      <td>按 Studio 档位开放</td>
+                      <td>403 拦截保护</td>
+                    </tr>
+                    <tr>
+                      <td>运行 Python / 终端与后台命令</td>
+                      <td>按 Studio 档位开放</td>
+                      <td>403 拦截保护</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <pre class="tut-term-pre">请用 Cosmos 工具查看当前项目的目录结构、核心入口文件与最近修改记录。</pre>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请用 Cosmos 工具查看当前项目的目录结构、核心入口文件与最近修改记录。">复制 ChatGPT 首轮测试词</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 教程 3：3 类连接通道选型器 -->
+        <article class="card tut-module" id="mod-channels" data-module-id="mod-channels">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 3 · 交互式连接方案推荐器</div>
+              <h2 class="card-title">3 类连接通道选型器（点击您的使用需求展开对应步骤）</h2>
+              <p class="card-desc" style="margin-bottom:0;">网页端 AI 从云端访问本机需通过标准 443 HTTPS 加密通道。Studio 内 3 张连接卡片右上角均配独立开关，可同时开启并存互不中断（如同时开启 srv.us 与 Cloudflare Workers），点击下方需求查看配置步骤。</p>
+            </div>
+          </div>
+
+          <div class="pain-selector-grid" role="tablist" aria-label="连接痛点需求选型">
+            <button type="button" class="pain-option-btn active" id="pain-btn-1" role="tab" aria-selected="true" data-channel-pick="1">
+              <span class="tag tag-ok">对应通道 1 · 默认免配置</span>
+              <span class="pain-option-title">我想零注册马上试用</span>
+              <span class="pain-option-sub">不注册云账号、不买域名，双击启动立即获得可用 HTTPS 地址。</span>
+            </button>
+            <button type="button" class="pain-option-btn" id="pain-btn-2" role="tab" aria-selected="false" data-channel-pick="2">
+              <span class="tag tag-info">对应通道 2 · 终身固定推荐</span>
+              <span class="pain-option-title">我想要终身免费固定域名不掉线</span>
+              <span class="pain-option-sub">用 Google 快捷登录 Cloudflare 贴一次令牌，3 秒部署休眠网关，重启不换址。</span>
+            </button>
+            <button type="button" class="pain-option-btn" id="pain-btn-3" role="tab" aria-selected="false" data-channel-pick="3">
+              <span class="tag">对应通道 3 · 自有资产组网</span>
+              <span class="pain-option-title">我有自己的云服务器想多电脑组网</span>
+              <span class="pain-option-sub">一键部署 24 小时常驻主站同时管云端与多台电脑，或接入自有固定域名。</span>
+            </button>
+          </div>
+
+          <div class="channel-guide-pane active" id="channel-pane-1">
+            <div class="tut-workbench-grid">
+              <div>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：一键上手免登录直连（<code>*.srv.us</code> 持久固定网址 + 4 秒自动回退）</h3>
+                <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary);">
+                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：优先用本机持久密钥锁定免登录固定网址 <code>https://*.srv.us/mcp</code>（关机重启网址不变）；若所在校园网或公司网限制 <code>22</code> 端口，系统在 <strong>4 秒内自动切换</strong>至内置快速通道 <code>https://*.trycloudflare.com</code> 生成可用地址。连上免登录固定网址后，可在卡片内点击「导出身份恢复卡 PNG」备份密钥。
+                </p>
+                <div class="callout callout-info" style="margin-bottom:0;">
+                  在 Studio「总览与网页连接 -&gt; 第 1 类」可通过卡片右上角独立开关随时启停，支持在「免登录固定网址 (*.srv.us)」与「临时快速通道 (*.trycloudflare.com)」间切换，也可与通道 2、通道 3 同时开启并存互不踢掉。
+                </div>
+              </div>
+              <div class="tut-terminal-box" data-pose-trigger="terminal">
+                <div class="tut-term-top">
+                  <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                  <span class="tut-term-label">通道 1 · 命令行等效启动</span>
+                </div>
+                <pre class="tut-term-pre">cosmos-mcp start --workspace D:\Projects\my-app</pre>
+                <div>
+                  <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="cosmos-mcp start --workspace D:\Projects\my-app">复制启动命令</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="channel-guide-pane" id="channel-pane-2">
+            <div class="tut-workbench-grid">
+              <div>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ②：Cloudflare 免费固定网关（3 秒部署休眠中继 · 令牌即刻清零）</h3>
+                <ol style="margin:0 0 8px;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.6;">
+                  <li>在 Studio 展开「通道 2：Cloudflare 专属固定网关」，点击「<strong>第 1 步：点此打开 Cloudflare 预填权限页（支持 Google 快捷登录）</strong>」生成最小权限 API 令牌。</li>
+                  <li>将令牌粘贴回「第 2 步：粘贴 API 令牌」（国内网络可选填免费 <code>*.dpdns.org</code> 或自有域名免切代理），点击「<strong>一键部署并开启（约 3 秒）</strong>」。</li>
+                  <li>后台约 3 秒自动认领 <code>*.workers.dev</code> 子域并部署免费云端休眠中继网关（Cloudflare Workers）；<strong>部署完成后本机立即清零销毁 API 令牌，磁盘零明文留存</strong>。</li>
+                  <li>后续可直接拨动卡片右上角独立开关启停连接（无需重填令牌），可与通道 1、通道 3 同时在线并存；电脑重启、休眠唤醒或切换热点后通过出站 443 WebSocket 自动重连。</li>
+                </ol>
+              </div>
+              <div class="tut-terminal-box" data-pose-trigger="terminal">
+                <div class="tut-term-top">
+                  <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                  <span class="tut-term-label">通道 2 · 预填令牌页与非交互接入</span>
+                </div>
+                <pre class="tut-term-pre">cosmos-mcp agent-setup --mode workers_dev --public-url "https://your-worker.your-subdomain.workers.dev" --workspace "D:\Projects\my-app" --autostart --no-browser --json</pre>
+                <div style="display:flex;flex-wrap:wrap;gap:7px;">
+                  <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" id="cf-template-link-btn" class="btn btn-primary btn-sm">打开 Cloudflare 令牌页</a>
+                  <button type="button" class="btn btn-sm" data-copy-prompt="cosmos-mcp agent-setup --mode workers_dev --public-url &quot;https://your-worker.your-subdomain.workers.dev&quot; --workspace &quot;D:\Projects\my-app&quot; --autostart --no-browser --json">复制 CLI 示例</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="channel-guide-pane" id="channel-pane-3">
+            <div class="tut-workbench-grid">
+              <div>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ③：自有云服务器 24 小时常驻主站 与 Named Tunnel / 自有反代</h3>
+                <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.6;">
+                  <li><strong>自有服务器建 24h 主站</strong>：在 Studio「第 3 类 -&gt; 自有服务器建 24h 主站」填入公网 IP，支持使用 SSH 密码（仅内存使用不落盘）、填写本地 SSH 私钥路径（如 <code>~/.ssh/id_ed25519</code>）或勾选本机默认 SSH 密钥免密登录（海外及港澳台服务器免域名自动签发公网 IP HTTPS 证书，内存小于 256MB 自动补充交换分区），点击「<strong>一键部署 24h 主站并开启</strong>」。电脑关机时仍可操作服务器文件，访问离线电脑路径返回清晰的电脑离线提示（<code>ERR_NODE_OFFLINE</code>）；电脑在线时自动按路径路由到服务器或本机（<code>target="auto"</code>）。</li>
+                  <li><strong>自有固定域名 / Named Tunnel / 自有反代</strong>：切换到「自有固定域名 / 通用 HTTPS 反代」填入 <code>https://mcp.example.com</code> 及选填 Named Tunnel 令牌或 SSH 反向映射端口（默认 <code>18096</code>），点击「<strong>保存并开启此网关</strong>」。</li>
+                </ul>
+              </div>
+              <div class="tut-terminal-box" data-pose-trigger="terminal">
+                <div class="tut-term-top">
+                  <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                  <span class="tut-term-label">通道 3 · Named Tunnel 与 SSH 反代命令</span>
+                </div>
+                <pre class="tut-term-pre">cosmos-mcp start --mode cloudflare_token --tunnel-token &lt;粘贴你的TOKEN&gt; --public-url https://mcp.example.com --autostart
+
+cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 18096 --public-url https://mcp.example.com --autostart</pre>
+                <div>
+                  <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="cosmos-mcp start --mode cloudflare_token --tunnel-token <粘贴你的TOKEN> --public-url https://mcp.example.com --autostart">复制 Named Tunnel 命令</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <ul class="tut-step-list" style="margin-top:12px;">
+            <li class="tut-step-item" data-step-wrap="ch1">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ch1" aria-label="选定适合当前网络的连接通道">
+              <div class="tut-step-body">
+                <div class="tut-step-title">核对项 1：选定通道并确认顶部状态胶囊变为在线</div>
+                <p class="tut-step-desc">在 Studio「总览与网页连接」确认已生成 <code>https://.../mcp</code> 公网加密地址。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ch2">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ch2" aria-label="开启开机自动启动与插电防休眠">
+              <div class="tut-step-body">
+                <div class="tut-step-title">核对项 2：按需勾选「插电防自动休眠」与「开机自动启动」</div>
+                <p class="tut-step-desc">长期手机远控建议在首屏右上角开启「开机自动启动」与「插电防自动休眠」。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ch3">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ch3" aria-label="导出加密身份恢复卡 PNG">
+              <div class="tut-step-body">
+                <div class="tut-step-title">核对项 3：导出加密身份恢复卡 PNG 备份固定网址密钥</div>
+                <p class="tut-step-desc">连上 <code>*.srv.us</code> 固定网址或部署通道 2 后，点击「导出身份恢复卡 PNG」保存备份图。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ch4">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ch4" aria-label="验证重启或唤醒重连">
+              <div class="tut-step-body">
+                <div class="tut-step-title">核对项 4：确认电脑休眠唤醒后约 1.5 秒自动恢复连接</div>
+                <p class="tut-step-desc">固定网址模式下无需重新修改网页版 Gemini 或 ChatGPT 中的连接器地址。</p>
+              </div>
+            </li>
+          </ul>
+        </article>
+
+        <!-- 教程 4：多智能体并行与本地办公/代码实战模板库 -->
+        <article class="card tut-module" id="mod-templates" data-module-id="mod-templates">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 4 · 6 张高频实战提示词卡（点击一键复制即联动 IP 图标）</div>
+              <h2 class="card-title">多智能体并行与本地办公 / 代码实战模板库</h2>
+              <p class="card-desc" style="margin-bottom:0;">所有卡片均使用真实 <code>@Cosmos</code> 唤醒词，可直接粘贴至网页版 Gemini（或去掉前缀发给已勾选工具的网页版 ChatGPT）。</p>
+            </div>
+            <div class="ts-pills-row" id="tpl-filter-bar" role="tablist" aria-label="模板分类筛选">
+              <button type="button" class="ts-pill active" data-tpl-cat="all">全部 (6)</button>
+              <button type="button" class="ts-pill" data-tpl-cat="code">并行审查与后台编译</button>
+              <button type="button" class="ts-pill" data-tpl-cat="office">Word / Excel / PDF 看图</button>
+              <button type="button" class="ts-pill" data-tpl-cat="fleet">多机协同与身份备份</button>
+            </div>
+          </div>
+
+          <div class="prompt-cards-grid" id="prompt-cards-grid">
+            <div class="prompt-card" data-tpl-item="code" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">1. 跨目录并行子任务代码审查</h3>
+                  <span class="tag tag-info">并行 Subagent</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">拆分多路并行只读子任务分别核查不同子目录，汇总行号与修复建议，避免塞满主会话上下文。</p>
+                <pre class="prompt-code-box">@Cosmos 请先查看当前工作区目录结构，再拆分为并行子任务分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件（每路子任务开头带上 @Cosmos 并标记 caller），最后汇总具体文件路径、行号与修改方案。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请先查看当前工作区目录结构，再拆分为并行子任务分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件（每路子任务开头带上 @Cosmos 并标记 caller），最后汇总具体文件路径、行号与修改方案。">复制实战指令 1</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">2. Word <code>.docx</code> 保样式修订与 Excel <code>.xlsx</code> 公式填写</h3>
+                  <span class="tag tag-ok">Office 安全修订</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);"><code>pc_edit_file</code> 支持跨 <code>&lt;w:r&gt;</code> 节点替换文字保留原字体样式，并按 <code>Sheet!A1</code> 坐标更新单元格与公式。</p>
+                <pre class="prompt-code-box">@Cosmos 请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。">复制实战指令 2</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">3. PDF 文档提取与本地截图直读分析</h3>
+                  <span class="tag tag-ok">原生看图 + PDF</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);"><code>pc_read_file</code> 对本地 PNG / JPEG / WebP 直接返回二进制图像块供模型看图，并提取中文 PDF、<code>.docx</code>、<code>.xlsx</code>、<code>.pptx</code> 文本。</p>
+                <pre class="prompt-code-box">@Cosmos 请用 pc_find_files 查找当前工作区内的 PDF 需求文档与最新 UI 截图，用 pc_read_file 直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请用 pc_find_files 查找当前工作区内的 PDF 需求文档与最新 UI 截图，用 pc_read_file 直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。">复制实战指令 3</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="code" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">4. 超时编译与全量测试转 <code>pc_bg_command</code> 后台运行</h3>
+                  <span class="tag tag-info">无窗口后台任务</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">耗时超过同步等待阈值的构建或测试通过 <code>pc_bg_command</code> 在后台静默执行，零弹窗不抢焦点。</p>
+                <pre class="prompt-code-box">@Cosmos 请使用 pc_bg_command 在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒轮询一次运行状态与尾部日志，完成后汇总失败用例与原因。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请使用 pc_bg_command 在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒轮询一次运行状态与尾部日志，完成后汇总失败用例与原因。">复制实战指令 4</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="fleet" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">5. 跨设备前缀协同（<code>desk_*</code> / <code>laptop_*</code> 与 <code>target="auto"</code>）</h3>
+                  <span class="tag">多电脑组网</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">支持多连接器自定义 <code>tool_prefix</code> 同窗调用，或 24h 主站单入口传 <code>target="server"</code> / <code>target="local"</code> 路由。</p>
+                <pre class="prompt-code-box">@Cosmos 请对比当前连接的台式机（desk_get_status）与轻薄本（laptop_get_status）的 Python 依赖版本差异；若挂载在 24h 服务器主站，请分别检查 target="server" 与 target="local" 的工作目录状态。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请对比当前连接的台式机（desk_get_status）与轻薄本（laptop_get_status）的 Python 依赖版本差异；若挂载在 24h 服务器主站，请分别检查 target=&quot;server&quot; 与 target=&quot;local&quot; 的工作目录状态。">复制实战指令 5</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="fleet" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">6. 导出 / 导入加密身份备份 PNG 与迁移核验</h3>
+                  <span class="tag">节点迁移</span>
+                </div>
+                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">在 Studio「总览与网页连接 -&gt; 通道 1」点击「导出身份恢复卡 PNG」设口令下载图片；换机后点「导入恢复卡 PNG」恢复原固定网址。</p>
+                <pre class="prompt-code-box">@Cosmos 我已完成身份恢复卡 PNG 导入并切回新电脑，请调用 pc_get_status 核对当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。</pre>
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 我已完成身份恢复卡 PNG 导入并切回新电脑，请调用 pc_get_status 核对当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。">复制实战指令 6</button>
+              </div>
+            </div>
+          </div>
+
+          <ul class="tut-step-list" style="margin-top:12px;">
+            <li class="tut-step-item" data-step-wrap="t1">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t1" aria-label="试用代码审查或文件读取模板">
+              <div class="tut-step-body">
+                <div class="tut-step-title">实操打卡 1：复制任一代码或文档指令卡到网页端执行</div>
+                <p class="tut-step-desc">体验免上传附件直读本地大代码仓、PDF 与截图。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="t2">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t2" aria-label="试用后台任务管理">
+              <div class="tut-step-body">
+                <div class="tut-step-title">实操打卡 2：在 Studio「实时任务与修改恢复」查看后台任务尾部日志</div>
+                <p class="tut-step-desc">验证子进程全程无黑框弹窗且支持一键终止。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="t3">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t3" aria-label="熟悉多机工具前缀或恢复卡">
+              <div class="tut-step-body">
+                <div class="tut-step-title">实操打卡 3：按需配置 <code>tool_prefix</code> 或保存加密身份恢复卡 PNG</div>
+                <p class="tut-step-desc">多台电脑同连一个对话时可在「工具中心与安全开关」修改工具前缀并点「保存工具前缀」。</p>
+              </div>
+            </li>
+          </ul>
+        </article>
+
+        <!-- 教程 5：四档安全围栏、Skills 技能管理与修改历史快照 -->
+        <article class="card tut-module" id="mod-safety" data-module-id="mod-safety">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 5 · 防误改、防越界、防恶意技能供应链</div>
+              <h2 class="card-title">四档安全围栏、Skills 技能管理与修改历史快照</h2>
+              <p class="card-desc" style="margin-bottom:0;">支持顶栏免口令 0.1 秒急停切只读、外层参考库只读分层、三级 AST 技能扫描以及 <code>.undo_history</code> 差异回滚。</p>
+            </div>
+          </div>
+
+          <div class="safety-tier-grid" id="safety-tier-bar" role="tablist" aria-label="四档安全围栏图解">
+            <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="readonly">
+              <span class="tag tag-warn">L1 · 0.1s 急停保护</span>
+              <span class="safety-tier-name">只读浏览模式</span>
+              <span class="safety-tier-code">按钮：切为只读浏览</span>
+            </button>
+            <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="edit_only">
+              <span class="tag tag-info">L2 · 禁跑脚本命令</span>
+              <span class="safety-tier-name">仅改文件禁跑命令</span>
+              <span class="safety-tier-code">按钮：切为仅改文件</span>
+            </button>
+            <button type="button" class="safety-tier-pill active" role="tab" aria-selected="true" data-tier-key="full_dev">
+              <span class="tag tag-ok">L3 · 默认推荐档位</span>
+              <span class="safety-tier-name">工作区内顺畅开发</span>
+              <span class="safety-tier-code">按钮：切为工作区内开发</span>
+            </button>
+            <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="full_power">
+              <span class="tag">L4 · 不限目录带回收箱</span>
+              <span class="safety-tier-name">全盘顺畅开发（不限目录）</span>
+              <span class="safety-tier-code">按钮：开启全盘顺畅开发</span>
+            </button>
+          </div>
+
+          <div class="safety-detail-box" id="safety-live-matrix">
+            <div style="font-weight:700;font-size:13.8px;margin-bottom:4px;" id="safety-detail-title">当前查看：工作区内顺畅开发（L3 默认档位）</div>
+            <div style="font-size:13px;color:var(--text-secondary);" id="safety-detail-desc">仅限在已开放的读写工作目录内修改代码与 Office 文档、运行无窗口终端命令和 Python 脚本；按需开启「受管浏览器包」与「桌面窗口操控包」。在 Studio 顶部随时点击「一键切换只读保护」（免输口令）可在 0.1 秒内切回只读并终止全部在途命令。</div>
+          </div>
+
+          <div class="tut-workbench-grid" style="margin-bottom:12px;">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div class="ws-layer-diagram">
+                <div style="font-size:13px;font-weight:700;color:var(--text);">只读参考目录与读写工作目录分层（最长路径前缀匹配）</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);">
+                  支持单独添加只读参考目录，或将外层参考总库 <code>D:\Projects</code> 设为 <strong>只读参考目录</strong>（<code>readonly_workspace_roots</code>）：AI 可跨全库检索参考代码，误写只读目录立即返回 <code>ERR_READONLY_WORKSPACE</code> 拦截。
+                </div>
+                <div class="ws-layer-inner">
+                  内部当前子项目 <code>D:\Projects\current-app</code> 设为 <strong>可读写工作目录</strong>（<code>workspace_roots</code>）：允许编辑代码与文档、留存写前快照与运行测试。
+                </div>
+              </div>
+
+              <div class="callout callout-info" style="margin-bottom:0;">
+                <strong>Skills 市场三级 AST 安全扫描与宿主隔离：</strong><br>
+                在 Studio「技能中心 -&gt; 在线市场与体检安装」检索 <code>skills.sh</code> / <code>ClawHub</code> / <code>GitHub</code> 后，点「<strong>执行三级 AST 安全体检</strong>」在内存扫描危险调用与环境变量外发（<code>BLOCK</code> 硬拦截，<code>WARN</code> 需审阅源码勾选确认后点「确认安装此技能」）。默认隔离外部工具目录，按需在「工具中心与安全开关」打开「扫描本机全局技能目录（如 .claude / .codex）」（只读扫描）。
+              </div>
+            </div>
+
+            <div class="tut-terminal-box" data-pose-trigger="terminal">
+              <div class="tut-term-top">
+                <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                <span class="tut-term-label">.undo_history 修改历史快照 · 修改前后对比与回滚</span>
+              </div>
+              <div class="tut-sub-seg" role="tablist" aria-label="快照对比示例切换">
+                <button type="button" class="tut-sub-btn active" id="diff-demo-py" data-diff-kind="py">代码文件 Diff 快照</button>
+                <button type="button" class="tut-sub-btn" id="diff-demo-docx" data-diff-kind="docx">Office 文档二进制快照</button>
+              </div>
+              <div class="diff-demo-box" id="diff-demo-viewer">
+                <div style="color:#8B949E;margin-bottom:4px;">快照记录 (.undo_history/20261126_config.py)</div>
+                <span class="diff-del">- TIMEOUT_SECONDS = 5</span>
+                <span class="diff-add">+ TIMEOUT_SECONDS = 20</span>
+              </div>
+              <div class="tut-term-note">
+                被清理的文件禁止物理直删（自动拦截 <code>rm -rf</code> / <code>del</code> / <code>Remove-Item</code>），统一移入安全回收箱支持一键原位恢复；修改失误可在 Studio 点「查看对比 Diff -&gt; 撤回此修改」或发送下方指令回滚：
+              </div>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请列出最近修改过的文件快照，并将刚才修改的文件通过 pc_manage_files(action=&quot;undo&quot;) 撤回到修改前版本。">复制一键回滚指令</button>
+              </div>
+            </div>
+          </div>
+
+          <ul class="tut-step-list">
+            <li class="tut-step-item" data-step-wrap="s1">
+              <input type="checkbox" class="tut-step-chk" data-step-id="s1" aria-label="熟悉顶栏一键切换只读保护按钮">
+              <div class="tut-step-body">
+                <div class="tut-step-title">安全打卡 1：认识 Studio 顶栏免口令「一键切换只读保护」急停按钮</div>
+                <p class="tut-step-desc">点击后 0.1 秒内终止所有在途命令与外设会话并锁定只读模式（Windows 右下角托盘右键菜单同样提供切换入口）。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="s2">
+              <input type="checkbox" class="tut-step-chk" data-step-id="s2" aria-label="配置只读父目录与可读写子目录分层">
+              <div class="tut-step-body">
+                <div class="tut-step-title">安全打卡 2：在「工作区与 Python 环境」设置只读参考目录与读写子目录</div>
+                <p class="tut-step-desc">兼顾跨项目查阅参考代码与防止误改其他仓库。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="s3">
+              <input type="checkbox" class="tut-step-chk" data-step-id="s3" aria-label="体验技能中心三级 AST 安全体检">
+              <div class="tut-step-body">
+                <div class="tut-step-title">安全打卡 3：在「技能中心」查看本机技能详情与三级 AST 体检报告</div>
+                <p class="tut-step-desc">先在内存完成 AST 扫描审阅，确认无风险后再落盘安装。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="s4">
+              <input type="checkbox" class="tut-step-chk" data-step-id="s4" aria-label="查看修改快照对比 Diff 与安全回收箱">
+              <div class="tut-step-body">
+                <div class="tut-step-title">安全打卡 4：在「实时任务与修改恢复」体验「查看对比 Diff」与回收箱恢复</div>
+                <p class="tut-step-desc">代码与 Word / Excel 修改均支持秒级原样撤回。</p>
+              </div>
+            </li>
+          </ul>
+        </article>
+
+        <!-- 教程 6：常见排障与自检速查 -->
+        <article class="card tut-module" id="mod-troubleshoot" data-module-id="mod-troubleshoot">
+          <div class="tut-mod-header">
+            <div>
+              <div class="tut-mod-kicker">教程 6 · 即时关键词筛选与自检命令</div>
+              <h2 class="card-title">常见排障与自检速查</h2>
+              <p class="card-desc" style="margin-bottom:0;">输入报错码（如 <code>NO_PROXY</code>、<code>ERR_OFFICE_FILE_LOCKED</code>、<code>WindowsApps</code>）或点击下方分类标签即时定位解法。</p>
+            </div>
+          </div>
+
+          <div class="ts-filter-bar">
+            <input type="search" id="troubleshoot-search-input" class="tut-input" style="flex:1 1 220px;" placeholder="输入排障关键词（如 NO_PROXY、代理、刷新、WindowsApps、Word、电池）…">
+            <div class="ts-pills-row" id="ts-cat-bar" role="tablist" aria-label="排障分类过滤">
+              <button type="button" class="ts-pill active" data-ts-cat="all">全部 (6)</button>
+              <button type="button" class="ts-pill" data-ts-cat="proxy">代理与网关</button>
+              <button type="button" class="ts-pill" data-ts-cat="schema">连接器刷新</button>
+              <button type="button" class="ts-pill" data-ts-cat="env">Python 与锁表</button>
+              <button type="button" class="ts-pill" data-ts-cat="power">电源与休眠</button>
+            </div>
+          </div>
+
+          <div id="ts-empty-hint" class="callout callout-warn" style="display:none;">未找到匹配的排障条目，请尝试清空关键词或切换为「全部」。</div>
+
+          <div class="ts-list" id="ts-items-list">
+            <details class="ts-item" open data-ts-cat="proxy">
+              <summary>
+                <span>1. Windows 设了 <code>NO_PROXY</code> 但走系统代理时，网关连接停留重连或无法直连 <code>*.workers.dev</code></span>
+                <span class="tag tag-warn">代理与网关</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>现象：</strong>部署通道 2（<code>*.workers.dev</code>）后本地浏览器提示无法直连，或守护进程因环境变量含宽泛 <code>NO_PROXY</code> 影响系统代理识别导致握手超时。</div>
+                <div><strong>排查与解决：</strong>① 若使用规则模式代理软件（如 Clash 规则模式将 <code>workers.dev</code> 设为直连），首次点击连接绑定时请临时切为<strong>全局代理 10 秒</strong>完成一次性授权（绑定后由 Google / OpenAI 云端直连 Cloudflare，日常无需开全局），或在通道 2 填入自定义域名（如免费 <code>*.dpdns.org</code>）免切代理；② 检查系统环境变量 <code>NO_PROXY</code> 是否误填了 <code>*</code>，运行下方自检命令核实实际生效代理与网关连通性。</div>
+                <div>
+                  <button type="button" class="btn btn-tonal btn-sm" data-copy-prompt="cosmos-mcp doctor --json">复制环境自检命令 (cosmos-mcp doctor --json)</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="ts-item" open data-ts-cat="schema">
+              <summary>
+                <span>2. 热开关扩展包（受管浏览器 / 桌面操控）或改前缀后，Gemini / ChatGPT 对话里没出现新工具</span>
+                <span class="tag tag-info">连接器刷新</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>原因：</strong>网页版 Gemini 与网页版 ChatGPT 会在开启对话时缓存当前连接器的工具 Schema 列表，已在途的旧对话不会自动拉取刚开启的扩展包工具。</div>
+                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code> 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>@Cosmos</code>；网页版 ChatGPT 请新建对话并在输入框工具菜单重新勾选 <code>Cosmos</code>。</div>
+              </div>
+            </details>
+
+            <details class="ts-item" open data-ts-cat="env">
+              <summary>
+                <span>3. Windows 11 自动跳过 <code>WindowsApps\python.exe</code> 微软商店空壳解释器机制</span>
+                <span class="tag">Python 环境</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>现象：</strong>全新 Windows 11 电脑默认在 <code>PATH</code> 注入了 <code>WindowsApps\python.exe</code> 商店引导空壳，手动敲命令不执行脚本反而弹出商店。</div>
+                <div><strong>内置处理与指定方法：</strong><code>一键启动_Cosmos_MCP.bat</code> 与守护进程会自动识别并跳过 <code>WindowsApps\python.exe</code> 空壳，按顺序优先使用随包 <code>python-embed</code> 免装环境、已就绪的 <code>.venv</code>，或自动扫描本机官方 Python <code>3.10</code> 至 <code>3.14</code>、Conda 与 <code>uv</code> 解释器；如需为特定项目固定环境，可在 Studio「工作区与 Python 环境 -&gt; 默认 Python / Conda 解释器环境」下拉框选择并点击「保存解释器路径」。</div>
+              </div>
+            </details>
+
+            <details class="ts-item" open data-ts-cat="env">
+              <summary>
+                <span>4. Word 或 Excel 正在打开占用文档时的写入保护提示（<code>ERR_OFFICE_FILE_LOCKED</code>）</span>
+                <span class="tag tag-ok">写入保护</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>现象：</strong>让 <code>@Cosmos</code> 修改 <code>.docx</code> 或 <code>.xlsx</code> 文件时返回 <code>ERR_OFFICE_FILE_LOCKED</code>。</div>
+                <div><strong>原因与解决：</strong>当目标文件正被本地 Word 或 Excel 打开（目录中存在 <code>~$</code> 临时锁文件或操作系统文件句柄独占）时，<code>pc_edit_file</code> 自动拒绝强行写入，避免冲掉您窗口中尚未保存的手工编辑。请先在 Word / Excel 中按 <code>Ctrl+S</code> 保存并关闭该文档，再回到聊天窗口让 AI 重试即可。</div>
+              </div>
+            </details>
+
+            <details class="ts-item" open data-ts-cat="power">
+              <summary>
+                <span>5. 笔记本电池供电自动解除防休眠机制 与 物理合盖断网说明</span>
+                <span class="tag">电源与休眠</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>机制说明：</strong>开启首屏「插电防自动休眠」开关后，台式机与插着交流电源的笔记本会自动维持系统唤醒状态，防止息屏断连；当笔记本拔掉电源改用<strong>电池供电</strong>时，系统会自动解除防休眠以保护电池续航（此外物理合上笔记本盖子仍会触发主板硬件休眠断网）。</div>
+                <div><strong>远程常驻建议：</strong>外出需要用手机 Gemini App 远程操控家中或工位笔记本时，请保持笔记本连接电源适配器且不合盖（可将屏幕亮度调至最低），开盖唤醒或网络切换后约 1.5 秒内会自动重连网关；也可通过通道 3 部署 24h 云服务器主站。</div>
+              </div>
+            </details>
+
+            <details class="ts-item" open data-ts-cat="schema">
+              <summary>
+                <span>6. 网页版 Gemini 每次调用不同工具都弹出确认卡片，未实现连贯执行</span>
+                <span class="tag tag-info">免审批配置</span>
+              </summary>
+              <div class="ts-item-body">
+                <div><strong>原因：</strong>在聊天流弹出的单张工具确认卡上单独点允许，只会针对该单个工具写入局部规则并导致同连接器下其他工具退回逐次确认；或者 Studio 开启了宿主确认开关。</div>
+                <div><strong>解决步骤：</strong>① 打开网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code>，将 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>；② 在本地 Studio「工具中心与安全开关」确认「写文件与运行命令前向宿主请求确认」处于关闭状态。</div>
+              </div>
+            </details>
+          </div>
+
+          <ul class="tut-step-list" style="margin-top:12px;">
+            <li class="tut-step-item" data-step-wrap="ts1">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ts1" aria-label="核对系统代理与网关状态">
+              <div class="tut-step-body">
+                <div class="tut-step-title">自检项 1：确认网关握手正常（无 <code>NO_PROXY</code> 误拦或规则分流阻断）</div>
+                <p class="tut-step-desc">本地 Studio 顶部状态灯显示绿色在线运行。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ts2">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ts2" aria-label="扩展包变更后刷新连接器并开新对话">
+              <div class="tut-step-body">
+                <div class="tut-step-title">自检项 2：开启扩展包或修改工具前缀后新建对话加载最新工具 Schema</div>
+                <p class="tut-step-desc">确保 <code>pc_browser_use</code> 或 <code>pc_cua_window</code> 在新会话中立即可调。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ts3">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ts3" aria-label="修改 Office 文档前先保存关闭本地窗口">
+              <div class="tut-step-body">
+                <div class="tut-step-title">自检项 3：让 AI 修订 Word / Excel 前先保存关闭本地打开的对应文档</div>
+                <p class="tut-step-desc">避免触发 <code>ERR_OFFICE_FILE_LOCKED</code> 锁表保护。</p>
+              </div>
+            </li>
+            <li class="tut-step-item" data-step-wrap="ts4">
+              <input type="checkbox" class="tut-step-chk" data-step-id="ts4" aria-label="外出远控笔记本保持插电不合盖">
+              <div class="tut-step-body">
+                <div class="tut-step-title">自检项 4：外出手机远控笔记本前确认已连接交流电源且未合盖</div>
+                <p class="tut-step-desc">利用交流电自动防休眠保持全天稳定在线。</p>
+              </div>
+            </li>
+          </ul>
+        </article>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/brand-packs.js"></script>
+  <script src="/static/tutorials.js"></script>
+</body>
+</html>

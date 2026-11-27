@@ -1,0 +1,29 @@
+# Quick start (from the `sandbox/` directory or repo root with `-f sandbox/docker-compose.yml`):
+#   1. mkdir -p ../workspace
+#   2. docker compose -f sandbox/docker-compose.yml up -d --build
+#   3. View local Studio unlock password & pairing code:
+#      docker exec cosmos-mcp-sandbox cosmos-mcp status --state-dir /state
+services:
+  cosmos-mcp:
+    build:
+      context: ..
+      dockerfile: sandbox/Dockerfile
+    container_name: cosmos-mcp-sandbox
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      - "${COSMOS_HOST_WORKSPACE:-../workspace}:/workspace:rw"
+      - "cosmos_state:/state"
+    environment:
+      COSMOS_MCP_WORKSPACE: "/workspace"
+      COSMOS_MCP_STATE_DIR: "/state"
+      LOCALPC_MCP_STATE_DIR: "/state"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    restart: unless-stopped
+
+volumes:
+  cosmos_state:

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cosmosomo/webai2pc",
+  "title": "Cosmos MCP",
+  "description": "Safely connect Web Google Gemini (Task Mode) and Web ChatGPT to your PC via Streamable HTTP.",
+  "version": "1.2.1",
+  "repository": {
+    "url": "https://github.com/cosmosomo/WebAI2PC",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "cosmos-mcp",
+      "version": "1.2.1",
+      "transport": {
+        "type": "streamable-http",
+        "url": "https://{host}/mcp"
+      }
+    }
+  ]
+}

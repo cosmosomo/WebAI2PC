@@ -1,0 +1,1 @@
+"""Cosmos MCP subpackage."""

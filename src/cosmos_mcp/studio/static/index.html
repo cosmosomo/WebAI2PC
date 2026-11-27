@@ -1,0 +1,1192 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-style-pack="warm-paper" data-ip-pack="orbit-turn" data-ip-pose="turn-right">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebAI2PC · 本地控制台</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/studio.css">
+  <link rel="stylesheet" href="/static/themes.css">
+</head>
+<body>
+  <!-- Single-Row Compact Sticky Header (48px, Zero 5-Tab Sprawl) -->
+  <header class="top-header">
+    <div class="top-header-inner">
+      <div class="top-bar-row">
+        <div class="brand-block">
+          <div class="brand-logo brand-logo-v2" id="header-brand-logo" data-brand-slot="header-mark" data-brand-locked="v2" aria-hidden="true">
+<svg class="brand-v2-img brand-v2-light" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 272" width="580" height="272" fill="none">
+  <defs>
+    <linearGradient id="gem-v2-l-mark" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <!-- Head mask: unified 4.5u clearance around front orbit (9.5 + 2*4.5 = 18.5) and OpenAI blossom -->
+    <mask id="head-v2-l-mark">
+      <rect x="0" y="0" width="580" height="272" fill="white"/>
+      <g transform="translate(140 136) rotate(-42)">
+        <path d="M 134,0 A 134,47 0 0,1 -134,0" stroke="black" stroke-width="19.5" stroke-linecap="round" fill="none"/>
+      </g>
+      <circle cx="105" cy="224" r="28.5" fill="black"/>
+    </mask>
+    <!-- Orbit mask: unified 4.5u clearance around Gemini sparkle and OpenAI blossom -->
+    <mask id="orbit-v2-l-mark">
+      <rect x="0" y="0" width="580" height="272" fill="white"/>
+      <g transform="translate(169 17) scale(2.06)">
+        <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" fill="black"/>
+      </g>
+      <circle cx="105" cy="224" r="28.5" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- 1. Back half of orbital ring (W=9.5) -->
+  <g mask="url(#orbit-v2-l-mark)" opacity="0.48">
+    <g transform="translate(140 136) rotate(-42)">
+      <path d="M -134,0 A 134,47 0 0,1 134,0" stroke="#111827" stroke-width="9.5" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- 2. Left AI Agent Head -->
+  <g mask="url(#head-v2-l-mark)">
+    <rect x="66" y="70" width="148" height="132" rx="36" fill="#111827"/>
+    <ellipse cx="114" cy="136" rx="9.5" ry="11.5" fill="#FFFFFF"/>
+    <ellipse cx="166" cy="136" rx="9.5" ry="11.5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- 3. Front half of orbital ring (W=9.5) -->
+  <g mask="url(#orbit-v2-l-mark)">
+    <g transform="translate(140 136) rotate(-42)">
+      <path d="M 134,0 A 134,47 0 0,1 -134,0" stroke="#111827" stroke-width="9.5" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- 4. Official Gemini Sparkle -->
+  <g transform="translate(173 21) scale(1.72)">
+    <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" fill="url(#gem-v2-l-mark)"/>
+  </g>
+
+  <!-- 5. Official OpenAI Blossom -->
+  <g transform="translate(81 200) scale(2.0)">
+    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" fill="#00A870"/>
+  </g>
+
+  <!-- 6. Center Arrow (Unified W=9.5) -->
+  <g stroke="#111827" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="258" y1="136" x2="322" y2="136"/>
+    <polyline points="300,113 324,136 300,159" fill="none"/>
+  </g>
+
+  <!-- 7. Right Local PC Terminal (Unified W=9.5 on > and _ pill) -->
+  <g>
+    <rect x="364" y="70" width="180" height="132" rx="24" fill="#111827"/>
+    <polyline points="399,110 425,136 399,162" fill="none" stroke="#FFFFFF" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="438" y="153" width="44" height="9.5" rx="4.75" fill="#00A870"/>
+  </g>
+</svg>
+<svg class="brand-v2-img brand-v2-dark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 272" width="580" height="272" fill="none">
+  <defs>
+    <linearGradient id="gem-v2-d-mark" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#60C5FF"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+    <!-- Head mask: unified 4.5u clearance around front orbit (9.5 + 2*4.5 = 18.5) and OpenAI blossom -->
+    <mask id="head-v2-d-mark">
+      <rect x="0" y="0" width="580" height="272" fill="white"/>
+      <g transform="translate(140 136) rotate(-42)">
+        <path d="M 134,0 A 134,47 0 0,1 -134,0" stroke="black" stroke-width="19.5" stroke-linecap="round" fill="none"/>
+      </g>
+      <circle cx="105" cy="224" r="28.5" fill="black"/>
+    </mask>
+    <!-- Orbit mask: unified 4.5u clearance around Gemini sparkle and OpenAI blossom -->
+    <mask id="orbit-v2-d-mark">
+      <rect x="0" y="0" width="580" height="272" fill="white"/>
+      <g transform="translate(169 17) scale(2.06)">
+        <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" fill="black"/>
+      </g>
+      <circle cx="105" cy="224" r="28.5" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- 1. Back half of orbital ring (W=9.5) -->
+  <g mask="url(#orbit-v2-d-mark)" opacity="0.48">
+    <g transform="translate(140 136) rotate(-42)">
+      <path d="M -134,0 A 134,47 0 0,1 134,0" stroke="#F2F6FA" stroke-width="9.5" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- 2. Left AI Agent Head -->
+  <g mask="url(#head-v2-d-mark)">
+    <rect x="66" y="70" width="148" height="132" rx="36" fill="#F2F6FA"/>
+    <ellipse cx="114" cy="136" rx="9.5" ry="11.5" fill="#080D14"/>
+    <ellipse cx="166" cy="136" rx="9.5" ry="11.5" fill="#080D14"/>
+  </g>
+
+  <!-- 3. Front half of orbital ring (W=9.5) -->
+  <g mask="url(#orbit-v2-d-mark)">
+    <g transform="translate(140 136) rotate(-42)">
+      <path d="M 134,0 A 134,47 0 0,1 -134,0" stroke="#F2F6FA" stroke-width="9.5" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- 4. Official Gemini Sparkle -->
+  <g transform="translate(173 21) scale(1.72)">
+    <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" fill="url(#gem-v2-d-mark)"/>
+  </g>
+
+  <!-- 5. Official OpenAI Blossom -->
+  <g transform="translate(81 200) scale(2.0)">
+    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" fill="#00E5A3"/>
+  </g>
+
+  <!-- 6. Center Arrow (Unified W=9.5) -->
+  <g stroke="#F2F6FA" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="258" y1="136" x2="322" y2="136"/>
+    <polyline points="300,113 324,136 300,159" fill="none"/>
+  </g>
+
+  <!-- 7. Right Local PC Terminal (Unified W=9.5 on > and _ pill) -->
+  <g>
+    <rect x="364" y="70" width="180" height="132" rx="24" fill="#F2F6FA"/>
+    <polyline points="399,110 425,136 399,162" fill="none" stroke="#080D14" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="438" y="153" width="44" height="9.5" rx="4.75" fill="#00E5A3"/>
+  </g>
+</svg>
+          </div>
+          <div class="brand-titles">
+            <h1>WebAI<span class="brand-two">2</span>PC</h1>
+            <div class="brand-sub" id="brand-subtitle">本机设备：__DEVICE_LABEL__ · 版本 v__VERSION__</div>
+          </div>
+          <div class="status-badge __STATUS_KIND__" id="service-status-badge">
+            <span class="status-dot __STATUS_KIND__" id="service-status-dot"></span>
+            <span id="service-status-text">__STATUS_TEXT__</span>
+          </div>
+        </div>
+
+        <div class="header-right-group">
+          <div class="ws-actions header-service-btns">
+            <button type="button" class="btn btn-tonal" id="quick-readonly-btn" title="一键切入只读保护模式">一键只读</button>
+            <button type="button" class="btn btn-primary" id="quick-restore-dev-btn" style="display:none;">恢复开发</button>
+            <a href="/tutorials" class="btn" id="top-open-tutorials-btn" title="打开 6 大场景交互式实战教程与排障速查">实战教程</a>
+            <button type="button" class="btn settings-trigger-btn" id="open-settings-btn" title="打开设置页（连接网关、Python 环境、工具扩展、技能管理、外观风格 · 快捷键 Ctrl+,）">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span>设置</span>
+            </button>
+            <button type="button" class="btn settings-back-btn" id="close-settings-top-btn" style="display:none;">← 返回主控台</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="studio-shell">
+    <div id="toast-banner" class="toast-banner" role="status" aria-live="polite"></div>
+
+    <!-- Local Emergency Re-auth Screen -->
+    <section id="remote-lock-panel" class="card lock-screen" style="display:none;">
+      <h2 class="card-title">输入本机连接口令解锁本地应急开关</h2>
+      <p class="card-desc">安全控制面板默认仅开放本机 <code>127.0.0.1</code> 访问（公网网关自动拦截外部管理请求）；本机会话失效时可输入口令重新验证本地应急开关。</p>
+      <form id="remote-unlock-form" class="copy-row">
+        <input type="password" id="remote-pw-input" class="flex-input" placeholder="输入本机连接口令" autocomplete="off" required>
+        <button type="button" class="btn" data-toggle-pw="remote-pw-input">显示</button>
+        <button type="submit" class="btn btn-primary">验证并解锁</button>
+      </form>
+    </section>
+
+    <!-- Main Studio Content -->
+    <main id="studio-main-content">
+      <!-- Hidden automatically on loopback unlocked sessions so zero space is wasted -->
+      <div class="session-bar unlocked" id="session-unlock-bar" style="display:none;">
+        <div class="session-left">
+          <span class="session-label" id="session-bar-text">本机直连已自动授权</span>
+          <form id="session-unlock-form" class="session-form" style="display:none;">
+            <input type="password" id="session-pw-input" placeholder="输入或粘贴管理口令" autocomplete="off">
+            <button type="button" class="btn" data-toggle-pw="session-pw-input">显示</button>
+            <button type="submit" class="btn btn-primary" id="session-unlock-btn">解锁会话</button>
+          </form>
+        </div>
+        <div class="ws-actions">
+          <button type="button" class="btn btn-sm quick-url-chip" id="quick-bar-copy-url-btn" style="display:none;">复制 /mcp 地址</button>
+        </div>
+      </div>
+
+      <!-- ================================================================ -->
+      <!-- VIEW 1: SINGLE-SCREEN HIGH-DENSITY WORKBENCH (主控首页)           -->
+      <!-- ================================================================ -->
+      <div id="workbench-view" class="workbench-view active">
+        <!-- Compact 1-Line First-Message Wakeup Banner (dismissible) -->
+        <div id="first-wake-banner" class="wake-banner wb-wake-compact" style="display:none;" role="region" aria-label="首句唤醒提示">
+          <div class="wake-banner-top">
+            <span class="wake-banner-title"><span class="wb-online-dot" aria-hidden="true"></span>已连上网页端 AI · 首句发送唤醒词即可开始</span>
+            <div class="ws-actions">
+              <button type="button" class="btn btn-primary btn-sm wake-banner-btn" id="copy-wake-prompt-btn">复制首句唤醒测试词</button>
+              <button type="button" class="btn btn-sm" id="copy-wake-skill-btn">复制 AI 操作守则（推荐存入 Skills）</button>
+              <label class="chk-inline" id="wake-banner-autostart-wrap" style="font-size:12px;">
+                <input type="checkbox" class="apple-switch" id="chk-wake-autostart">
+                <span>开机自启</span>
+              </label>
+              <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-wake-banner-btn" title="隐藏提示条" aria-label="隐藏提示条">×</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TOP BAR CARD: Host Switcher + URL Copy + Collapsible Guide & Pairing Strip -->
+        <section class="card wb-conn-card" id="host-connection-top-card">
+          <div class="wb-conn-head">
+            <div class="wb-conn-head-left">
+              <div class="host-seg-bar wb-host-seg" id="host-scene-switcher" role="tablist" aria-label="目标网页宿主选择">
+                <button type="button" class="host-seg-btn active" role="tab" aria-selected="true" data-host-scene="gemini">网页版 Gemini</button>
+                <button type="button" class="host-seg-btn" role="tab" aria-selected="false" data-host-scene="chatgpt">网页版 ChatGPT</button>
+              </div>
+              <div class="top-gateway-switcher wb-gw-inline" id="top-gateway-switcher" style="display:none;" role="group" aria-label="已开启连接网关切换"></div>
+            </div>
+            <div class="ws-actions">
+              <button type="button" class="btn btn-sm" id="open-settings-gateways-btn" data-open-settings="gateways">配置连接通道 ▸</button>
+            </div>
+          </div>
+
+          <div id="local-loopback-guide" class="callout callout-warn wb-compact-callout" style="display:none;">
+            <span id="local-loopback-warn-title">当前未开启公网 HTTPS 通道，网页端 AI 需要公网 HTTPS 地址才能连接。</span>
+            <button type="button" class="btn btn-primary btn-sm" id="quick-enable-cf-btn">一键开启默认连接网关</button>
+          </div>
+
+          <div id="overview-channel-callout" class="callout callout-info wb-compact-callout" style="display:none;"></div>
+
+          <div id="workers-proxy-alert" class="callout callout-warn wb-compact-callout wb-proxy-callout" style="display:none;">
+            <div class="wb-proxy-callout-body">
+              <div class="callout-strong-title">本机浏览器暂未直连 *.workers.dev（首次绑定提示）</div>
+              <div class="callout-sub-note">若浏览器打开连接器授权页加载缓慢，可在代理软件临时切全局 10 秒完成绑定，或在设置页填写自定义域名。</div>
+            </div>
+            <div class="ws-actions">
+              <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">继续打开 Gemini</a>
+              <button type="button" class="btn btn-sm" id="focus-custom-domain-btn">自定义域名</button>
+              <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-workers-proxy-alert-btn" title="关闭提示" aria-label="关闭提示">×</button>
+            </div>
+          </div>
+
+          <!-- Host Panel A: Web Gemini -->
+          <div class="host-scene-panel active" id="host-panel-gemini" role="tabpanel">
+            <div class="url-action-row wb-url-row">
+              <span class="wb-url-tag" id="mcp-url-label" title="完整读写连接地址（网页版 Gemini 与同账号手机端共用）">Gemini MCP</span>
+              <div class="mono-value" id="mcp-url-box" title="点击直接复制连接地址">正在建立加密连接通道…</div>
+              <button type="button" class="btn btn-primary" id="copy-mcp-url-btn" data-copy-url-kind="mcp">复制连接地址</button>
+              <button type="button" class="btn btn-tonal" id="open-gemini-connectors-btn">打开 Gemini 连接器</button>
+            </div>
+          </div>
+
+          <!-- Host Panel B: Web ChatGPT -->
+          <div class="host-scene-panel" id="host-panel-chatgpt" role="tabpanel">
+            <div class="chatgpt-dual-grid wb-chatgpt-grid">
+              <div class="chatgpt-ep-box">
+                <span class="field-label" id="ro-url-label">个人 Plus / Pro 账号（只读连接地址）</span>
+                <div class="copy-row">
+                  <div class="mono-value" id="ro-url-box" title="点击直接复制只读地址">正在建立加密连接通道…</div>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly">复制只读</button>
+                </div>
+              </div>
+              <div class="chatgpt-ep-box">
+                <span class="field-label" id="chatgpt-full-url-label">Team / Enterprise 工作区账号（全权限地址）</span>
+                <div class="copy-row">
+                  <div class="mono-value" id="chatgpt-full-url-box" title="点击直接复制全权限地址">正在建立加密连接通道…</div>
+                  <button type="button" class="btn btn-tonal btn-sm" id="copy-chatgpt-full-btn" data-copy-url-kind="mcp">复制全权</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Clean Collapsible Footer Strips (Guide + Pairing/Sessions, zero micro-button clutter) -->
+          <div class="wb-fold-strips">
+            <details id="gemini-https-guide-details" class="wb-fold-item">
+              <summary class="wb-fold-summary">
+                <span class="wb-fold-summary-left">
+                  <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                  <span id="gemini-guide-summary-text">首次绑定步骤与唤醒词</span>
+                </span>
+              </summary>
+              <div class="wb-fold-body" id="gemini-https-guide">
+                <ol class="wb-guide-ol">
+                  <li><strong>Gemini：</strong>打开 <code>Customize -&gt; Connectors -&gt; + Custom</code>，名称填写 <code>Cosmos</code>，粘贴上方 <code>https://.../mcp</code>（Client ID / Secret 留空），确认页点「本机一键允许连接」并设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
+                  <li><strong>ChatGPT：</strong>打开 <code>Settings -&gt; Connectors</code> 添加上方对应地址，发消息前在输入框工具菜单勾选 <code>Cosmos</code>。</li>
+                </ol>
+                <div class="ws-actions" style="margin-top:10px;">
+                  <button type="button" class="btn btn-sm" id="copy-gemini-guide-wake-btn">复制唤醒词</button>
+                  <button type="button" class="btn btn-sm" id="copy-host-skill-btn">复制 AI 守则</button>
+                  <button type="button" class="btn btn-sm" id="copy-chatgpt-wake-btn">复制 ChatGPT 首句</button>
+                  <button type="button" class="btn btn-sm" id="copy-chatgpt-skill-btn">复制 ChatGPT 守则</button>
+                  <a href="/tutorials" class="btn btn-sm" id="guide-open-tutorials-link">图文教程</a>
+                </div>
+              </div>
+            </details>
+
+            <details id="pairing-sessions-details" class="wb-fold-item">
+              <summary class="wb-fold-summary">
+                <span class="wb-fold-summary-left">
+                  <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                  <span>配对与已连会话</span>
+                  <span class="wb-inline-metric">6位码 <strong id="dynamic-pair-code-box" class="clickable-code" title="点击复制 6 位动态配对码">------</strong></span>
+                  <span class="wb-inline-metric">核对 <strong id="pair-code-box" class="clickable-code" title="点击复制 4 位核对码">----</strong></span>
+                  <span class="wb-inline-metric">已连 <strong id="sessions-count">0</strong></span>
+                </span>
+              </summary>
+              <div class="wb-fold-body">
+                <div class="ws-actions" style="margin-bottom:10px;">
+                  <button type="button" class="btn btn-sm" id="copy-dynamic-code-btn">复制 6 位码</button>
+                  <button type="button" class="btn btn-sm" id="copy-pair-code-btn">复制核对码</button>
+                </div>
+                <div class="pair-grid-compact wb-pair-expanded">
+                  <div class="pair-mini-box">
+                    <div class="field-head-between" style="margin-bottom:6px;">
+                      <span class="field-label" style="margin:0;">20 位固定备用口令（仅回环被拦截时使用）</span>
+                      <div class="ws-actions">
+                        <button type="button" class="btn btn-sm" id="toggle-pw-btn">显示口令</button>
+                        <button type="button" class="btn btn-sm" id="copy-pw-btn">复制备用口令</button>
+                      </div>
+                    </div>
+                    <div class="mono-value" id="conn-pw-box" data-secret="" data-shown="0" style="padding:7px 12px;font-size:13px;">••••••••••••••••••••</div>
+                  </div>
+                  <div class="pair-mini-box">
+                    <div class="field-head-between" style="margin-bottom:6px;">
+                      <span class="field-label" style="margin:0;">已连接网页会话列表</span>
+                      <button type="button" class="btn btn-danger btn-sm" id="revoke-sessions-btn" disabled>全部断开</button>
+                    </div>
+                    <ul class="item-list compact-session-list" id="authorized-sessions-list" style="margin:0;max-height:130px;overflow-y:auto;"></ul>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- LOWER 2-COLUMN WORKBENCH GRID: Workspaces+Safety (Left) & Activity+Undo (Right) -->
+        <div class="wb-main-grid">
+          <!-- LEFT COLUMN: Workspaces + Clear Live Permission Setting -->
+          <section class="card wb-panel-card" id="wb-workspace-card">
+            <div class="wb-panel-head wb-panel-head-row">
+              <div class="wb-panel-title-wrap">
+                <h2 class="card-title" style="margin:0;">开放工作目录</h2>
+                <span class="tab-count-pill" id="tab-badge-workspace">1</span>
+              </div>
+            </div>
+
+            <!-- Live Permission Setting Box (visually distinct from view tabs) -->
+            <div class="wb-safety-setting-box">
+              <div class="wb-safety-setting-label-row">
+                <span class="wb-safety-setting-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                  <span>当前权限设置</span>
+                  <span class="wb-setting-live-pill">点击即生效</span>
+                </span>
+                <span id="safety-active-hint" class="wb-safety-hint">工作目录内读写与运行</span>
+              </div>
+              <div class="safety-seg-bar safety-radio-group" id="safety-mode-cards" role="radiogroup" aria-label="开发范围与安全档位设置">
+                <button type="button" class="safety-card safety-seg-btn" role="radio" data-safety="readonly" data-target-safety="readonly" title="仅允许读取与搜索，禁止修改文件与运行命令">只读</button>
+                <button type="button" class="safety-card safety-seg-btn" role="radio" data-safety="edit_only" data-target-safety="edit_only" title="仅允许查阅与修改工作目录内文件，禁止运行命令">仅改文件</button>
+                <button type="button" class="safety-card safety-seg-btn active" role="radio" data-safety="full_dev" data-target-safety="full_dev" title="默认推荐：工作目录内读写代码与运行命令">工作区开发</button>
+                <button type="button" class="safety-card safety-seg-btn" role="radio" data-safety="full_power" data-target-safety="full_power" title="不限目录读写文件与运行命令（保留回收箱与密钥隔离）">全盘开发</button>
+              </div>
+              <div id="workspace-fullpower-banner" class="wb-fullpower-note" style="display:none;">
+                当前为「全盘开发（不限目录）」模式，下方列表仅作为未传路径时的默认起始目录。
+              </div>
+            </div>
+
+            <ul class="ws-list wb-ws-list" id="workspace-roots-list"></ul>
+
+            <div class="wb-ws-add-bar">
+              <div class="copy-row">
+                <input type="text" id="manual-ws-input" class="flex-input" placeholder="输入或粘贴文件夹路径，回车添加">
+                <button type="button" class="btn" id="add-manual-ws-btn">添加</button>
+                <button type="button" class="btn btn-primary" id="pick-local-folder-btn" title="调用系统文件夹选择框">选文件夹</button>
+              </div>
+              <div class="wb-ws-add-meta">
+                <label class="chk-inline wb-ro-add-chk">
+                  <input type="checkbox" class="apple-switch apple-switch-sm" id="chk-add-ws-readonly">
+                  <span>以只读参考目录添加</span>
+                </label>
+                <div class="wb-ws-helper-links">
+                  <button type="button" class="btn-link-subtle" id="open-tree-picker-btn" title="展开页内目录树">浏览目录树</button>
+                  <details id="discover-dirs-details" class="wb-discover-details">
+                    <summary class="wb-discover-summary">常用目录快选 ▸</summary>
+                    <div class="wb-discover-body">
+                      <div class="field-head-between" style="margin-bottom:6px;">
+                        <span class="hint-sm" style="margin:0;">自动扫描的本机常见代码目录</span>
+                        <button type="button" class="btn btn-sm" id="refresh-discover-dirs-btn">刷新</button>
+                      </div>
+                      <div class="chip-grid" id="discovered-dirs-list"></div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+
+            <!-- In-Page Directory Tree Browser Drawer -->
+            <div class="tree-drawer" id="fs-tree-drawer">
+              <div class="tree-drawer-head">
+                <strong style="font-size:12.5px;">浏览本机盘符与文件夹</strong>
+                <button type="button" class="btn btn-sm" id="close-tree-btn">收起</button>
+              </div>
+              <div class="ws-actions" id="tree-shortcuts-bar" style="margin-bottom:6px;"></div>
+              <div class="tree-toolbar">
+                <button type="button" class="btn btn-sm" id="tree-drives-btn">盘符</button>
+                <button type="button" class="btn btn-sm" id="tree-up-btn">上一级</button>
+                <div class="tree-current" id="tree-current-path">本机磁盘列表</div>
+              </div>
+              <div class="tree-list" id="tree-entries-list"></div>
+              <div class="tree-footer-bar">
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-tonal btn-sm" id="tree-add-ws-btn">添加当前目录</button>
+                  <button type="button" class="btn btn-sm" id="tree-set-primary-btn">设为主目录</button>
+                </div>
+                <div class="copy-row tree-mkdir-row">
+                  <input type="text" id="tree-mkdir-input" placeholder="新子文件夹名">
+                  <button type="button" class="btn btn-sm" id="tree-mkdir-btn">新建</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- RIGHT COLUMN: Live Activity, Undo Snapshots, Trash & Audit (4-in-1 Compact Segmented Card) -->
+          <section class="card wb-panel-card" id="wb-activity-card">
+            <div class="wb-panel-head">
+              <div class="wb-panel-title-wrap">
+                <h2 class="card-title" style="margin:0;">实时动态与撤回</h2>
+                <span class="tab-count-pill" id="tab-badge-recovery">0</span>
+              </div>
+              <div class="activity-seg-bar" id="activity-pane-switcher" role="tablist" aria-label="动态视图切换">
+                <button type="button" class="activity-seg-btn active" role="tab" aria-selected="true" data-activity-pane="tasks">在途任务</button>
+                <button type="button" class="activity-seg-btn" role="tab" aria-selected="false" data-activity-pane="undo">修改撤回</button>
+                <button type="button" class="activity-seg-btn" role="tab" aria-selected="false" data-activity-pane="trash">回收箱</button>
+                <button type="button" class="activity-seg-btn" role="tab" aria-selected="false" data-activity-pane="audit">调用记录</button>
+              </div>
+            </div>
+
+            <!-- Pane 1: Live Tasks -->
+            <div class="activity-pane active" id="activity-pane-tasks" role="tabpanel">
+              <div class="wb-pane-toolbar">
+                <span class="item-meta">查看后台命令输出流，可随时终止卡死进程</span>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-sm" id="refresh-tasks-btn">刷新</button>
+                  <button type="button" class="btn btn-danger btn-sm" id="kill-all-tasks-btn" disabled>终止全部</button>
+                </div>
+              </div>
+              <ul class="item-list wb-scroll-list" id="tasks-list"></ul>
+              <div id="task-log-panel" style="display:none;">
+                <div class="wb-pane-toolbar" style="margin-top:6px;">
+                  <span class="field-label" id="task-log-title" style="margin:0;">任务实时日志</span>
+                  <div class="ws-actions">
+                    <button type="button" class="btn btn-sm" id="copy-task-log-btn">复制日志</button>
+                    <button type="button" class="btn btn-sm" id="close-log-btn">关闭</button>
+                  </div>
+                </div>
+                <pre class="log-viewer" id="task-log-box"></pre>
+              </div>
+            </div>
+
+            <!-- Pane 2: Undo Snapshots -->
+            <div class="activity-pane" id="activity-pane-undo" role="tabpanel">
+              <div class="wb-pane-toolbar">
+                <span class="item-meta">写文件前自动留存快照，点「查看对比 Diff」审阅后回退</span>
+                <button type="button" class="btn btn-sm" id="refresh-recovery-btn">刷新</button>
+              </div>
+              <ul class="item-list wb-scroll-list" id="undo-snapshots-list"></ul>
+            </div>
+
+            <!-- Pane 3: Trash Vault -->
+            <div class="activity-pane" id="activity-pane-trash" role="tabpanel">
+              <div class="wb-pane-toolbar">
+                <span class="item-meta">被清理的文件保存在可恢复安全回收箱，一键原位还原</span>
+              </div>
+              <ul class="item-list wb-scroll-list" id="trash-items-list"></ul>
+            </div>
+
+            <!-- Pane 4: Audit Events -->
+            <div class="activity-pane" id="activity-pane-audit" role="tabpanel">
+              <div class="wb-pane-toolbar">
+                <div class="filter-pills-bar" id="audit-filter-bar">
+                  <button type="button" class="filter-pill-btn active" data-audit-filter="all">全部</button>
+                  <button type="button" class="filter-pill-btn" data-audit-filter="abnormal">仅异常</button>
+                </div>
+                <div class="ws-actions">
+                  <input type="text" id="audit-search-input" placeholder="筛选工具名…" style="width:120px;padding:3px 8px;font-size:12px;">
+                  <button type="button" class="btn btn-sm" id="refresh-audit-btn">刷新</button>
+                </div>
+              </div>
+              <ul class="item-list wb-scroll-list" id="audit-events-list"></ul>
+            </div>
+          </section>
+        </div>
+
+        <details id="desktop-local-clients-fold" hidden style="display:none;" aria-hidden="true"></details>
+      </div>
+
+      <!-- ================================================================ -->
+      <!-- VIEW 2: UNIFIED SETTINGS CENTER (独立设置页 · 左导航 + 右分类面板) -->
+      <!-- ================================================================ -->
+      <div id="settings-view" class="settings-view" style="display:none;" role="region" aria-label="系统设置">
+        <div class="settings-layout">
+          <!-- Left Sidebar Navigation (5 Categories) -->
+          <aside class="settings-sidebar" aria-label="设置分类">
+            <div class="settings-sidebar-head">
+              <button type="button" class="btn btn-sm settings-sidebar-back" id="close-settings-btn">← 返回主控台</button>
+            </div>
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical">
+              <button type="button" class="settings-nav-btn active" role="tab" aria-selected="true" data-settings-cat="gateways">
+                <span>连接与网关</span>
+                <span class="tab-count-pill" id="tab-badge-overview">待连</span>
+              </button>
+              <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="runtime">
+                <span>环境与系统</span>
+              </button>
+              <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="tools">
+                <span>工具与扩展</span>
+                <span class="tab-count-pill" id="tab-badge-tools">工作区</span>
+              </button>
+              <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="skills">
+                <span>技能管理</span>
+                <span class="tab-count-pill" id="tab-badge-skills">0</span>
+              </button>
+              <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="appearance">
+                <span>外观与图标</span>
+              </button>
+            </nav>
+          </aside>
+
+          <!-- Right Settings Content Panes -->
+          <div class="settings-content">
+            <!-- Category 1: 连接与网关 -->
+            <section class="settings-pane active" id="settings-pane-gateways" role="tabpanel">
+              <div class="settings-pane-head">
+                <h2 class="settings-pane-title">连接与网关</h2>
+                <p class="settings-pane-desc">支持多网关同时开启；点击任意通道展开配置，右上角开关可独立启停。</p>
+              </div>
+
+              <div id="channel-selector" class="settings-block">
+                <div id="channel-tunnel-error-box" class="callout callout-danger" style="display:none;margin-bottom:10px;"></div>
+
+                <div class="conn-cards-grid" id="strict-3-conn-cards">
+                  <!-- Card 1: Zero-Login Out-of-the-Box -->
+                  <div class="conn-mode-card active-card is-enabled" id="conn-card-1" data-card-group="1" data-gateway-id="instant">
+                    <div class="conn-card-header-bar" data-toggle-conn-group="1" role="button" tabindex="0" aria-expanded="false">
+                      <div class="conn-card-header-main">
+                        <div class="conn-card-title-inline">
+                          <span class="conn-card-step-num">第 1 类 · 默认免配置</span>
+                          <h3 class="conn-card-title">一键上手免登录直连</h3>
+                        </div>
+                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡。</p>
+                      </div>
+                      <div class="conn-card-header-right gw-card-ctrl-group">
+                        <span class="tag tag-ok" id="card1-status-badge">当前使用中</span>
+                        <span class="gw-status-pill is-ready" id="gw-pill-instant">已连通</span>
+                        <input type="checkbox" class="apple-switch gw-switch" role="switch" id="gw-switch-instant" data-gw-switch="instant" aria-label="开关第 1 类默认开箱即连网关" checked>
+                        <button type="button" class="conn-expand-toggle" data-toggle-conn-btn="1" aria-label="展开或收起通道 1">配置 ▾</button>
+                      </div>
+                    </div>
+
+                    <div class="gw-card-error" id="gw-err-instant" style="display:none;"></div>
+
+                    <div class="gw-card-url-row" id="gw-url-row-instant" style="display:none;">
+                      <div class="gw-card-url-box" id="gw-url-instant">-</div>
+                      <button type="button" class="btn btn-sm" id="gw-copy-ro-instant" data-gw-copy-ro="instant" style="display:none;">复制 Plus/Pro 只读</button>
+                      <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-instant" data-gw-copy="instant">复制此卡地址</button>
+                    </div>
+
+                    <div class="conn-card-detail-pane">
+                      <div class="conn-card-body">
+                        <div id="card1-fixed-gw-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
+                          已连接公共固定网关（节点标识：<code id="card1-node-id-text">-</code>），关机重启网址保持不变。
+                        </div>
+                        <div id="card1-srvus-fixed-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
+                          当前为免登录固定网址（<code>*.srv.us</code>，本机持久密钥锁定，关机重启网址不变），可导出永久恢复卡。
+                        </div>
+                        <div id="card1-instant-fallback-box" class="callout callout-ok" style="margin:0;padding:8px 11px;font-size:12.5px;">
+                          当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上 <code>*.srv.us</code> 或部署 Cloudflare 网关后可导出永久恢复卡。
+                        </div>
+                      </div>
+                      <div class="ws-actions" style="justify-content:space-between;flex-wrap:wrap;">
+                        <div class="ws-actions">
+                          <button type="button" class="btn btn-tonal btn-sm" id="activate-card1-btn">使用一键上手模式</button>
+                          <button type="button" class="btn btn-sm" id="switch-card1-quick-btn" style="display:none;">改用临时快速通道</button>
+                        </div>
+                        <div class="ws-actions" id="card1-recovery-actions-row">
+                          <button type="button" class="btn btn-sm" id="open-export-id-modal-btn">导出身份恢复卡 PNG</button>
+                          <button type="button" class="btn btn-sm" id="open-import-id-modal-btn">导入恢复卡 PNG</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card 2: Cloudflare 1-Click Permanent Workers Gateway -->
+                  <div class="conn-mode-card" id="conn-card-2" data-card-group="2" data-gateway-id="workers_dev">
+                    <div class="conn-card-header-bar" data-toggle-conn-group="2" role="button" tabindex="0" aria-expanded="false">
+                      <div class="conn-card-header-main">
+                        <div class="conn-card-title-inline">
+                          <span class="conn-card-step-num">第 2 类 · 无服务器固定网址</span>
+                          <h3 class="conn-card-title">Cloudflare 专属固定网关</h3>
+                        </div>
+                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址。</p>
+                      </div>
+                      <div class="conn-card-header-right gw-card-ctrl-group">
+                        <span class="tag tag-info" id="card2-status-badge">终身固定推荐</span>
+                        <span class="gw-status-pill is-disabled" id="gw-pill-workers_dev">未开启</span>
+                        <input type="checkbox" class="apple-switch gw-switch" role="switch" id="gw-switch-workers_dev" data-gw-switch="workers_dev" aria-label="开关第 2 类 Cloudflare 固定网关">
+                        <button type="button" class="conn-expand-toggle" data-toggle-conn-btn="2" aria-label="展开或收起通道 2">配置 ▾</button>
+                      </div>
+                    </div>
+
+                    <div class="gw-card-error" id="gw-err-workers_dev" style="display:none;"></div>
+
+                    <div class="gw-card-url-row" id="gw-url-row-workers_dev" style="display:none;">
+                      <div class="gw-card-url-box" id="gw-url-workers_dev">-</div>
+                      <button type="button" class="btn btn-sm" id="gw-copy-ro-workers_dev" data-gw-copy-ro="workers_dev" style="display:none;">复制 Plus/Pro 只读</button>
+                      <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-workers_dev" data-gw-copy="workers_dev">复制此卡地址</button>
+                    </div>
+
+                    <div class="conn-card-detail-pane">
+                      <div class="conn-card-body">
+                        <div id="cf-saved-hint-box" class="callout callout-info" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
+                          已保存固定网关网址，直接打开右上角开关即可连接，无需重填令牌。
+                        </div>
+                        <div>
+                          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="btn btn-tonal btn-sm" id="open-cf-template-btn" style="white-space:normal;">
+                            第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）
+                          </a>
+                        </div>
+                        <div class="grid-2" style="margin-bottom:0;">
+                          <div>
+                            <span class="field-label">第 2 步：粘贴 API 令牌（部署后立即销毁）</span>
+                            <div class="copy-row">
+                              <input type="password" id="cf-api-token-input" class="flex-input" placeholder="粘贴生成的 Cloudflare API 令牌" autocomplete="off">
+                              <button type="button" class="btn btn-sm" data-toggle-pw="cf-api-token-input">显示</button>
+                            </div>
+                          </div>
+                          <div>
+                            <span class="field-label">选填：自定义域名（Active Zone，国内免切代理）</span>
+                            <input type="text" id="cf-custom-domain-input" placeholder="例如 mcp.yourdomain.dpdns.org" style="width:100%;">
+                          </div>
+                        </div>
+                        <div id="cf-account-select-wrap" style="display:none;">
+                          <span class="field-label">检测到多个 Cloudflare 账号，请选择部署目标账号：</span>
+                          <select id="cf-account-select" style="width:100%;"></select>
+                        </div>
+                        <div id="cf-deploy-ok-note" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;"></div>
+                      </div>
+                      <div>
+                        <button type="button" class="btn btn-primary btn-sm" id="deploy-cf-workers-btn">一键部署并开启（约 3 秒）</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card 3: Own Server 24h Hub & Custom Fixed HTTPS Domain -->
+                  <div class="conn-mode-card" id="conn-card-3" data-card-group="3" data-gateway-id="self_hosted">
+                    <div class="conn-card-header-bar" data-toggle-conn-group="3" role="button" tabindex="0" aria-expanded="false">
+                      <div class="conn-card-header-main">
+                        <div class="conn-card-title-inline">
+                          <span class="conn-card-step-num">第 3 类 · 自有资产合一</span>
+                          <h3 class="conn-card-title">自有云服务器 24h 主站 或 自有固定域名</h3>
+                        </div>
+                        <p class="conn-card-sub">一键在云服务器建 24h 主站，或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
+                      </div>
+                      <div class="conn-card-header-right gw-card-ctrl-group">
+                        <span class="tag tag-muted" id="card3-status-badge">服务器 / 域名</span>
+                        <span class="gw-status-pill is-disabled" id="gw-pill-self_hosted">未开启</span>
+                        <input type="checkbox" class="apple-switch gw-switch" role="switch" id="gw-switch-self_hosted" data-gw-switch="self_hosted" aria-label="开关第 3 类自有资产网关">
+                        <button type="button" class="conn-expand-toggle" data-toggle-conn-btn="3" aria-label="展开或收起通道 3">配置 ▾</button>
+                      </div>
+                    </div>
+
+                    <div class="gw-card-error" id="gw-err-self_hosted" style="display:none;"></div>
+
+                    <div class="gw-card-url-row" id="gw-url-row-self_hosted" style="display:none;">
+                      <div class="gw-card-url-box" id="gw-url-self_hosted">-</div>
+                      <button type="button" class="btn btn-sm" id="gw-copy-ro-self_hosted" data-gw-copy-ro="self_hosted" style="display:none;">复制 Plus/Pro 只读</button>
+                      <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-self_hosted" data-gw-copy="self_hosted">复制此卡地址</button>
+                    </div>
+
+                    <div class="conn-card-detail-pane">
+                      <div class="conn-card-body">
+                        <div class="card3-subtabs" role="tablist" aria-label="自有资产接入子项">
+                          <button type="button" class="card3-subtab-btn active" role="tab" aria-selected="true" data-c3-tab="vps_hub">自有服务器建 24h 主站</button>
+                          <button type="button" class="card3-subtab-btn channel-option" role="tab" aria-selected="false" data-c3-tab="custom_domain" data-mode="custom">自有固定域名 / 通用 HTTPS 反代</button>
+                        </div>
+
+                        <div class="card3-pane active" id="c3-pane-vps-hub">
+                          <div class="grid-2" style="margin-bottom:0;">
+                            <div>
+                              <span class="field-label">服务器公网 IP（必填）</span>
+                              <input type="text" id="vps-prov-host-input" placeholder="例如 203.0.113.10" style="width:100%;">
+                            </div>
+                            <div>
+                              <span class="field-label">SSH 密码（已配密钥可留空，不落盘）</span>
+                              <div class="copy-row">
+                                <input type="password" id="vps-prov-pw-input" class="flex-input" placeholder="输入服务器 SSH 密码" autocomplete="off">
+                                <button type="button" class="btn btn-sm" data-toggle-pw="vps-prov-pw-input">显示</button>
+                              </div>
+                            </div>
+                          </div>
+                          <label class="chk-inline" style="font-size:12px;">
+                            <input type="checkbox" class="apple-switch" id="chk-vps-use-ssh-key">
+                            <span>使用本机默认 SSH 密钥免密登录</span>
+                          </label>
+                          <details style="font-size:12px;color:var(--muted);">
+                            <summary style="cursor:pointer;">高级项：SSH 私钥路径 / 端口 / 用户名 / 选填域名</summary>
+                            <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+                              <input type="text" id="vps-prov-key-input" placeholder="选填 SSH 私钥路径（如 ~/.ssh/id_ed25519）" style="width:100%;">
+                              <div class="copy-row">
+                                <input type="text" id="vps-prov-user-input" class="flex-input" value="root" placeholder="用户名 (默认 root)">
+                                <input type="text" id="vps-prov-port-input" style="width:96px;" value="22" placeholder="端口 22">
+                              </div>
+                              <input type="text" id="vps-prov-domain-input" placeholder="选填绑定域名（留空自动签发公网 IP 证书）" style="width:100%;">
+                            </div>
+                          </details>
+                          <div>
+                            <button type="button" class="btn btn-primary btn-sm" id="vps-provision-btn">一键部署 24h 主站并开启</button>
+                          </div>
+                        </div>
+
+                        <div class="card3-pane" id="c3-pane-custom-domain">
+                          <div class="grid-2" style="margin-bottom:0;">
+                            <div>
+                              <span class="field-label">固定公网 HTTPS 域名</span>
+                              <input type="text" id="custom-url-input" placeholder="例如 https://mcp.yourdomain.com" style="width:100%;">
+                            </div>
+                            <div>
+                              <span class="field-label">选填：Cloudflare Named Tunnel 令牌</span>
+                              <div class="copy-row">
+                                <input type="password" id="cf-token-input" class="flex-input" placeholder="粘贴 eyJ... 令牌（已反代留空）" autocomplete="off">
+                                <button type="button" class="btn btn-sm" data-toggle-pw="cf-token-input">显示</button>
+                              </div>
+                            </div>
+                          </div>
+                          <details id="vps-ssh-details" style="font-size:12px;color:var(--muted);">
+                            <summary class="channel-option" data-mode="vps" style="cursor:pointer;">已有 SSH 免密反向隧道参数（可选）</summary>
+                            <div class="grid-3-fields" style="margin-top:8px;">
+                              <input type="text" id="vps-ssh-input" placeholder="SSH 目标（如 root@vps.example.com）" style="width:100%;">
+                              <input type="text" id="vps-remote-port-input" value="18096" placeholder="远端转发端口（默认 18096）" style="width:100%;">
+                              <input type="text" id="vps-public-url-input" placeholder="公网 HTTPS 访问地址" style="width:100%;">
+                            </div>
+                          </details>
+                          <div>
+                            <button type="button" class="btn btn-primary btn-sm" id="save-channel-btn">保存并开启此网关</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Category 2: 环境与系统 -->
+            <section class="settings-pane" id="settings-pane-runtime" role="tabpanel">
+              <div class="settings-pane-head">
+                <h2 class="settings-pane-title">环境与系统</h2>
+                <p class="settings-pane-desc">配置默认 Python / Conda 解释器、开机与防休眠选项，以及本地后台服务控制。</p>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">默认 Python / Conda 解释器</div>
+                <div class="settings-row-stack">
+                  <div class="field-block" style="margin-bottom:8px;">
+                    <span class="field-label">检测到的可用解释器</span>
+                    <select id="python-candidates-select" class="full-select">
+                      <option value="">自动识别项目虚拟环境或系统默认解释器</option>
+                    </select>
+                  </div>
+                  <div class="field-block" style="margin-bottom:0;">
+                    <span class="field-label">自定义解释器路径（留空自动探测）</span>
+                    <div class="copy-row">
+                      <input type="text" id="python-path-input" class="flex-input" placeholder="填写解释器路径或项目 .venv 目录">
+                      <button type="button" class="btn btn-tonal btn-sm" id="save-python-btn">保存路径</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">系统运行行为</div>
+                <div class="settings-rows-list">
+                  <label class="setting-row">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">开机自动启动</div>
+                      <div class="setting-row-sub">下次开机自动在后台拉起本地服务与已开启网关</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-autostart">
+                  </label>
+                  <label class="setting-row">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">插电防自动休眠</div>
+                      <div class="setting-row-sub">外接电源时阻止系统睡眠（笔记本物理合盖仍会由硬件断网）</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-keep-awake">
+                  </label>
+                  <label class="setting-row" id="tray-enabled-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">显示系统托盘状态图标</div>
+                      <div class="setting-row-sub">在系统右下角显示在线灯，支持右键快速打开控制台或切只读</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-tray-enabled" checked>
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-group settings-danger-group">
+                <div class="settings-group-title">服务控制</div>
+                <div id="service-control-confirm-bar" class="callout callout-warn service-confirm-bar" style="display:none;margin-bottom:10px;">
+                  <div id="service-control-confirm-text" class="service-confirm-text">确认执行后台服务操作？</div>
+                  <div class="ws-actions">
+                    <button type="button" class="btn btn-danger btn-sm" id="confirm-service-action-btn">确认执行</button>
+                    <button type="button" class="btn btn-sm" id="cancel-service-action-btn">取消</button>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-row-text">
+                    <div class="setting-row-title">本地后台服务启停</div>
+                    <div class="setting-row-sub">重启服务会短暂中断当前正在执行的工具调用</div>
+                  </div>
+                  <div class="ws-actions">
+                    <button type="button" class="btn btn-sm" id="session-lock-btn" style="display:none;">锁定远程会话</button>
+                    <button type="button" class="btn btn-sm" id="top-restart-service-btn">重启服务</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="top-stop-service-btn">停止服务</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Category 3: 工具与扩展 -->
+            <section class="settings-pane" id="settings-pane-tools" role="tabpanel">
+              <div class="settings-pane-head">
+                <h2 class="settings-pane-title">工具与扩展</h2>
+                <p class="settings-pane-desc">控制确认策略、可选扩展包、多机工具前缀与 16 项内置核心工具清单。</p>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">安全确认与扩展包</div>
+                <div class="settings-rows-list">
+                  <label class="setting-row" id="confirm-popups-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">写文件与运行命令前向宿主请求确认 <span class="tag tag-muted ro-auto-hint" id="confirm-popups-ro-hint" style="display:none;">只读模式自动关闭</span></div>
+                      <div class="setting-row-sub">关闭时配合宿主 Always allow 保持连贯开发；开启后每次写入或运行命令都会弹确认</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-confirm-popups">
+                  </label>
+                  <label class="setting-row" id="pack-browser-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">受管浏览器包 <span class="tag tag-muted ro-auto-hint" id="pack-browser-ro-hint" style="display:none;">只读模式自动关闭</span></div>
+                      <div class="setting-row-sub">启动独立隔离浏览器完成网页查阅与截图，不触碰个人浏览器窗口</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-pack-browser">
+                  </label>
+                  <label class="setting-row" id="pack-desktop-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">桌面窗口操控包 <span class="tag tag-muted ro-auto-hint" id="pack-desktop-ro-hint" style="display:none;">只读模式自动关闭</span></div>
+                      <div class="setting-row-sub">提供离屏窗口画面感知与受控界面辅助，检测到键鼠活跃时自动礼让</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-pack-desktop">
+                  </label>
+                  <label class="setting-row" id="scan-host-skills-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">扫描本机全局技能目录（如 .claude / .codex）</div>
+                      <div class="setting-row-sub">默认关闭以保持项目与受管技能库隔离；开启后只读发现本机其他编程工具全局技能</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-scan-host-skills">
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">多设备工具前缀</div>
+                <div class="settings-row-stack">
+                  <span class="field-label">本机工具前缀（单台电脑保持默认 pc 即可；多电脑同连一个窗口时区分设备，如 desk / laptop）</span>
+                  <div class="copy-row">
+                    <input type="text" id="tool-prefix-input" class="flex-input" placeholder="默认 pc（小写字母、数字与下划线）" maxlength="16">
+                    <button type="button" class="btn btn-tonal btn-sm" id="save-tool-prefix-btn">保存工具前缀</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <details class="wb-fold-item" id="core-tools-details">
+                  <summary class="wb-fold-summary">
+                    <span class="wb-fold-summary-left">
+                      <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                      <span id="core-tools-title">默认 16 项核心工具说明</span>
+                    </span>
+                    <span class="item-meta">点击展开速查表</span>
+                  </summary>
+                  <div class="wb-fold-body">
+                    <div class="wb-pane-toolbar" style="margin-bottom:8px;">
+                      <span class="item-meta" id="core-tools-desc">开箱内置覆盖代码阅读、精准编辑、无窗口命令执行与技能管理的 16 项核心工具。</span>
+                      <div class="ws-actions">
+                        <div class="filter-pills-bar" id="core-tools-filter-bar">
+                          <button type="button" class="filter-pill-btn active" data-tool-filter="all">全部</button>
+                          <button type="button" class="filter-pill-btn" data-tool-filter="readonly">只读</button>
+                          <button type="button" class="filter-pill-btn" data-tool-filter="write">修改</button>
+                          <button type="button" class="filter-pill-btn" data-tool-filter="exec">命令</button>
+                        </div>
+                        <button type="button" class="btn btn-sm" id="toggle-core-tools-btn" style="display:none;">收起</button>
+                      </div>
+                    </div>
+                    <div class="tools-grid compact-tools-list" id="core-tools-grid"></div>
+                  </div>
+                </details>
+              </div>
+            </section>
+
+            <!-- Category 4: 技能管理 -->
+            <section class="settings-pane" id="settings-pane-skills" role="tabpanel">
+              <div class="settings-pane-head">
+                <div class="card-head-flex" style="margin-bottom:0;">
+                  <div>
+                    <h2 class="settings-pane-title">技能管理</h2>
+                    <p class="settings-pane-desc">统一管理工作区与受管技能库，内置三级 AST 供应链安全体检与回收箱。</p>
+                  </div>
+                  <button type="button" class="btn btn-tonal btn-sm" id="skill-refresh-all-btn">刷新技能列表</button>
+                </div>
+              </div>
+
+              <div class="callout callout-info wb-compact-callout" id="skills-summary-banner" style="margin-bottom:10px;">正在读取本机技能库状态…</div>
+
+              <div class="skills-subtabs" role="tablist" aria-label="技能中心子视图">
+                <button type="button" class="skills-subtab-btn active" role="tab" aria-selected="true" data-skill-subtab="local">本机技能与详情</button>
+                <button type="button" class="skills-subtab-btn" role="tab" aria-selected="false" data-skill-subtab="market">在线市场与体检安装</button>
+                <button type="button" class="skills-subtab-btn" role="tab" aria-selected="false" data-skill-subtab="create">新建技能</button>
+                <button type="button" class="skills-subtab-btn" role="tab" aria-selected="false" data-skill-subtab="trash">安全回收箱 (<span id="skill-trash-badge-count">0</span>)</button>
+              </div>
+
+              <!-- Subview A: Local Skills -->
+              <div class="skills-subview active" id="skills-subview-local">
+                <div class="copy-row" style="margin-bottom:10px;">
+                  <input type="text" id="skill-local-search-input" class="flex-input" placeholder="输入名称或关键词检索技能">
+                  <select id="skill-local-scope-select" class="scope-select">
+                    <option value="all">全部来源</option>
+                    <option value="project">当前工作区</option>
+                    <option value="managed">受管技能库</option>
+                    <option value="host">其他本地目录</option>
+                  </select>
+                  <button type="button" class="btn btn-tonal btn-sm" id="skill-local-search-btn">检索</button>
+                </div>
+
+                <div class="skills-split">
+                  <div class="skills-list-col">
+                    <ul class="item-list" id="skills-items-list"></ul>
+                  </div>
+                  <div class="skills-detail-col" id="skill-detail-panel">
+                    <div class="skill-detail-header">
+                      <div style="min-width:0;flex:1 1 180px;">
+                        <h3 class="skill-detail-title" id="skill-detail-title">点击左侧技能查看详情与 AST 体检结果</h3>
+                        <div class="item-meta" id="skill-detail-meta">未选中技能</div>
+                      </div>
+                      <div class="ws-actions" id="skill-detail-actions"></div>
+                    </div>
+
+                    <div id="skill-detail-audit-box" style="display:none;margin-top:8px;">
+                      <div class="field-label">本地技能三级 AST 安全体检报告</div>
+                      <div id="skill-detail-audit-summary" class="callout callout-info" style="margin-bottom:8px;"></div>
+                      <div class="table-scroll" id="skill-detail-findings-wrap" style="display:none;">
+                        <table class="audit-table">
+                          <thead><tr><th>级别</th><th>规则</th><th>文件 (file_rel)</th><th>详情说明</th></tr></thead>
+                          <tbody id="skill-detail-findings-tbody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div id="skill-detail-files-bar" class="ws-actions" style="margin-top:8px;display:none;"></div>
+                    <pre class="log-viewer skill-md-viewer" id="skill-detail-content" style="display:none;"></pre>
+                  </div>
+                </div>
+
+                <details class="inline-details" style="margin-top:10px;">
+                  <summary class="inline-summary">
+                    <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                    <span>查看已自动扫描的技能目录清单</span>
+                  </summary>
+                  <div class="mono-value" id="skills-checked-dirs" style="margin-top:8px;">-</div>
+                </details>
+              </div>
+
+              <!-- Subview B: Market + 3-Tier AST Vet -->
+              <div class="skills-subview" id="skills-subview-market">
+                <div class="field-block">
+                  <span class="field-label">在线技能市场聚合检索（skills.sh / ClawHub / GitHub / MCP Registry）</span>
+                  <div class="copy-row">
+                    <input type="text" id="skill-market-query-input" class="flex-input" placeholder="输入关键词后按回车或点击搜索，例如 interface-design, pdf">
+                    <button type="button" class="btn btn-tonal btn-sm" id="skill-market-search-btn">搜索在线市场</button>
+                  </div>
+                  <div class="market-source-pills" style="margin-top:6px;">
+                    <label class="source-pill-label"><input type="checkbox" class="market-src-chk" value="skills_sh" checked><span>skills.sh</span></label>
+                    <label class="source-pill-label"><input type="checkbox" class="market-src-chk" value="clawhub" checked><span>ClawHub</span></label>
+                    <label class="source-pill-label"><input type="checkbox" class="market-src-chk" value="github" checked><span>GitHub</span></label>
+                    <label class="source-pill-label"><input type="checkbox" class="market-src-chk" value="mcp_registry"><span>MCP Registry</span></label>
+                  </div>
+                </div>
+
+                <ul class="item-list" id="skill-market-results" style="margin-bottom:12px;"></ul>
+
+                <div class="vet-install-box">
+                  <h3 style="margin:0 0 4px;font-size:14px;">先体检后安装（三级 AST 供应链安全门禁）</h3>
+                  <p class="card-desc" style="margin-bottom:8px;">粘贴 GitHub 仓库、ClawHub 标识或本地目录路径，先在内存中扫描再决定是否安装。</p>
+                  <div class="copy-row" style="margin-bottom:8px;">
+                    <input type="text" id="skill-vet-source-input" class="flex-input" placeholder="输入 owner/repo、https://github.com/... 或本地目录路径">
+                    <select id="skill-install-scope-select" class="scope-select">
+                      <option value="managed">受管技能库</option>
+                      <option value="project">主工作区项目</option>
+                    </select>
+                    <button type="button" class="btn btn-tonal btn-sm" id="skill-vet-btn">执行 AST 体检</button>
+                  </div>
+
+                  <div id="skill-install-error-banner" class="callout callout-danger" style="display:none;"></div>
+
+                  <div id="skill-vet-report-box" style="display:none;">
+                    <div id="skill-vet-verdict-banner" class="callout callout-info"></div>
+                    <div class="table-scroll" id="skill-vet-findings-wrap" style="margin-bottom:8px;">
+                      <table class="audit-table">
+                        <thead><tr><th>级别</th><th>规则编号</th><th>定位文件 (file_rel)</th><th>检测说明与修复建议</th></tr></thead>
+                        <tbody id="skill-vet-findings-tbody"></tbody>
+                      </table>
+                    </div>
+                    <div class="ws-actions" id="skill-vet-file-tabs" style="margin-bottom:6px;"></div>
+                    <pre class="log-viewer skill-md-viewer" id="skill-vet-code-preview"></pre>
+                    <div class="vet-confirm-controls">
+                      <div class="vet-switches-stack">
+                        <label class="chk-inline" id="skill-confirm-warn-wrap">
+                          <input type="checkbox" class="apple-switch" id="skill-confirm-warn-chk">
+                          <span>我已逐条审阅上述 WARN 风险项与源码文件，确认继续安装</span>
+                        </label>
+                        <label class="chk-inline">
+                          <input type="checkbox" class="apple-switch" id="skill-overwrite-chk">
+                          <span>若存在同名技能，先移入安全回收箱再覆盖</span>
+                        </label>
+                      </div>
+                      <button type="button" class="btn btn-primary btn-sm" id="skill-commit-install-btn">确认安装此技能</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Subview C: Create Skill -->
+              <div class="skills-subview" id="skills-subview-create">
+                <form id="skill-create-form">
+                  <div class="grid-2" style="margin-bottom:10px;">
+                    <div class="field-block" style="margin-bottom:0;">
+                      <span class="field-label">新技能名称（英文/数字/连字符）</span>
+                      <input type="text" id="skill-create-name-input" placeholder="例如 my-workflow-helper" style="width:100%;" required>
+                    </div>
+                    <div class="field-block" style="margin-bottom:0;">
+                      <span class="field-label">保存位置范围</span>
+                      <div class="copy-row">
+                        <select id="skill-create-scope-select" class="flex-select">
+                          <option value="managed">受管技能库（所有工作区共用）</option>
+                          <option value="project">当前主工作区（.agents/skills/）</option>
+                        </select>
+                        <button type="button" class="btn btn-tonal btn-sm" id="skill-create-template-btn">填入模板</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field-block">
+                    <span class="field-label">SKILL.md 完整内容</span>
+                    <textarea id="skill-create-content-input" rows="9" class="skill-editor-textarea" placeholder="---&#10;name: my-workflow-helper&#10;description: 简要说明适用场景与规则&#10;---&#10;&#10;# 执行步骤&#10;1. ..."></textarea>
+                  </div>
+                  <div id="skill-create-error-banner" class="callout callout-danger" style="display:none;"></div>
+                  <div class="vet-confirm-controls">
+                    <div class="vet-switches-stack">
+                      <label class="chk-inline">
+                        <input type="checkbox" class="apple-switch" id="skill-create-warn-chk">
+                        <span>若触发 WARN 提示，确认继续保存</span>
+                      </label>
+                      <label class="chk-inline">
+                        <input type="checkbox" class="apple-switch" id="skill-create-force-chk">
+                        <span>若同名技能已存在，先移入回收箱再覆盖</span>
+                      </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm" id="skill-create-submit-btn">安全体检并创建技能</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Subview D: Skill Trash -->
+              <div class="skills-subview" id="skills-subview-trash">
+                <div class="wb-pane-toolbar" style="margin-bottom:8px;">
+                  <span class="item-meta">移入安全回收箱的技能保留完整目录与哈希，可随时一键恢复。</span>
+                  <button type="button" class="btn btn-sm" id="skill-trash-refresh-btn">刷新回收箱</button>
+                </div>
+                <ul class="item-list" id="skill-trash-list"></ul>
+              </div>
+            </section>
+
+            <!-- Category 5: 外观与图标 -->
+            <section class="settings-pane" id="settings-pane-appearance" role="tabpanel">
+              <div class="settings-pane-head">
+                <h2 class="settings-pane-title">外观与图标</h2>
+                <p class="settings-pane-desc">切换浅深模式、4 套主题风格包、4 套 IP 图标与转向姿态，偏好保存在本地浏览器。</p>
+              </div>
+              <div data-appearance-switcher data-appearance-inline="1" id="settings-appearance-mount"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Identity Recovery PNG Export / Import Modal -->
+  <div id="identity-png-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="identity-modal-title">
+    <div class="modal-card" style="max-width:520px;">
+      <div class="modal-head">
+        <div>
+          <h3 id="identity-modal-title" class="modal-title-text">节点身份恢复卡 PNG</h3>
+          <div id="identity-modal-sub" class="item-meta">通过加密 PNG 图片备份或迁移本机固定节点身份</div>
+        </div>
+        <button type="button" class="btn btn-sm" id="close-identity-modal-btn">关闭</button>
+      </div>
+      <div style="padding:14px 4px 4px;">
+        <div id="identity-export-pane">
+          <div class="field-block">
+            <span class="field-label">设置恢复卡加密口令（恢复时需输入同一口令）</span>
+            <div class="copy-row">
+              <input type="password" id="identity-export-pw-input" class="flex-input" placeholder="输入加密保护口令" autocomplete="off">
+              <button type="button" class="btn btn-sm" data-toggle-pw="identity-export-pw-input">显示</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" id="confirm-export-png-btn" style="width:100%;">生成并下载身份恢复卡 PNG</button>
+        </div>
+
+        <div id="identity-import-pane" style="display:none;">
+          <div class="field-block">
+            <span class="field-label">选择备份的身份恢复卡 PNG 文件</span>
+            <input type="file" id="identity-import-file-input" accept="image/png" style="width:100%;">
+          </div>
+          <div class="field-block">
+            <span class="field-label">输入导出时设置的加密口令</span>
+            <div class="copy-row">
+              <input type="password" id="identity-import-pw-input" class="flex-input" placeholder="输入恢复口令" autocomplete="off">
+              <button type="button" class="btn btn-sm" data-toggle-pw="identity-import-pw-input">显示</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" id="confirm-import-png-btn" style="width:100%;">解密并恢复固定节点身份</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- .undo_history Snapshot Diff Preview Modal -->
+  <div id="diff-preview-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="diff-modal-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div style="min-width:0;flex:1 1 200px;">
+          <h3 id="diff-modal-title" class="modal-title-text">文件修改前后对比 (Diff)</h3>
+          <div id="diff-modal-meta" class="item-meta">-</div>
+        </div>
+        <div class="ws-actions">
+          <button type="button" class="btn btn-danger btn-sm" id="modal-undo-confirm-btn">撤回此修改</button>
+          <button type="button" class="btn btn-primary btn-sm" id="close-diff-modal-btn">关闭</button>
+        </div>
+      </div>
+      <div class="diff-viewer-wrap" id="diff-modal-body"></div>
+    </div>
+  </div>
+
+  <script id="studio-boot-data" type="application/json">__STUDIO_BOOT_JSON__</script>
+  <script src="/static/brand-packs.js" defer></script>
+  <script src="/static/studio.js" defer></script>
+</body>
+</html>

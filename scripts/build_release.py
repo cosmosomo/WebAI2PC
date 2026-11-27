@@ -1,0 +1,900 @@
+"""Build `dist/Cosmos-MCP-v<version>.zip` and run repo-wide + archive byte-level release hygiene gates (`--check`)."""
+from __future__ import annotations
+
+import argparse
+import getpass
+import hashlib
+import io
+import os
+from pathlib import Path
+import re
+import socket
+import sys
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+import zipfile
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_VERSION = "1.2.1"
+QUICKSTART_TXT_NAME = "01_新手三步上手.txt"
+
+EXCLUDED_DIR_NAMES: frozenset[str] = frozenset(
+    {
+        "build",
+        "dist",
+        "__pycache__",
+        ".git",
+        ".worktrees",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".undo_history",
+        ".venv",
+        "venv",
+        "wheels",
+        "python-embed",
+        ".benchmarks",
+    }
+)
+EXCLUDED_SUFFIXES: Tuple[str, ...] = (".pyc", ".pyo", ".pyd", ".bak")
+
+REQUIRED_ROOT_FILES: Tuple[str, ...] = (
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "CONTRIBUTING.md",
+    ".env.example",
+    ".gitattributes",
+    "pyproject.toml",
+    "README.md",
+    "AGENTS.md",
+    "PRIVACY.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "manifest.json",
+    "server.json",
+)
+# Internal design drafts under `.interface-design/` are intentionally excluded from public release bundles.
+REQUIRED_DESIGN_FILES: Tuple[str, ...] = ()
+REQUIRED_DOC_FILES: Tuple[str, ...] = (
+    "docs/01_网页版Gemini与手机远程连接教程.md",
+    "docs/02_网页版ChatGPT工作区与个人只读接入教程.md",
+    "docs/03_Cosmos_Studio面板与扩展包指南.md",
+    "docs/04_三大连接通道选型与网络排障手册.md",
+    "docs/05_多智能体并行子任务与实战工作流教程.md",
+    "docs/AI_SETUP_GUIDE.md",
+    "host_skills/SKILL.md",
+    "host_skills/webai2pc-setup-tutorial/SKILL.md",
+)
+REQUIRED_STUDIO_STATIC_FILES: Tuple[str, ...] = (
+    "src/cosmos_mcp/studio/static/index.html",
+    "src/cosmos_mcp/studio/static/studio.css",
+    "src/cosmos_mcp/studio/static/studio.js",
+    "src/cosmos_mcp/studio/static/brand-packs.js",
+    "src/cosmos_mcp/studio/static/themes.css",
+    "src/cosmos_mcp/studio/static/tutorials.html",
+    "src/cosmos_mcp/studio/static/tutorials.js",
+    "src/cosmos_mcp/studio/static/favicon.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-icon-v2-dark.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-icon-v2-light.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-logo-v2-dark.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-logo-v2-light.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-mark-v2-dark.svg",
+    "src/cosmos_mcp/studio/static/brand/webai2pc-mark-v2-light.svg",
+)
+REQUIRED_SANDBOX_FILES: Tuple[str, ...] = (
+    "sandbox/Dockerfile",
+    "sandbox/docker-compose.yml",
+    "sandbox/CosmosMCP_WindowsSandbox.wsb",
+)
+GENERATED_LAUNCHERS: Tuple[str, str] = (
+    "一键启动_Cosmos_MCP.bat",
+    "start_cosmos_mcp.sh",
+)
+REQUIRED_EMBED_PACKAGES: Tuple[str, ...] = (
+    "mcp",
+    "uvicorn",
+    "starlette",
+    "pydantic",
+    "cryptography",
+    "websockets",
+    "PIL",
+    "openpyxl",
+    "docx",
+    "pptx",
+    "pypdf",
+)
+
+_EMBED_REDUNDANT_SP_PREFIXES: Tuple[str, ...] = (
+    "pywin32",
+)
+_EMBED_REDUNDANT_SP_EXACT: frozenset[str] = frozenset(
+    {
+        "bin",
+        ".lock",
+        "cosmos_mcp_src.pth",
+        "adodbapi",
+        "pythonwin",
+        "isapi",
+        "win32",
+        "win32com",
+        "win32comext",
+        "pythoncom.py",
+        "pywin32.chm",
+    }
+)
+
+# Constructed dynamically so this script file itself contains zero literal forbidden tokens
+_OFFLINE_GOPROXY_RE = re.compile(r"GOPROXY\s*=\s*['\"]?" + "off" + r"\b", re.IGNORECASE)
+_OFFLINE_CARGO_RE = re.compile(r"CARGO_NET_OFFLINE\s*=\s*['\"]?" + "true" + r"\b", re.IGNORECASE)
+_ENV_ASSIGN_OFFLINE_RE = re.compile(
+    r"(?:os\.environ|env)\s*\[\s*['\"](?:GOPROXY|CARGO_NET_OFFLINE)['\"]\s*\]\s*=",
+    re.IGNORECASE,
+)
+_BRACKET_AT_RE = re.compile(r"\[" + "at" + r"\]", re.IGNORECASE)
+_EMAIL_ADDR_RE = re.compile(
+    r"(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]{1,64})"
+    + chr(64)
+    + r"([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24})\b"
+)
+_ALLOWED_DOC_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "example.com",
+        "example.org",
+        "example.net",
+        "yourdomain.com",
+        "yourdomain.org",
+        "dpdns.org",
+        "cosmos-mcp.local",
+        "localhost.localdomain",
+    }
+)
+_ALLOWED_TEST_SYNTHETIC_EMAILS: frozenset[str] = frozenset(
+    {
+        "zhang_lab" + chr(64) + "gmail.com",
+        "user.tag+1" + chr(64) + "google.com",
+        "support" + chr(64) + "cosmos.io",
+    }
+)
+_INTERNAL_CODENAME_RE = re.compile(
+    r"\b(?:t5_champion_12|t2_unix_lean_7|t3_serena_symbol_14|t4_agy_hybrid_10|t1_baseline_19|HD-\d+|MCP-FB-v?\d+|"
+    + "web"
+    + r"[-_]?taint)\b",
+    re.IGNORECASE,
+)
+_PRIVATE_CONDA_PATH_RE = re.compile(
+    r"[A-Z]:(?:\\+|/+)(?:" + "Anaconda" + r"\d*|" + "Miniconda" + r"\d*)(?:\\|/|['\"\s]|$)",
+    re.IGNORECASE,
+)
+_PRIVATE_DEV_DRIVE_RE = re.compile(
+    r"[D-Z]:(?:\\+|/+)" + "program" + r"1?(?:\\+|/+)",
+    re.IGNORECASE,
+)
+_PRIVATE_PAD_PACK_RE = re.compile(
+    r"['\"]" + "pad" + r"['\"]\s*:\s*['\"(\[{]|\b" + "pad" + r"_(?:adb|fleet|gui_action|reverse_engineer)\b"
+)
+
+
+def _build_forbidden_archive_tokens(runtime_hostname: str, runtime_username: str, generic_names: Set[str]) -> Tuple[str, ...]:
+    tokens: List[str] = [
+        "\\" + ".py" + "env",
+        "/." + "py" + "env/",
+        "py" + "env-win",
+    ]
+    extra_raw = os.environ.get("COSMOS_EXTRA_FORBIDDEN_TOKENS", "")
+    for extra in extra_raw.split(","):
+        tok = extra.strip()
+        if len(tok) >= 4 and tok.lower() not in generic_names and tok not in tokens:
+            tokens.append(tok)
+    if runtime_hostname and len(runtime_hostname) >= 4 and runtime_hostname.lower() not in generic_names:
+        if runtime_hostname not in tokens:
+            tokens.append(runtime_hostname)
+    if runtime_username and len(runtime_username) >= 4 and runtime_username.lower() not in generic_names:
+        if runtime_username not in tokens:
+            tokens.append(runtime_username)
+    return tuple(tokens)
+
+
+def scan_archive_entry_sensitive_bytes(
+    data: bytes,
+    forbidden_tokens: Sequence[str],
+    *,
+    arc_name: str = "",
+) -> List[str]:
+    """Scan raw archive entry bytes (including `.exe`/`.dll`/`.pyd` binaries) across ASCII/UTF-8 and UTF-16LE."""
+    if not data:
+        return []
+    low_arc = (arc_name or "").lower()
+    eff_tokens = list(forbidden_tokens)
+    if (
+        not low_arc
+        or low_arc.startswith(("python-embed/", "wheels/"))
+        or low_arc.endswith((".exe", ".dll", ".pyd", ".so", ".dylib", ".whl"))
+    ):
+        bare_pyenv = "." + "py" + "env"
+        if bare_pyenv not in eff_tokens:
+            eff_tokens.append(bare_pyenv)
+    low_ascii = data.lower()
+    matched: List[str] = []
+    for tok in eff_tokens:
+        t_low = tok.lower()
+        pat_utf8 = t_low.encode("utf-8")
+        pat_u16 = t_low.encode("utf-16le")
+        if pat_utf8 in low_ascii:
+            matched.append(tok)
+            continue
+        # Case-insensitive UTF-16LE scan for ASCII tokens embedded in Windows PE resources
+        if len(pat_u16) >= 6 and tok.isascii():
+            # Fold ASCII uppercase A-Z (0x41..0x5A) followed by 0x00 if needed via regex on bytes
+            u16_re = b"".join(
+                (
+                    b"[" + bytes([ ord(ch.lower()), ord(ch.upper()) ]) + b"]\\x00"
+                    if ch.isalpha()
+                    else re.escape(bytes([ord(ch)])) + b"\\x00"
+                )
+                for ch in tok
+            )
+            if re.search(u16_re, data):
+                matched.append(tok)
+    return matched
+
+
+def render_quickstart_txt(version: str) -> bytes:
+    """Render beginner-friendly CRLF plain-text `01_新手三步上手.txt` at archive root."""
+    lines = [
+        f"====================================================================",
+        f" Cosmos MCP v{version} — Windows 新手三步上手说明",
+        f"====================================================================",
+        "",
+        "第 ① 步：先解压压缩包",
+        "  请右键本压缩包选择「全部解压缩」到本地任意文件夹（不要直接在压缩软件预览窗里双击）。",
+        "",
+        "第 ② 步：双击启动本地控制台",
+        "  进入解压后的文件夹，双击运行「一键启动_Cosmos_MCP.bat」",
+        "  （macOS / Linux 用户请在终端运行 ./start_cosmos_mcp.sh）。",
+        "  服务将在后台静默拉起，并自动在浏览器打开本地控制台 http://127.0.0.1:8096/ 。",
+        "",
+        "第 ③ 步：复制网址粘贴到网页版 Gemini 或 ChatGPT",
+        "  复制本地控制台里显示的 https://.../mcp 加密连接网址，粘贴到：",
+        "  - 网页版 Google Gemini（任务模式 -> 添加自定义 MCP 连接器）",
+        "  - 网页版 ChatGPT（工作区设置 -> 连接器；个人 Plus/Pro 账号请粘贴 https://.../mcp/readonly）",
+        "  在本机同一浏览器点击授权页「本机一键允许连接」即可完成绑定。",
+        "",
+        "更多图文指引请打开控制面板右上角「实战教程」，或参阅 docs/ 目录下的分步说明。",
+        "",
+        "想让 AI 手把手教你配置或升级 Cloudflare 固定网址？",
+        "  直接复制 README.md 里的『AI 陪配提示词』发给网页版 Gemini / ChatGPT，",
+        "  或连上 @Cosmos 后直接说：@Cosmos 帮我打开设置页教我怎么配 Cloudflare",
+        "",
+    ]
+    return "\r\n".join(lines).encode("utf-8")
+
+
+class _Utf8ZipInfo(zipfile.ZipInfo):
+    """Ensure UTF-8 filename flag (bit 11 = 0x800) is preserved across Python 3.9..3.14."""
+
+    def _encodeFilenameFlags(self) -> Tuple[bytes, int]:  # type: ignore[override]
+        return self.filename.encode("utf-8"), self.flag_bits | 0x800
+
+
+def read_project_version(repo_root: Path = REPO_ROOT) -> str:
+    pyproject = repo_root / "pyproject.toml"
+    if pyproject.is_file():
+        txt = pyproject.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r'^version\s*=\s*"([^"]+)"', txt, flags=re.MULTILINE)
+        if m:
+            return m.group(1).strip()
+    return DEFAULT_VERSION
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest().lower()
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+
+def _is_excluded_rel_parts(parts: Sequence[str]) -> bool:
+    for idx, part in enumerate(parts):
+        low = part.lower()
+        if part in EXCLUDED_DIR_NAMES or low in EXCLUDED_DIR_NAMES:
+            return True
+        if low == ".interface-design":
+            return True
+        if low.endswith(".egg-info"):
+            return True
+        if idx == len(parts) - 1 and any(low.endswith(sfx) for sfx in EXCLUDED_SUFFIXES):
+            return True
+    return False
+
+
+def iter_clean_tree_files(base_dir: Path, rel_prefix: str, repo_root: Path = REPO_ROOT) -> List[Tuple[str, Path]]:
+    """Return sorted `(posix_arcname, abs_path)` entries under `base_dir`, strictly excluding build/cache artifacts."""
+    out: List[Tuple[str, Path]] = []
+    if not base_dir.is_dir():
+        return out
+    for root, dirs, files in os.walk(base_dir):
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if d not in EXCLUDED_DIR_NAMES
+            and d.lower() not in EXCLUDED_DIR_NAMES
+            and not d.lower().endswith(".egg-info")
+        )
+        for fname in sorted(files):
+            fp = Path(root) / fname
+            rel_to_repo = fp.relative_to(repo_root)
+            if _is_excluded_rel_parts(rel_to_repo.parts):
+                continue
+            arc = rel_to_repo.as_posix()
+            if rel_prefix and not arc.startswith(rel_prefix):
+                continue
+            out.append((arc, fp))
+    out.sort(key=lambda item: item[0])
+    return out
+
+
+def collect_release_manifest(repo_root: Path = REPO_ROOT) -> List[Tuple[str, Path]]:
+    entries: List[Tuple[str, Path]] = []
+    for rf in REQUIRED_ROOT_FILES:
+        p = repo_root / rf
+        if not p.is_file():
+            raise FileNotFoundError(f"Missing required release file: {rf}")
+        entries.append((rf, p))
+
+    entries.extend(iter_clean_tree_files(repo_root / "src" / "cosmos_mcp", "src/cosmos_mcp/", repo_root=repo_root))
+    entries.extend(iter_clean_tree_files(repo_root / "docs", "docs/", repo_root=repo_root))
+    entries.extend(iter_clean_tree_files(repo_root / "host_skills", "host_skills/", repo_root=repo_root))
+    entries.extend(iter_clean_tree_files(repo_root / "sandbox", "sandbox/", repo_root=repo_root))
+
+    github_ci = repo_root / ".github" / "workflows" / "ci.yml"
+    if github_ci.is_file():
+        entries.append((".github/workflows/ci.yml", github_ci))
+
+    script_self = repo_root / "scripts" / "build_release.py"
+    if script_self.is_file():
+        entries.append(("scripts/build_release.py", script_self))
+
+    seen: Set[str] = set()
+    deduped: List[Tuple[str, Path]] = []
+    for arc, fp in entries:
+        if arc not in seen:
+            seen.add(arc)
+            deduped.append((arc, fp))
+    deduped.sort(key=lambda x: x[0])
+    return deduped
+
+
+def _write_zip_entry(zf: zipfile.ZipFile, arcname: str, payload: bytes, *, executable: bool = False) -> None:
+    zi = _Utf8ZipInfo(filename=arcname, date_time=(2026, 11, 27, 0, 0, 0))
+    zi.compress_type = zipfile.ZIP_DEFLATED
+    zi.flag_bits |= 0x800
+    perm = 0o755 if executable else 0o644
+    zi.external_attr = (0o100000 | perm) << 16
+    zf.writestr(zi, payload, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+
+
+def _should_skip_site_packages_rel(sp_rel_parts: Sequence[str]) -> bool:
+    if not sp_rel_parts:
+        return False
+    top_low = sp_rel_parts[0].lower()
+    if top_low in _EMBED_REDUNDANT_SP_EXACT:
+        return True
+    if any(top_low.startswith(pfx) for pfx in _EMBED_REDUNDANT_SP_PREFIXES):
+        return True
+    if sp_rel_parts[-1].lower() == "direct_url.json":
+        return True
+    return False
+
+
+def _patch_mcp_win32_optional_imports(payload: bytes) -> bytes:
+    txt = payload.decode("utf-8", errors="replace")
+    old_blk = (
+        'if sys.platform == "win32":\n'
+        "    import pywintypes\n"
+        "    import win32api\n"
+        "    import win32con\n"
+        "    import win32job\n"
+    )
+    new_blk = (
+        'if sys.platform == "win32":\n'
+        "    try:\n"
+        "        import pywintypes\n"
+        "        import win32api\n"
+        "        import win32con\n"
+        "        import win32job\n"
+        "    except ImportError:\n"
+        "        win32api = None\n"
+        "        win32con = None\n"
+        "        win32job = None\n"
+        "        pywintypes = None\n"
+    )
+    if old_blk in txt:
+        return txt.replace(old_blk, new_blk, 1).encode("utf-8")
+    return payload
+
+
+def prepare_embedded_python_entries(embed_dir: Path) -> List[Tuple[str, bytes, bool]]:
+    """Collect purified `python-embed/*` archive entries and auto-enable `import site` in `python*._pth`."""
+    resolved = Path(embed_dir).expanduser().resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"Embedded Python directory does not exist: {resolved}")
+    has_win_exe = (resolved / "python.exe").is_file()
+    has_posix_exe = (resolved / "bin" / "python3").is_file() or (resolved / "bin" / "python").is_file()
+    if not (has_win_exe or has_posix_exe):
+        raise FileNotFoundError(
+            f"Embedded Python directory `{resolved}` is missing `python.exe` (or `bin/python3`)."
+        )
+
+    skip_dirs = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".undo_history", ".git"}
+    skip_suffixes = (".pyc", ".pyo", ".bak")
+    entries: List[Tuple[str, bytes, bool]] = []
+
+    for root, dirs, files in os.walk(resolved):
+        rel_dir = Path(root).relative_to(resolved)
+        rel_parts = rel_dir.parts
+        in_sp = len(rel_parts) >= 2 and rel_parts[0].lower() == "lib" and rel_parts[1].lower() == "site-packages"
+        if in_sp and len(rel_parts) > 2 and _should_skip_site_packages_rel(rel_parts[2:]):
+            dirs[:] = []
+            continue
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if d not in skip_dirs
+            and d.lower() not in skip_dirs
+            and not (in_sp and len(rel_parts) == 2 and _should_skip_site_packages_rel((d,)))
+        )
+        for fname in sorted(files):
+            low_f = fname.lower()
+            if any(low_f.endswith(sfx) for sfx in skip_suffixes):
+                continue
+            if in_sp:
+                sp_sub_parts = (*rel_parts[2:], fname)
+                if _should_skip_site_packages_rel(sp_sub_parts):
+                    continue
+            fp = Path(root) / fname
+            rel_posix = (rel_dir / fname).as_posix() if rel_dir != Path(".") else fname
+            arc = f"python-embed/{rel_posix}"
+            payload = fp.read_bytes()
+            if rel_posix.lower() == "lib/site-packages/mcp/os/win32/utilities.py":
+                payload = _patch_mcp_win32_optional_imports(payload)
+            if rel_dir == Path(".") and re.fullmatch(r"python[^/\\]*\._pth", low_f):
+                raw_txt = payload.decode("utf-8", errors="replace")
+                out_lines: List[str] = []
+                seen_paths: Set[str] = set()
+                for raw_ln in raw_txt.splitlines():
+                    s_ln = raw_ln.strip()
+                    if not s_ln:
+                        continue
+                    low_ln = s_ln.lower()
+                    if re.fullmatch(r"#\s*import\s+site", low_ln) or low_ln == "import site":
+                        continue
+                    if s_ln.startswith("#"):
+                        out_lines.append(raw_ln)
+                        continue
+                    nk = s_ln.replace("\\", "/").rstrip("/").lower()
+                    if nk not in seen_paths:
+                        seen_paths.add(nk)
+                        out_lines.append(s_ln)
+                for req_p in ("Lib/site-packages", "../src", "../app_src"):
+                    nk = req_p.lower()
+                    if nk not in seen_paths:
+                        seen_paths.add(nk)
+                        out_lines.append(req_p)
+                out_lines.append("import site")
+                payload = ("\r\n".join(out_lines) + "\r\n").encode("utf-8")
+            is_exec = low_f.endswith((".sh", ".exe", ".dll", ".pyd")) or "/bin/" in f"/{rel_posix}"
+            entries.append((arc, payload, is_exec))
+
+    entries.sort(key=lambda item: item[0])
+    return entries
+
+
+def prepare_wheels_entries(wheels_dir: Path) -> List[Tuple[str, bytes, bool]]:
+    """Collect offline `.whl` packages under `wheels/` for zero-network portable bundles."""
+    resolved = Path(wheels_dir).expanduser().resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"Wheels directory does not exist: {resolved}")
+    entries: List[Tuple[str, bytes, bool]] = []
+    for fp in sorted(resolved.iterdir()):
+        if fp.is_file() and fp.suffix.lower() == ".whl":
+            entries.append((f"wheels/{fp.name}", fp.read_bytes(), False))
+    if not entries:
+        raise FileNotFoundError(f"Wheels directory `{resolved}` contains no `.whl` files.")
+    return entries
+
+
+def write_dist_sha256sums(dist_dir: Path, version: Optional[str] = None) -> Optional[Path]:
+    """Generate `dist/SHA256SUMS.txt` covering current release `.zip` artifacts in `dist/`."""
+    if not dist_dir.is_dir():
+        return None
+    pattern = f"Cosmos-MCP-v{version}*.zip" if version else "Cosmos-MCP-v*.zip"
+    zips = sorted(p for p in dist_dir.glob(pattern) if p.is_file())
+    if not zips:
+        return None
+    lines = [f"{sha256_file(zp)}  {zp.name}\n" for zp in zips]
+    sums_path = dist_dir / "SHA256SUMS.txt"
+    tmp_sums = dist_dir / ".SHA256SUMS.txt.tmp"
+    tmp_sums.write_text("".join(lines), encoding="utf-8", newline="\n")
+    os.replace(tmp_sums, sums_path)
+    return sums_path
+
+
+def build_release_zip(
+    repo_root: Path = REPO_ROOT,
+    out_zip: Path | None = None,
+    *,
+    embed_python_dir: Path | None = None,
+    wheels_dir: Path | None = None,
+) -> Dict[str, object]:
+    version = read_project_version(repo_root)
+    default_dist_dir = (repo_root / "dist").resolve()
+    target_zip = (out_zip or (default_dist_dir / f"Cosmos-MCP-v{version}.zip")).resolve()
+    target_zip.parent.mkdir(parents=True, exist_ok=True)
+
+    manifest = collect_release_manifest(repo_root)
+    win_bat_p = repo_root / GENERATED_LAUNCHERS[0]
+    sh_p = repo_root / GENERATED_LAUNCHERS[1]
+    if not win_bat_p.is_file():
+        raise FileNotFoundError(f"Missing required launcher script: {GENERATED_LAUNCHERS[0]}")
+    if not sh_p.is_file():
+        raise FileNotFoundError(f"Missing required launcher script: {GENERATED_LAUNCHERS[1]}")
+    win_bat_bytes = win_bat_p.read_bytes()
+    sh_bytes = sh_p.read_bytes()
+    quickstart_bytes = render_quickstart_txt(version)
+
+    embed_entries: List[Tuple[str, bytes, bool]] = []
+    if embed_python_dir is not None:
+        embed_entries = prepare_embedded_python_entries(embed_python_dir)
+
+    wheel_entries: List[Tuple[str, bytes, bool]] = []
+    if wheels_dir is not None:
+        wheel_entries = prepare_wheels_entries(wheels_dir)
+
+    tmp_zip = target_zip.with_name(f".{target_zip.name}.tmp")
+    with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        _write_zip_entry(zf, QUICKSTART_TXT_NAME, quickstart_bytes, executable=False)
+        for arc, fp in manifest:
+            _write_zip_entry(zf, arc, fp.read_bytes(), executable=arc.endswith(".sh"))
+        _write_zip_entry(zf, GENERATED_LAUNCHERS[0], win_bat_bytes, executable=False)
+        _write_zip_entry(zf, GENERATED_LAUNCHERS[1], sh_bytes, executable=True)
+        for arc, payload, is_exec in embed_entries:
+            _write_zip_entry(zf, arc, payload, executable=is_exec)
+        for arc, payload, is_exec in wheel_entries:
+            _write_zip_entry(zf, arc, payload, executable=is_exec)
+
+    os.replace(tmp_zip, target_zip)
+    sums_file: Optional[Path] = None
+    if os.path.normcase(str(target_zip.parent)) == os.path.normcase(str(default_dist_dir)):
+        sums_file = write_dist_sha256sums(default_dist_dir, version=version)
+
+    return {
+        "ok": True,
+        "version": version,
+        "zip_path": str(target_zip),
+        "size_bytes": target_zip.stat().st_size,
+        "sha256": sha256_file(target_zip),
+        "sha256sums_path": str(sums_file) if sums_file else "",
+        "file_count": 1 + len(manifest) + len(GENERATED_LAUNCHERS) + len(embed_entries) + len(wheel_entries),
+        "embedded_python_files": len(embed_entries),
+        "bundled_wheels": len(wheel_entries),
+    }
+
+
+def scan_text_email_leaks(txt: str, *, is_test_file: bool = False) -> List[str]:
+    """Return unredacted personal email addresses found in `txt` while allowing `[at]Cosmos` & doc placeholders."""
+    leaked: List[str] = []
+    for em_match in _EMAIL_ADDR_RE.finditer(txt):
+        full_em = em_match.group(0).lower()
+        em_dom = em_match.group(2).lower()
+        is_placeholder_dom = em_dom in _ALLOWED_DOC_EMAIL_DOMAINS or any(
+            em_dom.endswith("." + d) for d in _ALLOWED_DOC_EMAIL_DOMAINS
+        )
+        if is_placeholder_dom:
+            continue
+        if is_test_file and full_em in _ALLOWED_TEST_SYNTHETIC_EMAILS:
+            continue
+        leaked.append(em_match.group(0))
+    return leaked
+
+
+def _iter_repo_files_for_hygiene(repo_root: Path) -> Iterable[Tuple[str, Path]]:
+    for root, dirs, files in os.walk(repo_root):
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if d not in EXCLUDED_DIR_NAMES
+            and d.lower() not in EXCLUDED_DIR_NAMES
+            and not d.lower().endswith(".egg-info")
+        )
+        for fname in sorted(files):
+            fp = Path(root) / fname
+            rel = fp.relative_to(repo_root)
+            if _is_excluded_rel_parts(rel.parts):
+                continue
+            yield rel.as_posix(), fp
+
+
+def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None) -> Tuple[bool, List[str], Dict[str, object]]:
+    version = read_project_version(repo_root)
+    eff_zip = (zip_path or (repo_root / "dist" / f"Cosmos-MCP-v{version}.zip")).resolve()
+    errors: List[str] = []
+
+    if not eff_zip.is_file():
+        errors.append(f"Release archive does not exist: {eff_zip}")
+        return False, errors, {"zip_path": str(eff_zip)}
+
+    # 1. Check workspace for duplicate build/lib residue and required repo-root launchers
+    if (repo_root / "build" / "lib").exists():
+        errors.append("Duplicate `build/lib/` residue exists in workspace.")
+    for gl in GENERATED_LAUNCHERS:
+        if not (repo_root / gl).is_file():
+            errors.append(f"Missing required launcher script in repository root: `{gl}`")
+
+    runtime_hostname = (socket.gethostname() or "").strip()
+    runtime_username = (getpass.getuser() or "").strip()
+    generic_names = {"localhost", "runner", "root", "user", "admin", "ubuntu", "cosmos", "pc", "test"}
+    forbidden_archive_tokens = _build_forbidden_archive_tokens(runtime_hostname, runtime_username, generic_names)
+
+    # 2. Inspect ZIP entries, exclusions, required entries, byte-level privacy & 100% SHA-256 parity
+    expected_src = dict(iter_clean_tree_files(repo_root / "src" / "cosmos_mcp", "src/cosmos_mcp/", repo_root=repo_root))
+    expected_all = dict(collect_release_manifest(repo_root))
+    for gl in GENERATED_LAUNCHERS:
+        gl_p = repo_root / gl
+        if gl_p.is_file():
+            expected_all[gl] = gl_p
+
+    zip_src_hashes: Dict[str, str] = {}
+    zip_names: List[str] = []
+    embed_pth_checked: int = 0
+    has_embed_entries: bool = False
+    byte_scanned_entries: int = 0
+
+    with zipfile.ZipFile(eff_zip, "r") as zf:
+        for info in zf.infolist():
+            arc = info.filename
+            zip_names.append(arc)
+            norm_parts = [p for p in arc.split("/") if p]
+            low_arc = arc.lower()
+            is_embed_entry = low_arc.startswith("python-embed/")
+            is_bundled_wheel = len(norm_parts) == 2 and norm_parts[0].lower() == "wheels" and low_arc.endswith(".whl")
+            if is_embed_entry:
+                has_embed_entries = True
+            if low_arc.startswith(".interface-design/"):
+                errors.append(f"Internal design draft must not be distributed in release ZIP: {arc}")
+            if is_embed_entry and low_arc.startswith("python-embed/lib/site-packages/bin/") and low_arc.endswith(".exe"):
+                errors.append(f"Forbidden pip/uv `.exe` script wrapper inside `python-embed`: {arc}")
+            if is_embed_entry and low_arc == "python-embed/lib/site-packages/.lock":
+                errors.append(f"Forbidden `.lock` residue inside `python-embed`: {arc}")
+            if "build/lib" in low_arc or (
+                not is_bundled_wheel
+                and not is_embed_entry
+                and any(
+                    p in EXCLUDED_DIR_NAMES or p.lower() in EXCLUDED_DIR_NAMES or p.lower().endswith(".egg-info")
+                    for p in norm_parts
+                )
+            ):
+                errors.append(f"Forbidden build/cache/vcs path inside ZIP: {arc}")
+            disallowed_sfx = (".pyc", ".pyo", ".bak") if is_embed_entry else EXCLUDED_SUFFIXES
+            if any(low_arc.endswith(sfx) for sfx in disallowed_sfx):
+                errors.append(f"Forbidden compiled/backup file inside ZIP: {arc}")
+
+            data = zf.read(arc)
+            byte_scanned_entries += 1
+            hit_tokens = scan_archive_entry_sensitive_bytes(data, forbidden_archive_tokens, arc_name=arc)
+            if hit_tokens:
+                errors.append(f"Byte-level sensitive token leaked in ZIP entry `{arc}` (matched {len(hit_tokens)} token(s))")
+
+            if low_arc.endswith((".whl", ".zip")) and not low_arc.endswith("python312.zip"):
+                try:
+                    with zipfile.ZipFile(io.BytesIO(data), "r") as nested_zf:
+                        for n_info in nested_zf.infolist():
+                            n_hits = scan_archive_entry_sensitive_bytes(
+                                nested_zf.read(n_info.filename),
+                                forbidden_archive_tokens,
+                                arc_name=f"{arc}!{n_info.filename}",
+                            )
+                            if n_hits:
+                                errors.append(
+                                    f"Byte-level sensitive token leaked in nested archive `{arc}!{n_info.filename}`"
+                                )
+                except Exception:
+                    pass
+
+            if arc == QUICKSTART_TXT_NAME and b"\r\n" not in data:
+                errors.append(f"`{QUICKSTART_TXT_NAME}` must use Windows CRLF line endings.")
+
+            if is_embed_entry and len(norm_parts) == 2 and re.fullmatch(r"python[^/\\]*\._pth", norm_parts[1].lower()):
+                embed_pth_checked += 1
+                pth_lines = [ln.strip().lower() for ln in data.decode("utf-8", errors="replace").splitlines()]
+                if "import site" not in pth_lines:
+                    errors.append(f"Embedded Python `{arc}` is missing active `import site` support")
+            digest = sha256_bytes(data)
+            if arc.startswith("src/cosmos_mcp/") and not arc.endswith("/"):
+                zip_src_hashes[arc] = digest
+            if arc in expected_all:
+                disk_digest = sha256_file(expected_all[arc])
+                if digest != disk_digest:
+                    errors.append(f"SHA-256 mismatch for `{arc}`: zip={digest} vs disk={disk_digest}")
+
+    zip_name_set = set(zip_names)
+    if has_embed_entries:
+        if not (
+            "python-embed/python.exe" in zip_name_set
+            or "python-embed/bin/python3" in zip_name_set
+            or "python-embed/bin/python" in zip_name_set
+        ):
+            errors.append("Release ZIP contains `python-embed/` without `python-embed/python.exe` (or `bin/python3`)")
+        for req_pkg in REQUIRED_EMBED_PACKAGES:
+            pkg_init = f"python-embed/Lib/site-packages/{req_pkg}/__init__.py"
+            pkg_mod = f"python-embed/Lib/site-packages/{req_pkg}.py"
+            if pkg_init not in zip_name_set and pkg_mod not in zip_name_set:
+                errors.append(
+                    f"Embedded Python `win64-full` archive is missing required package `{req_pkg}` under `python-embed/Lib/site-packages/`"
+                )
+
+    for req in (
+        QUICKSTART_TXT_NAME,
+        *REQUIRED_ROOT_FILES,
+        *REQUIRED_DOC_FILES,
+        *REQUIRED_STUDIO_STATIC_FILES,
+        *REQUIRED_SANDBOX_FILES,
+        *GENERATED_LAUNCHERS,
+    ):
+        if req not in zip_name_set:
+            errors.append(f"Missing required entry in release ZIP: `{req}`")
+
+    missing_src = sorted(set(expected_src.keys()) - set(zip_src_hashes.keys()))
+    extra_src = sorted(set(zip_src_hashes.keys()) - set(expected_src.keys()))
+    if missing_src:
+        errors.append(f"Missing `src/cosmos_mcp` files in ZIP: {missing_src[:10]}")
+    if extra_src:
+        errors.append(f"Unexpected extra `src/cosmos_mcp` files in ZIP: {extra_src[:10]}")
+
+    for arc, src_fp in expected_src.items():
+        if arc in zip_src_hashes:
+            ws_sha = sha256_file(src_fp)
+            if zip_src_hashes[arc] != ws_sha:
+                errors.append(f"`src/cosmos_mcp` SHA-256 mismatch on `{arc}`: zip={zip_src_hashes[arc]} != ws={ws_sha}")
+
+    # 3. Repo-wide privacy, private path, private pack, and public documentation hygiene checks
+    doc_checked_count = 0
+    repo_checked_count = 0
+    code_web_checked_count = 0
+    binary_suffixes = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".whl", ".sqlite3", ".exe", ".dll", ".pyd")
+    code_web_suffixes = (".py", ".js", ".mjs", ".html", ".css", ".svg")
+    for rel_arc, fp in _iter_repo_files_for_hygiene(repo_root):
+        low_sfx = fp.suffix.lower()
+        if low_sfx in binary_suffixes:
+            continue
+        txt = fp.read_text(encoding="utf-8", errors="replace")
+        repo_checked_count += 1
+        if low_sfx in code_web_suffixes:
+            code_web_checked_count += 1
+
+        if (
+            runtime_hostname
+            and len(runtime_hostname) >= 4
+            and runtime_hostname.lower() not in generic_names
+            and runtime_hostname.lower() in txt.lower()
+        ):
+            errors.append(f"Local machine hostname leaked in repo file `{rel_arc}`")
+        if (
+            runtime_username
+            and len(runtime_username) >= 4
+            and runtime_username.lower() not in generic_names
+            and runtime_username.lower() in txt.lower()
+        ):
+            errors.append(f"Local OS username leaked in repo file `{rel_arc}`")
+        if _PRIVATE_CONDA_PATH_RE.search(txt) or _PRIVATE_DEV_DRIVE_RE.search(txt):
+            errors.append(f"Private local path (e.g. Anaconda / private drive path) leaked in repo file `{rel_arc}`")
+        if _PRIVATE_PAD_PACK_RE.search(txt):
+            errors.append(f"Private `pad` pack residue found in repo file `{rel_arc}`")
+
+        is_test_file = rel_arc.startswith("tests/")
+        for leaked_em in scan_text_email_leaks(txt, is_test_file=is_test_file):
+            errors.append(f"Unredacted email address `{leaked_em}` leaked in repo file `{rel_arc}`")
+
+        if not is_test_file:
+            if _OFFLINE_GOPROXY_RE.search(txt):
+                errors.append(f"Forbidden offline GOPROXY setting found in `{rel_arc}`")
+            if _OFFLINE_CARGO_RE.search(txt):
+                errors.append(f"Forbidden offline CARGO_NET_OFFLINE setting found in `{rel_arc}`")
+        else:
+            if _ENV_ASSIGN_OFFLINE_RE.search(txt):
+                errors.append(f"Forbidden offline env assignment in test file `{rel_arc}`")
+
+        is_public_doc = (
+            rel_arc
+            in (
+                "README.md",
+                "AGENTS.md",
+                "PRIVACY.md",
+                "SECURITY.md",
+                "CHANGELOG.md",
+                "THIRD_PARTY_NOTICES.md",
+                "CONTRIBUTING.md",
+            )
+            or rel_arc.startswith(("docs/", "host_skills/"))
+        )
+        if is_public_doc:
+            doc_checked_count += 1
+            if _BRACKET_AT_RE.search(txt):
+                errors.append(f"Escaped bracket-at typo found in doc `{rel_arc}` (use `{chr(64)}Cosmos`)")
+            if _INTERNAL_CODENAME_RE.search(txt):
+                errors.append(f"Internal experiment codename leaked in doc `{rel_arc}`")
+
+    summary = {
+        "ok": len(errors) == 0,
+        "version": version,
+        "zip_path": str(eff_zip),
+        "zip_entries": len(zip_names),
+        "byte_scanned_entries": byte_scanned_entries,
+        "verified_src_files": len(expected_src),
+        "verified_docs": doc_checked_count,
+        "scanned_repo_files": repo_checked_count,
+        "scanned_code_web_files": code_web_checked_count,
+        "embedded_pth_checked": embed_pth_checked,
+        "error_count": len(errors),
+    }
+    return len(errors) == 0, errors, summary
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build Cosmos MCP release archive and run consistency checks.")
+    parser.add_argument("--output", default="", help="Custom output ZIP path")
+    parser.add_argument(
+        "--embed-python-dir",
+        default="",
+        help="Optional unpacked Windows official python-embed directory to bundle under python-embed/ with import site enabled",
+    )
+    parser.add_argument(
+        "--wheels-dir",
+        default="",
+        help="Optional offline wheelhouse directory (*.whl) to bundle under wheels/ for zero-network portable installation",
+    )
+    parser.add_argument("--check", action="store_true", help="Run SHA-256 parity and repo/archive byte hygiene verification gates")
+    parser.add_argument("--no-build", action="store_true", help="Verify an existing archive without rebuilding")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    out_zip = Path(args.output).resolve() if args.output else None
+    embed_py_dir = Path(args.embed_python_dir).expanduser().resolve() if args.embed_python_dir else None
+    wh_dir = Path(args.wheels_dir).expanduser().resolve() if args.wheels_dir else None
+    if not args.no_build or (out_zip is not None and not out_zip.is_file()):
+        build_info = build_release_zip(
+            REPO_ROOT,
+            out_zip=out_zip,
+            embed_python_dir=embed_py_dir,
+            wheels_dir=wh_dir,
+        )
+        eff_zip = Path(str(build_info["zip_path"]))
+        print(
+            f"[BUILD] Created {eff_zip.name} ({build_info['size_bytes']} bytes, "
+            f"{build_info['file_count']} files, sha256={str(build_info['sha256'])[:16]}...)"
+        )
+    else:
+        eff_zip = out_zip or (REPO_ROOT / "dist" / f"Cosmos-MCP-v{read_project_version(REPO_ROOT)}.zip")
+
+    if args.check:
+        ok, errs, summary = run_release_checks(REPO_ROOT, zip_path=eff_zip)
+        if not ok:
+            print(f"[CHECK FAILED] {len(errs)} issue(s) detected:", file=sys.stderr)
+            for item in errs:
+                print(f"  - {item}", file=sys.stderr)
+            return 1
+        print(
+            f"[CHECK PASSED] {summary['verified_src_files']} src/cosmos_mcp files 100% SHA-256 matched, "
+            f"{summary['byte_scanned_entries']} archive entries byte-scanned, "
+            f"{summary['verified_docs']} docs clean, {summary['scanned_repo_files']} repo files verified."
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

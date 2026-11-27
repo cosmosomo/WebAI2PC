@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 340" width="1600" height="340">
+<rect width="1600" height="340" rx="20" fill="#0D1117" stroke="#30363D" stroke-width="1.5"/>
+<text x="48" y="52" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="22" font-weight="700" fill="#F0F6FC">四道本地安全护栏 · 让网页 AI 控机可控可撤回</text>
+<text x="1552" y="50" text-anchor="end" font-family="Segoe UI, PingFang SC, sans-serif" font-size="14" font-weight="600" fill="#94A3B8">OAuth 2.1 + PKCE · 全程加密直连</text>
+<rect x="48" y="78" width="356" height="226" rx="16" fill="#161B22" stroke="#30363D" stroke-width="1.5"/>
+<g transform="translate(70,98)"><rect width="52" height="58" rx="13" fill="#064E3B"/><path d="M26 12 L42 18 V30 C42 39 35 45 26 49 C17 45 10 39 10 30 V18 Z" fill="none" stroke="#10B981" stroke-width="2.6" stroke-linejoin="round"/><path d="M19 30 L24 35 L34 25" fill="none" stroke="#10B981" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+<rect x="136" y="104" width="246" height="28" rx="14" fill="#1E293B"/>
+<text x="259.0" y="123" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#10B981">L1–L4 分级隔离</text>
+<text x="72" y="190" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="21" font-weight="700" fill="#F0F6FC">目录围栏与父只读/子读写</text>
+<text x="72" y="230" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 默认锁定单工作区（L3）</text>
+<text x="72" y="264" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 严禁越权扫描无关盘符</text>
+<rect x="430" y="78" width="356" height="226" rx="16" fill="#161B22" stroke="#30363D" stroke-width="1.5"/>
+<g transform="translate(452,98)"><rect width="52" height="58" rx="13" fill="#172554"/><path d="M16 26 H34 C39 26 42 29 42 34 C42 39 39 42 34 42 H22" fill="none" stroke="#3B82F6" stroke-width="2.6" stroke-linecap="round"/><path d="M22 20 L15 26 L22 32" fill="none" stroke="#3B82F6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+<rect x="518" y="104" width="246" height="28" rx="14" fill="#1E293B"/>
+<text x="641.0" y="123" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#3B82F6">自动备份 · 一键撤回</text>
+<text x="454" y="190" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="21" font-weight="700" fill="#F0F6FC">写前快照与 undo 回滚</text>
+<text x="454" y="230" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 每次改文件前自动留底</text>
+<text x="454" y="264" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 改坏一行也能秒级恢复原状</text>
+<rect x="812" y="78" width="356" height="226" rx="16" fill="#161B22" stroke="#30363D" stroke-width="1.5"/>
+<g transform="translate(834,98)"><rect width="52" height="58" rx="13" fill="#451A03"/><rect x="15" y="18" width="22" height="26" rx="4" fill="none" stroke="#F59E0B" stroke-width="2.6"/><line x1="12" y1="18" x2="40" y2="18" stroke="#F59E0B" stroke-width="2.6" stroke-linecap="round"/><line x1="22" y1="25" x2="22" y2="37" stroke="#F59E0B" stroke-width="2.4" stroke-linecap="round"/><line x1="30" y1="25" x2="30" y2="37" stroke="#F59E0B" stroke-width="2.4" stroke-linecap="round"/></g>
+<rect x="900" y="104" width="246" height="28" rx="14" fill="#1E293B"/>
+<text x="1023.0" y="123" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#F59E0B">零硬删 · 防覆盖</text>
+<text x="836" y="190" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="21" font-weight="700" fill="#F0F6FC">回收箱与 Office 锁表保护</text>
+<text x="836" y="230" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 删文件自动进 .trash/ 可找回</text>
+<text x="836" y="264" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 文档已打开时自动拒绝覆盖</text>
+<rect x="1194" y="78" width="356" height="226" rx="16" fill="#161B22" stroke="#30363D" stroke-width="1.5"/>
+<g transform="translate(1216,98)"><rect width="52" height="58" rx="13" fill="#450A0A"/><circle cx="26" cy="30" r="15" fill="none" stroke="#EF4444" stroke-width="2.6"/><rect x="20" y="24" width="12" height="12" rx="2.5" fill="#EF4444"/></g>
+<rect x="1282" y="104" width="246" height="28" rx="14" fill="#1E293B"/>
+<text x="1405.0" y="123" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#EF4444">0.1s 随时急停</text>
+<text x="1218" y="190" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="21" font-weight="700" fill="#F0F6FC">托盘四色灯 · 一键只读</text>
+<text x="1218" y="230" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 绿/蓝/黄/红实时反映当前状态</text>
+<text x="1218" y="264" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="16" fill="#94A3B8">• 右键随时切只读或断开隧道</text>
+</svg>

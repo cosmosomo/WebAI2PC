@@ -1,0 +1,63 @@
+{
+  "manifest_version": "0.4",
+  "name": "cosmos-mcp",
+  "display_name": "Cosmos MCP",
+  "version": "1.2.1",
+  "description": "Remote HTTPS OAuth 2.1 MCP server and Cosmos Studio exclusively for Web Google Gemini (Task Mode, including mobile Gemini App) and Web ChatGPT (Chat Mode), with 16 core workspace tools, pre-edit snapshots, and recoverable trash.",
+  "author": {
+    "name": "cosmosomo",
+    "url": "https://github.com/cosmosomo/WebAI2PC"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cosmosomo/WebAI2PC"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/cosmos_mcp/launcher/cli.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "python",
+        "-B",
+        "-m",
+        "cosmos_mcp.launcher.cli",
+        "start",
+        "--mode",
+        "public_gateway",
+        "--workspace",
+        "${user_config.workspace}"
+      ],
+      "env": {
+        "PYTHONPATH": "${__dirname}/src",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1",
+        "COSMOS_MCP_WORKSPACE": "${user_config.workspace}"
+      }
+    }
+  },
+  "user_config": {
+    "workspace": {
+      "type": "directory",
+      "title": "开放工作区文件夹",
+      "description": "选择允许网页版 Gemini 与网页版 ChatGPT 读写与执行命令的本地项目目录",
+      "multiple": false,
+      "required": true,
+      "default": "${HOME}/CosmosWorkspace"
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

@@ -1,0 +1,117 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosmos-mcp"
+version = "1.2.1"
+description = "Your AI. Your Computer. Your Capabilities. Safely connect Web Google Gemini (Task Mode) and Web ChatGPT to your personal computer."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "gemini",
+    "chatgpt",
+    "oauth2",
+    "workspace",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "mcp>=1.30.0,<2.0.0",
+    "starlette>=0.41.0; python_version < '3.14'",
+    "starlette>=0.48.0; python_version >= '3.14'",
+    "uvicorn>=0.32.0",
+    "websockets>=12.0",
+    "cryptography>=42.0.0",
+    "pydantic>=2.11.0,<3.0.0; python_version < '3.14'",
+    "pydantic>=2.12.0,<3.0.0; python_version >= '3.14'",
+    "python-multipart>=0.0.18",
+    "Pillow>=10.0.0",
+    "pypdf>=4.0.0",
+    "openpyxl>=3.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cosmosomo/WebAI2PC"
+Repository = "https://github.com/cosmosomo/WebAI2PC"
+Documentation = "https://github.com/cosmosomo/WebAI2PC#readme"
+Issues = "https://github.com/cosmosomo/WebAI2PC/issues"
+Changelog = "https://github.com/cosmosomo/WebAI2PC/blob/main/CHANGELOG.md"
+Security = "https://github.com/cosmosomo/WebAI2PC/blob/main/SECURITY.md"
+
+[project.optional-dependencies]
+docs = [
+    "Pillow>=10.0.0",
+    "pypdf>=4.0.0",
+    "openpyxl>=3.1.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+]
+browser = [
+    "playwright>=1.48.0",
+]
+code = [
+    "jedi>=0.19.1",
+]
+full = [
+    "Pillow>=10.0.0",
+    "pypdf>=4.0.0",
+    "openpyxl>=3.1.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "playwright>=1.48.0",
+    "jedi>=0.19.1",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.1",
+]
+
+[project.scripts]
+cosmos-mcp = "cosmos_mcp.launcher.cli:main"
+localpc-mcp = "cosmos_mcp.launcher.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+packages = [
+    "cosmos_mcp",
+    "cosmos_mcp.capabilities",
+    "cosmos_mcp.capabilities.skills",
+    "cosmos_mcp.core",
+    "cosmos_mcp.launcher",
+    "cosmos_mcp.packs",
+    "cosmos_mcp.protocol",
+    "cosmos_mcp.studio",
+    "cosmos_mcp.host_skills",
+]
+
+[tool.setuptools.package-dir]
+"" = "src"
+"cosmos_mcp.host_skills" = "host_skills"
+
+[tool.setuptools.package-data]
+"cosmos_mcp.protocol" = ["templates/*.html"]
+"cosmos_mcp.studio" = ["static/*", "static/brand/*.svg"]
+"cosmos_mcp.host_skills" = ["SKILL.md", "*.md", "webai2pc-setup-tutorial/*.md"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"

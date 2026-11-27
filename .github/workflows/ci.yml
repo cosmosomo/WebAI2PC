@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-release-gate:
+    name: Pytest & Release Gate (${{ matrix.os }} / py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+      LOCALPC_NO_BROWSER: "1"
+      COSMOS_NO_TRAY: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs,dev]"
+
+      - name: Run core & packaging regression suites
+        run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py
+
+      - name: Build release archive and run byte-level hygiene gate
+        run: |
+          python -B scripts/build_release.py --check

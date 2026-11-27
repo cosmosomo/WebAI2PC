@@ -1,0 +1,29 @@
+* text=auto
+
+# Shell scripts & container definitions always use LF
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.svg text eol=lf
+
+# Windows batch launchers & Windows Sandbox definitions always use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.wsb text eol=crlf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.zip binary
+*.whl binary
+*.pyd binary
+*.dll binary
+*.exe binary

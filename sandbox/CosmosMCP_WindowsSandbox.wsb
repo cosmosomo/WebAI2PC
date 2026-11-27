@@ -1,0 +1,27 @@
+<Configuration>
+  <!--
+    Cosmos MCP Windows Sandbox Configuration
+    Path resolution note (relative to this `sandbox\` directory):
+      1. `..`             -> Unpacked Cosmos MCP project root, mounted read-only at `C:\Cosmos-MCP`.
+      2. `..\..\workspace` -> Sibling `workspace` folder next to the Cosmos MCP project folder
+                              (create that `workspace` folder on the host before double-clicking this `.wsb` file,
+                               or edit `<HostFolder>` below to any existing absolute host folder path).
+  -->
+  <VGpu>Disable</VGpu>
+  <Networking>Enable</Networking>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>..</HostFolder>
+      <SandboxFolder>C:\Cosmos-MCP</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>..\..\workspace</HostFolder>
+      <SandboxFolder>C:\Workspace</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>cmd.exe /c mkdir C:\CosmosState C:\Workspace 2&gt;nul &amp;&amp; set COSMOS_MCP_STATE_DIR=C:\CosmosState &amp;&amp; set LOCALPC_MCP_STATE_DIR=C:\CosmosState &amp;&amp; set COSMOS_MCP_WORKSPACE=C:\Workspace &amp;&amp; C:\Cosmos-MCP\一键启动_Cosmos_MCP.bat --workspace C:\Workspace</Command>
+  </LogonCommand>
+</Configuration>

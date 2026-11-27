@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" fill="none">
+  <defs>
+    <marker id="arr-arch-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9 z" fill="#00A870"/>
+    </marker>
+    <style>
+      .t-h { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; font-size: 16px; font-weight: 700; fill: #0F172A; }
+      .t-b { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; font-size: 13px; font-weight: 600; fill: #0F172A; }
+      .t-s { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; font-size: 11.5px; fill: #475569; }
+      .t-m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; fill: #00A870; font-weight: 600; }
+      .t-tag { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="440" rx="20" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/>
+
+  <!-- Column 1: Web AI Hosts -->
+  <rect x="26" y="34" width="248" height="372" rx="16" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="46" y="66" class="t-h">1. 网页端 AI 与手机</text>
+  <text x="46" y="86" class="t-s">直接使用已有网页订阅，免 API Key</text>
+
+  <rect x="44" y="106" width="212" height="84" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="58" y="132" class="t-b">网页版 Google Gemini</text>
+  <text x="58" y="152" class="t-s">任务模式 · 含并行子任务</text>
+  <text x="58" y="174" class="t-m">@Cosmos 唤醒 · /mcp</text>
+
+  <rect x="44" y="204" width="212" height="80" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="58" y="230" class="t-b">手机端 Gemini App</text>
+  <text x="58" y="250" class="t-s">电脑绑定一次，同账号自动同步</text>
+  <text x="58" y="270" class="t-m">外出随时控机</text>
+
+  <rect x="44" y="298" width="212" height="90" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="58" y="324" class="t-b">网页版 ChatGPT</text>
+  <text x="58" y="344" class="t-s">Team/Enterprise 全量读写 /mcp</text>
+  <text x="58" y="366" class="t-m">个人 Plus/Pro → /mcp/readonly</text>
+
+  <!-- Arrow 1 -> 2 -->
+  <line x1="274" y1="220" x2="314" y2="220" stroke="#00A870" stroke-width="2.5" marker-end="url(#arr-arch-l)"/>
+
+  <!-- Column 2: 3 Gateway Modes -->
+  <rect x="320" y="34" width="256" height="372" rx="16" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="340" y="66" class="t-h">2. 三类 HTTPS 网关</text>
+  <text x="340" y="86" class="t-s">独立开关并存，随时热切不断连</text>
+
+  <rect x="338" y="106" width="220" height="86" rx="12" fill="#F1F5F9" stroke="#00A870" stroke-opacity="0.55"/>
+  <text x="352" y="131" class="t-b">方式 1 · 一键免登录直连</text>
+  <text x="352" y="151" class="t-s">默认 *.srv.us/mcp 固定网址</text>
+  <text x="352" y="172" class="t-m">22 端口受限 4 秒自动切 trycloudflare</text>
+
+  <rect x="338" y="206" width="220" height="86" rx="12" fill="#F1F5F9" stroke="#2563EB" stroke-opacity="0.55"/>
+  <text x="352" y="231" class="t-b">方式 2 · Cloudflare 固定网关</text>
+  <text x="352" y="251" class="t-s">3 秒部署 Workers + Durable Object</text>
+  <text x="352" y="272" class="t-m" fill="#2563EB">终身固定 *.workers.dev · 令牌即毁</text>
+
+  <rect x="338" y="306" width="220" height="82" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="352" y="331" class="t-b">方式 3 · 自有 VPS / 域名</text>
+  <text x="352" y="351" class="t-s">一键建 24 小时主站或多设备路由</text>
+  <text x="352" y="372" class="t-m">target="auto" 自动转发</text>
+
+  <!-- Arrow 2 -> 3 -->
+  <line x1="576" y1="220" x2="616" y2="220" stroke="#00A870" stroke-width="2.5" marker-end="url(#arr-arch-l)"/>
+
+  <!-- Column 3: Local Security & Studio -->
+  <rect x="622" y="34" width="248" height="372" rx="16" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="642" y="66" class="t-h">3. 安全鉴权与控制台</text>
+  <text x="642" y="86" class="t-s">127.0.0.1:8096 本地可视管控</text>
+
+  <rect x="640" y="106" width="212" height="84" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="654" y="132" class="t-b">OAuth 2.1 + RFC 8707</text>
+  <text x="654" y="152" class="t-s">同机回环一键放行 / 异地配对码</text>
+  <text x="654" y="172" class="t-m">读写与只读受众严格隔离</text>
+
+  <rect x="640" y="204" width="212" height="88" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="654" y="230" class="t-b">四档权限 + 目录分层</text>
+  <text x="654" y="250" class="t-s">L1 只读 · L2 改文件 · L3 工作区 · L4 全盘</text>
+  <text x="654" y="272" class="t-m">父只读 / 子读写 · 删前回收箱</text>
+
+  <rect x="640" y="306" width="212" height="82" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="654" y="332" class="t-b">WebAI2PC Studio 控制台</text>
+  <text x="654" y="352" class="t-s">4 套明暗风格包 · 托盘四色状态灯</text>
+  <text x="654" y="372" class="t-m">防休眠电源保护 · 内置教程页</text>
+
+  <!-- Arrow 3 -> 4 -->
+  <line x1="870" y1="220" x2="910" y2="220" stroke="#00A870" stroke-width="2.5" marker-end="url(#arr-arch-l)"/>
+
+  <!-- Column 4: 16 Tools + Packs -->
+  <rect x="916" y="34" width="258" height="372" rx="16" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="936" y="66" class="t-h">4. 本机能力与扩展包</text>
+  <text x="936" y="86" class="t-s">16 项默认工具 + 按需热开扩展</text>
+
+  <rect x="934" y="106" width="222" height="72" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="948" y="130" class="t-b">文件、图片与 Office 修订</text>
+  <text x="948" y="150" class="t-s">图片多模态 · PDF/PPTX · .docx/.xlsx</text>
+  <text x="948" y="168" class="t-m">写前快照 · 锁表保护 · undo 撤回</text>
+
+  <rect x="934" y="190" width="222" height="62" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="948" y="214" class="t-b">代码检索与符号重构</text>
+  <text x="948" y="234" class="t-s">RepoMap · AST 大纲 · 跨文件引用重命名</text>
+
+  <rect x="934" y="264" width="222" height="62" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="948" y="288" class="t-b">无窗口终端与 Python 执行</text>
+  <text x="948" y="308" class="t-s">超时自动转 pc_bg_command 后台轮询</text>
+
+  <rect x="934" y="338" width="222" height="50" rx="12" fill="#F1F5F9" stroke="#D97706" stroke-opacity="0.6"/>
+  <text x="948" y="360" class="t-b">可选扩展包（默认关闭）</text>
+  <text x="948" y="378" class="t-s">受管浏览器 browser · Windows 窗口 desktop</text>
+</svg>
