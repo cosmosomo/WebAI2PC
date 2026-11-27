@@ -607,19 +607,39 @@ def build_core_tools(
         caller: str = "",
     ) -> Dict[str, Any]:
         _ = caller
-        is_ro_ctx = bool(status_ro_var.get())
-        if not is_ro_ctx:
-            try:
-                from cosmos_mcp.protocol.transport import _REQUEST_TRANSPORT_CTX
+        is_ro_endpoint = bool(status_ro_var.get())
+        is_remote_req = False
+        try:
+            from cosmos_mcp.protocol.transport import _REQUEST_TRANSPORT_CTX
 
+            if _REQUEST_TRANSPORT_CTX in contextvars.copy_context():
                 req_ctx = _REQUEST_TRANSPORT_CTX.get()
-                if req_ctx.scopes is not None:
+                is_remote_req = bool(getattr(req_ctx, "is_remote", False))
+                if bool(getattr(req_ctx, "readonly_only", False)):
+                    is_ro_endpoint = True
+                if not is_ro_endpoint and req_ctx.scopes is not None:
                     sc_set = {str(s).strip() for s in req_ctx.scopes if str(s).strip()}
                     if not (sc_set & {"mcp:tools", "workspace", "server:admin"}):
-                        is_ro_ctx = True
-            except Exception:
-                pass
-        return await asyncio.to_thread(
+                        is_ro_endpoint = True
+        except Exception:
+            pass
+
+        eff_pol_dict = _effective_policy()
+        eff_tier_short = normalize_tier(str(eff_pol_dict.get("tier") or g.tier))
+        pol_obj_live = policy if policy is not None else (getattr(g, "policy", None) or getattr(pm, "policy", None))
+        tier_allows_edit = (
+            bool(getattr(pol_obj_live, "allow_edit"))
+            if (pol_obj_live is not None and hasattr(pol_obj_live, "allow_edit"))
+            else (eff_tier_short != "L1")
+        )
+        if eff_tier_short == "L1":
+            tier_allows_edit = False
+
+        is_ro_tier = (not tier_allows_edit) and is_remote_req
+        is_ro_ctx = is_ro_endpoint or is_ro_tier
+        blocked_reason = "readonly_endpoint" if is_ro_endpoint else ("readonly_mode" if is_ro_tier else "")
+
+        res_out = await asyncio.to_thread(
             exec_ops.get_status,
             job_id=job_id,
             wait_seconds=wait_seconds,
@@ -627,11 +647,18 @@ def build_core_tools(
             guide=guide,
             open_page=open_page,
             allow_open_page=(not is_ro_ctx),
-            open_blocked_reason="readonly_endpoint" if is_ro_ctx else "",
+            open_blocked_reason=blocked_reason,
             proc_mgr=pm,
             guard=g,
             policy_getter=_effective_policy,
         )
+        if is_ro_ctx and isinstance(res_out, dict) and res_out.get("target_url") and not res_out.get("opened_in_browser"):
+            target_u = str(res_out["target_url"])
+            res_out.setdefault(
+                "open_page_hint",
+                f"当前处于只读模式，未自动打开宿主机浏览器；请复制或点击链接自行打开：{target_u}",
+            )
+        return res_out
 
     async def _h_find_files(
         path: str = ".",

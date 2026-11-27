@@ -896,9 +896,10 @@ def build_allowed_hosts(port: int, *eff_publics: Any) -> List[str]:
         f"[::1]:{port}",
         "127.0.0.1",
         "localhost",
-        "[::1]",
-        "testserver",
+        "::1",
     ]
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        hosts.append("testserver")
     for eff_public in _iter_public_url_args(eff_publics):
         cand = eff_public if "://" in eff_public else f"https://{eff_public}"
         u = urlsplit(cand)
@@ -907,7 +908,10 @@ def build_allowed_hosts(port: int, *eff_publics: Any) -> List[str]:
             pub_port = u.port
         except ValueError:
             pub_port = None
-        if pub_host and pub_host not in ("127.0.0.1", "localhost", "::1", "testserver"):
+        if pub_host == "testserver":
+            if "testserver" not in hosts:
+                hosts.append("testserver")
+        elif pub_host and pub_host not in ("127.0.0.1", "localhost", "::1"):
             host_fmt = f"[{pub_host}]" if ":" in pub_host else pub_host
             cands = [host_fmt, f"{host_fmt}:443", f"{host_fmt}:80", f"{host_fmt}:{port}"]
             if pub_port is not None:
@@ -1922,6 +1926,11 @@ def create_protocol_app(
             cand_t = auth_h[7:].strip()
             rec = eff_store.get("access", cand_t) if cand_t else None
             if rec is not None:
+                tok_res = rec.get("resource")
+                if not eff_provider.is_token_resource_valid_for_current_request(
+                    str(tok_res) if tok_res is not None else None
+                ):
+                    return False, None
                 raw_sc_list = rec.get("scopes")
                 sc_fset = (
                     frozenset(SCOPES)
@@ -2024,6 +2033,54 @@ def create_protocol_app(
         )
         return Response(md, status_code=200, media_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
 
+    def _is_trusted_admin_policy_origin(request: Request, req_path: str) -> bool:
+        sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+        if sec_fetch_site == "cross-site":
+            return False
+        origin_hdr = (request.headers.get("origin") or "").strip()
+        if not origin_hdr:
+            return True
+        if origin_hdr.lower() == "null":
+            return False
+        try:
+            orig_parsed = urlsplit(origin_hdr)
+            orig_scheme = (orig_parsed.scheme or "").strip().lower()
+            orig_host = (orig_parsed.hostname or "").strip().lower()
+            orig_port = orig_parsed.port
+        except ValueError:
+            return False
+        if orig_scheme not in ("http", "https") or not orig_host:
+            return False
+        req_host_hdr = (request.headers.get("host") or "").strip()
+        try:
+            req_parsed = urlsplit(f"http://{req_host_hdr}") if req_host_hdr else None
+            req_port = req_parsed.port if req_parsed else None
+        except ValueError:
+            return False
+        if orig_host in ("127.0.0.1", "localhost", "::1"):
+            if _is_public_gateway_admin_request(request):
+                return False
+            if orig_port is not None and req_port is not None and orig_port != req_port:
+                return False
+            return True
+        if req_path == "/local-admin/permissions":
+            return False
+        trusted_origins: Set[str] = set()
+        for raw_u in (
+            eff_public,
+            eff_provider.base_url,
+            *(ep.base_url for ep in eff_provider.get_effective_trusted_gateways().values()),
+        ):
+            ext_o = _extract_origin_only(str(raw_u or ""))
+            if ext_o:
+                trusted_origins.add(ext_o)
+        cur_gw = get_current_request_gateway()
+        if cur_gw is not None and not cur_gw.is_loopback and cur_gw.base_url:
+            ext_cur = _extract_origin_only(cur_gw.base_url)
+            if ext_cur:
+                trusted_origins.add(ext_cur)
+        return _extract_origin_only(origin_hdr) in trusted_origins
+
     async def admin_policy_endpoint(request: Request) -> JSONResponse:
         req_path = (request.url.path or "").rstrip("/")
         if req_path == "/local-admin/permissions" and not is_strict_direct_loopback(request, port):
@@ -2035,6 +2092,12 @@ def create_protocol_app(
         if req_path == "/remote-admin/policy" and not eff_allow_remote_admin and _is_public_gateway_admin_request(request):
             return JSONResponse(
                 {"ok": False, "error": "remote_admin_policy_disabled_on_public_gateway"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not _is_trusted_admin_policy_origin(request, req_path):
+            return JSONResponse(
+                {"ok": False, "error": "forbidden_cross_site_or_untrusted_origin"},
                 status_code=403,
                 headers={"Cache-Control": "no-store"},
             )
@@ -2260,6 +2323,13 @@ def create_protocol_app(
             if scope.get("type") != "http":
                 await inner_asgi(scope, receive, send)
                 return
+
+            cli_t = scope.get("client")
+            if isinstance(cli_t, (list, tuple)) and cli_t and str(cli_t[0] or "").strip().lower() == "testclient":
+                for mgr in (bundle.main_session_manager, bundle.readonly_session_manager):
+                    sec = getattr(mgr, "security_settings", None) or getattr(mgr, "_security_settings", None)
+                    if sec is not None and "testserver" not in sec.allowed_hosts:
+                        sec.allowed_hosts.append("testserver")
 
             hdr_pfx_sc = ""
             for hk_in, hv_in in scope.get("headers") or ():

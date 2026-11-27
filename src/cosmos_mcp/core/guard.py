@@ -69,7 +69,7 @@ SENSITIVE_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Cloud provider and GPG key directories are isolated by Guard.",
     ),
     (
-        r"(?i)(?:[\\/]\.(?:pypirc|npmrc|netrc|git-credentials|docker[\\/]config\.json)|[\\/]\.cargo[\\/]credentials(?:\.toml)?)(?:$|[\\/\"'\s;|&><)`:])",
+        r"(?i)(?:[\\/]\.(?:pypirc|npmrc|netrc|git-credentials|docker[\\/]config\.json)|[\\/]\.cargo[\\/]credentials(?:\.toml)?|[\\/]\.?huggingface[\\/](?:token|stored_tokens))(?:$|[\\/\"'\s;|&><)`:])",
         "Package registry and container credential files are isolated by Guard.",
     ),
     (
@@ -148,6 +148,7 @@ DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
 _PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----")
 SECRET_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
     (_PRIVATE_KEY_RE, "[REDACTED_PRIVATE_KEY_BY_GUARD]"),
+    (re.compile(r"\bcmcp_[A-Za-z0-9_\-]{16,}\b"), "[REDACTED_MCP_TOKEN]"),
     (re.compile(r"\blpcmcp_[A-Za-z0-9_-]{16,}\b"), "[REDACTED_MCP_TOKEN]"),
     (
         re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{16,})\b"),
@@ -1423,9 +1424,9 @@ class WorkspaceGuard:
         self.tool_prefix: str = (tool_prefix or "pc").strip() or "pc"
         self.extra_access_gate: Optional[Callable[..., Optional[str]]] = extra_access_gate
         self._extra_secret_literals: List[str] = []
-        if workspace_roots is not None:
+        if workspace_roots is not None or readonly_workspace_roots is not None:
             self.set_workspace_policy(
-                workspace_roots,
+                workspace_roots if workspace_roots is not None else (),
                 restrict_to_workspace=restrict_to_workspace,
                 tier_key=str(tier),
                 readonly_workspace_roots=readonly_workspace_roots,
@@ -1605,6 +1606,9 @@ class WorkspaceGuard:
             sr / ".env",
             sr / "logs",
             sr / "locks",
+            sr / "app_src",
+            sr / ".undo_history",
+            sr / "browser_profile",
             sr / "连接信息_CONNECTION_INFO.txt",
         ]
         ws_low_set = {str(w).lower().rstrip("\\/") for w in self.workspace_roots}
@@ -1629,7 +1633,17 @@ class WorkspaceGuard:
             or (home / ".cosmos-mcp")
         )
         for sh in (home / ".cosmos-mcp", generic_state_home):
-            items.extend([sh / "secrets", sh / "state", sh / "config", sh / ".env", sh / "logs", sh / "locks"])
+            items.extend([
+                sh / "secrets",
+                sh / "state",
+                sh / "config",
+                sh / ".env",
+                sh / "logs",
+                sh / "locks",
+                sh / "app_src",
+                sh / ".undo_history",
+                sh / "browser_profile",
+            ])
         out: List[str] = []
         for it in items:
             low = str(canonical_realpath(it)).lower().rstrip("\\/")
@@ -1829,7 +1843,7 @@ class WorkspaceGuard:
             ro_norms = {str(r).lower().rstrip("\\/") for r in self.readonly_workspace_roots}
             best_root: Optional[Path] = None
             best_len = -1
-            for ws in self.workspace_roots:
+            for ws in (*self.workspace_roots, *self.readonly_workspace_roots):
                 ws_low = str(ws).lower().rstrip("\\/")
                 if _is_under_prefix(cand_low, ws_low) and len(ws_low) > best_len:
                     best_root = ws

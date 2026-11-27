@@ -579,7 +579,8 @@ def test_vps_oneclick_syncs_local_auth_json_via_stdin_tar_0600_and_totp_matches(
         assert f_auth is not None
         synced_auth = json.loads(f_auth.read().decode("utf-8"))
 
-    assert synced_auth == local_auth
+    assert "local_api_token" not in synced_auth
+    assert synced_auth == {k: v for k, v in local_auth.items() if k != "local_api_token"}
 
     # 3) Verify 6-digit TOTP dynamic pairing code from local Studio matches remote VPS `/consent` 100%
     remote_store = OAuthSQLiteStore(tmp_path / "remote_vps_oauth.sqlite3")

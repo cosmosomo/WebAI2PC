@@ -29,6 +29,7 @@ import sys
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 import urllib.request
 
 from cosmos_mcp.core.config import GATEWAY_IDS, normalize_gateways_config
@@ -263,6 +264,23 @@ def _load_gateway_tunnel_secret(
     return ""
 
 
+def _is_allowed_wss_gateway_url(raw_url: str) -> bool:
+    """Allow `https://` globally and `http://` strictly on loopback (`127.0.0.1` / `localhost` / `::1`) for local tests."""
+    clean = str(raw_url or "").strip().rstrip("/")
+    if not clean:
+        return False
+    parsed = urlsplit(clean)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    if scheme in ("https", "wss"):
+        return True
+    if scheme in ("http", "ws") and host in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return False
+
+
 def _instantiate_workers_supervisor(
     sup_cls: Any,
     *,
@@ -276,7 +294,11 @@ def _instantiate_workers_supervisor(
 ) -> Any:
     """Instantiate `WorkersDevRelaySupervisor` matching its signature cleanly across `workers_dev` and `public_gateway`."""
     clean_pub = public_url.rstrip("/")
-    ws_scheme = "wss://" if clean_pub.startswith("https://") else "ws://"
+    if not _is_allowed_wss_gateway_url(clean_pub):
+        raise ValueError(
+            f"Cleartext `http://` -> `ws://` gateway downgrade is prohibited for non-loopback host: {clean_pub!r}"
+        )
+    ws_scheme = "wss://" if clean_pub.lower().startswith(("https://", "wss://")) else "ws://"
     ws_rest = clean_pub.split("://", 1)[-1]
     tunnel_ws_url = f"{ws_scheme}{ws_rest}/_cosmos_tunnel"
 
@@ -2526,7 +2548,7 @@ class StandaloneSupervisorLoop:
             except Exception:
                 seed_info = None
 
-        if not gw_url or not gw_url.startswith("https://"):
+        if not gw_url or not _is_allowed_wss_gateway_url(gw_url):
             self._stop_pg_workers_supervisor()
             slot.ready = False
             slot.state = "error"
@@ -2665,18 +2687,27 @@ class StandaloneSupervisorLoop:
                 cand_top_u = raw_top
 
         gw_url = ""
+        saw_non_loopback_http = False
         for cand_w in (cand_slot_u, cand_custom_dom, cand_doc_u, cand_top_u):
             c_clean = str(cand_w or "").strip().rstrip("/")
-            if c_clean.startswith("https://") and "trycloudflare.com" not in c_clean.lower() and ".srv.us" not in c_clean.lower():
+            if not c_clean or "trycloudflare.com" in c_clean.lower() or ".srv.us" in c_clean.lower():
+                continue
+            if _is_allowed_wss_gateway_url(c_clean):
                 gw_url = c_clean
                 break
+            if c_clean.lower().startswith(("http://", "ws://")):
+                saw_non_loopback_http = True
 
         if not gw_url:
             self._stop_workers_supervisor()
             slot.ready = False
             slot.ready_url = ""
             slot.state = "error"
-            slot.last_error = "workers_dev tunnel error: 未配置固定网关 HTTPS 地址。"
+            slot.last_error = (
+                "workers_dev tunnel error: 非回环固定网关地址必须使用 https://（禁止明文 ws:// 降级）。"
+                if saw_non_loopback_http
+                else "workers_dev tunnel error: 未配置固定网关 HTTPS 地址。"
+            )
             return
 
         if sup_cls is None:
@@ -2913,11 +2944,14 @@ class StandaloneSupervisorLoop:
                 self._ssh_retry_not_before = 0.0
                 slot.effective_mode = "vps_hub" if submode == "vps_hub" else "vps"
 
-                if not eff_vps_hub_u or not eff_vps_hub_u.startswith(("https://", "http://")) or not raw_vps_node_sec:
+                if not eff_vps_hub_u or not _is_allowed_wss_gateway_url(eff_vps_hub_u) or not raw_vps_node_sec:
                     self._stop_vps_wss_supervisor()
                     slot.ready = False
                     slot.state = "error"
-                    slot.last_error = f"{submode} tunnel error: 未配置自有服务器 HTTPS 地址或节点密钥。"
+                    if eff_vps_hub_u and eff_vps_hub_u.lower().startswith(("http://", "ws://")):
+                        slot.last_error = f"{submode} tunnel error: 非回环自有服务器地址必须使用 https://（禁止明文 ws:// 降级）。"
+                    else:
+                        slot.last_error = f"{submode} tunnel error: 未配置自有服务器 HTTPS 地址或节点密钥。"
                     return
 
                 ws_roots = list(doc.get("workspace_roots") or ([doc["workspace"]] if doc.get("workspace") else []))

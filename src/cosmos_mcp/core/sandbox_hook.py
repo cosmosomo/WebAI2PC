@@ -198,6 +198,7 @@ def _install_cosmos_l3_hook():
     _sens_rx = _tuple(re.compile(p, re.IGNORECASE) for p in (
         r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
         r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
+        r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
         r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
         r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
         r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$",
@@ -760,7 +761,8 @@ def _bootstrap_probe():
     _sens_rxs = tuple(re.compile(p, re.IGNORECASE) for p in (
         r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
         r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
-        r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
+        r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
+        r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
         r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
         r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$",
     ))
@@ -770,7 +772,7 @@ def _bootstrap_probe():
     def _under(c_l, b_l):
         return bool(b_l) and (c_l == b_l or c_l.startswith(b_l + _sep))
 
-    def _check_read(raw_t):
+    def _check_read(raw_t, for_chdir=False):
         ts = os.fsdecode(raw_t)
         if _ads_rx.search(ts):
             raise PermissionError("[COSMOS BATCH PROBE]: NTFS Alternate Data Streams are prohibited.")
@@ -780,7 +782,7 @@ def _bootstrap_probe():
             raise PermissionError("[COSMOS BATCH PROBE]: MCP secrets and state files are isolated.")
         if any(rx.search(res_s) or rx.search(ts) for rx in _sens_rxs):
             raise PermissionError("[COSMOS BATCH PROBE]: Sensitive host credential path is isolated.")
-        if any(_under(tl, ap) for ap in _allowed_imp):
+        if not for_chdir and any(_under(tl, ap) for ap in _allowed_imp):
             return res_s
         if restrict_ws and _ws_roots and not any(_under(tl, w) for w in _ws_roots):
             raise PermissionError(f"[COSMOS BATCH PROBE]: Read outside workspace roots {_ws_roots} is blocked.")
@@ -933,7 +935,7 @@ def _bootstrap_probe():
         "bdb", "pdb",
     })
     _prot_fns = (_check_read, _rg, _outline, _list_dir, _guarded_import, _guarded_import_module, _is_trusted_internal_caller)
-    _dir_ev = frozenset({"os.listdir", "os.scandir", "glob.glob"})
+    _dir_ev = frozenset({"os.listdir", "os.scandir", "glob.glob", "os.chdir"})
 
     def _ro_hook(ev, args):
         if ev in _ctypes_ev_block or ev.startswith("ctypes."):
@@ -961,7 +963,7 @@ def _bootstrap_probe():
             if _isinstance(tgt, _int):
                 raise _PermErr("[COSMOS BATCH PROBE]: integer fd directory listing is prohibited.")
             if _isinstance(tgt, _ptypes):
-                _check_read(tgt)
+                _check_read(tgt, for_chdir=(ev == "os.chdir"))
         if ev == "open":
             tgt = args[0] if _len(args) > 0 else None
             mo = args[1] if _len(args) > 1 else "r"

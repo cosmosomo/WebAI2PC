@@ -169,9 +169,27 @@ def test_tunnel_regex_ipv6_caddy_and_vps_loopback_header_strip(tmp_path: Path) -
         state_root=tmp_path,
     )
 
+    class _DummyUnauthReq:
+        req_id = b"0" * 16
+        path_qs = "/_cosmos_node/info"
+        headers = [
+            ("X-Cosmos-Via-Tunnel", "1"),
+            ("Accept", "application/json"),
+        ]
+
+    forbidden_msgs: list[str] = []
+    orig_forb = sup._send_local_forbidden
+    sup._send_local_forbidden = lambda _rs, msg: forbidden_msgs.append(msg)  # type: ignore[method-assign]
+    try:
+        sup._execute_local_http(_DummyUnauthReq(), b"")
+    finally:
+        sup._send_local_forbidden = orig_forb  # type: ignore[method-assign]
+    assert len(forbidden_msgs) == 1 and "Bearer" in forbidden_msgs[0]
+
     class _DummyReq:
         path_qs = "/_cosmos_node/info"
         headers = [
+            ("Authorization", "Bearer " + ("s" * 64)),
             ("X-Cosmos-Via-Tunnel", "1"),
             ("X-Forwarded-Host", "hub.example.com"),
             ("X-Forwarded-Proto", "https"),

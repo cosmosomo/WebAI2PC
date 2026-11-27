@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
+import hmac
 import inspect
 import io
 import ipaddress
@@ -21,6 +22,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import posixpath
 import re
 import secrets
 import shutil
@@ -35,7 +37,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 import urllib.request
 
 from cosmos_mcp.core.config import (
@@ -1244,7 +1246,8 @@ def main():
         elif atyp == 4:
             sock.recv(18)
     else:
-        hdrs = [f"CONNECT {dst_host}:{dst_port} HTTP/1.1", f"Host: {dst_host}:{dst_port}"]
+        safe_dst = dst_host.replace("\r", "").replace("\n", "").replace("\x00", "")
+        hdrs = [f"CONNECT {safe_dst}:{dst_port} HTTP/1.1", f"Host: {safe_dst}:{dst_port}"]
         if user:
             tok = base64.b64encode(f"{user}:{pw}".encode("utf-8")).decode("ascii")
             hdrs.append(f"Proxy-Authorization: Basic {tok}")
@@ -1344,6 +1347,58 @@ def _build_srvus_proxy_command(proxy_url: str, state_root: Path) -> str:
     return f'"{py_con}" -u -B "{bridge_script}" "{clean_p}" %h %p'
 
 
+def _has_ascii_ctl(raw: str) -> bool:
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in raw)
+
+
+def _validate_ssh_user_value(raw_user: str, *, label: str = "SSH user") -> str:
+    if _has_ascii_ctl(raw_user):
+        raise ValueError(f"Invalid {label}: control characters are prohibited.")
+    val = raw_user.strip()
+    if not val:
+        raise ValueError(f"Invalid {label}: must not be empty.")
+    if val.startswith("-"):
+        raise ValueError(f"Invalid {label} `{val}`: leading '-' option injection is prohibited.")
+    if any(ch.isspace() or ch == "@" for ch in val):
+        raise ValueError(f"Invalid {label} `{val}`: whitespace and '@' are prohibited.")
+    return val
+
+
+def _validate_ssh_host_value(raw_host: str, *, label: str = "SSH host") -> str:
+    if _has_ascii_ctl(raw_host):
+        raise ValueError(f"Invalid {label}: control characters are prohibited.")
+    val = raw_host.strip()
+    if not val:
+        raise ValueError(f"Invalid {label}: must not be empty.")
+    if val.startswith("-"):
+        raise ValueError(f"Invalid {label} `{val}`: leading '-' option injection is prohibited.")
+    if any(ch.isspace() or ch == "@" for ch in val):
+        raise ValueError(f"Invalid {label} `{val}`: whitespace and '@' are prohibited.")
+    if val.startswith("[") and val.endswith("]"):
+        inner = val[1:-1]
+        if not inner or inner.startswith("-") or any(ch.isspace() for ch in inner):
+            raise ValueError(f"Invalid bracketed IPv6 {label}: `{val}`.")
+    return val
+
+
+def _validate_ssh_target_spec(raw_target: str, *, label: str = "ssh_target") -> str:
+    if _has_ascii_ctl(raw_target):
+        raise ValueError(f"Invalid {label}: control characters are prohibited.")
+    val = (raw_target or "").strip()
+    if not val:
+        raise ValueError(f"`{label}` (e.g. user@vps.example.com) is required for `--mode vps`.")
+    if val.startswith("-"):
+        raise ValueError(f"Invalid {label} `{val}`: leading '-' option injection is prohibited.")
+    if any(ch.isspace() for ch in val):
+        raise ValueError(f"Invalid {label} `{val}`: whitespace is prohibited.")
+    if "@" in val:
+        u_part, h_part = val.rsplit("@", 1)
+        clean_u = _validate_ssh_user_value(u_part, label=f"{label} user")
+        clean_h = _validate_ssh_host_value(h_part, label=f"{label} host")
+        return f"{clean_u}@{clean_h}"
+    return _validate_ssh_host_value(val, label=label)
+
+
 class SrvUsSshTunnelSupervisor:
     """Supervises zero-login fixed-domain `srv.us` SSH `-R` tunnel with sticky route memory & fast recovery."""
 
@@ -1365,7 +1420,15 @@ class SrvUsSshTunnelSupervisor:
         self.local_port = int(local_port)
         self.state_root = Path(state_root).expanduser().resolve()
         self.prefix = _norm_prefix(prefix)
-        self.ssh_host = (ssh_host or "srv.us").strip() or "srv.us"
+        raw_sh = "" if ssh_host is None else str(ssh_host)
+        if _has_ascii_ctl(raw_sh):
+            raise ValueError("Invalid `ssh_host`: control characters are prohibited.")
+        cand_sh = raw_sh.strip() or "srv.us"
+        self.ssh_host = (
+            _validate_ssh_target_spec(cand_sh, label="ssh_host")
+            if "@" in cand_sh
+            else _validate_ssh_host_value(cand_sh, label="ssh_host")
+        )
         self.ssh_port = int(ssh_port or 22)
         self.persist_tunnel_mode = (persist_tunnel_mode or "srv_us").strip().lower() or "srv_us"
         self.gateway_id = (gateway_id or "instant").strip().lower() or "instant"
@@ -1433,12 +1496,18 @@ class SrvUsSshTunnelSupervisor:
             cmd.extend(["-p", str(int(self.ssh_port))])
         if proxy_command:
             cmd.extend(["-o", f"ProxyCommand={proxy_command}"])
+        eff_ssh_host = (
+            _validate_ssh_target_spec(self.ssh_host, label="ssh_host")
+            if "@" in self.ssh_host
+            else _validate_ssh_host_value(self.ssh_host, label="ssh_host")
+        )
         cmd.extend(
             [
                 "-T",
                 "-R",
                 f"1:127.0.0.1:{int(self.local_port)}",
-                self.ssh_host,
+                "--",
+                eff_ssh_host,
             ]
         )
         return cmd
@@ -1727,6 +1796,20 @@ class SrvUsSshTunnelSupervisor:
 # VPS SSH `-R` Reverse Tunnel & Caddy Snippet
 # ---------------------------------------------------------------------------
 
+_CADDY_COSMOS_SECURITY_MATCHERS = (
+    "    @blocked_admin path /studio /studio/* /api/studio /api/studio/* /oauth/local-bridge /oauth/local-bridge/* /local-admin /local-admin/* /remote-admin /remote-admin/* /_cosmos_node/*\n"
+    '    respond @blocked_admin "Forbidden" 403\n'
+    "    @blocked_node_http {\n"
+    "        path /_cosmos_node\n"
+    "        not {\n"
+    "            header Connection *Upgrade*\n"
+    "            header Upgrade websocket\n"
+    "        }\n"
+    "    }\n"
+    '    respond @blocked_node_http "Forbidden" 403\n'
+)
+
+
 def build_vps_ssh_reverse_tunnel_cmd(
     ssh_target: str,
     remote_bind_port: int,
@@ -1737,9 +1820,7 @@ def build_vps_ssh_reverse_tunnel_cmd(
     ssh_bin: str = "ssh",
 ) -> List[str]:
     """Build non-interactive SSH `-R` reverse tunnel command preventing HostKey / dead-TCP hangs."""
-    target = (ssh_target or "").strip()
-    if not target:
-        raise ValueError("`ssh_target` (e.g. user@vps.example.com) is required for `--mode vps`.")
+    target = _validate_ssh_target_spec(ssh_target or "", label="ssh_target")
     cmd: List[str] = [
         ssh_bin,
         "-N",
@@ -1754,6 +1835,7 @@ def build_vps_ssh_reverse_tunnel_cmd(
         [
             "-R",
             f"127.0.0.1:{int(remote_bind_port)}:127.0.0.1:{int(local_port)}",
+            "--",
             target,
         ]
     )
@@ -1762,7 +1844,7 @@ def build_vps_ssh_reverse_tunnel_cmd(
 
 def generate_vps_caddy_snippet(domain: str, remote_port: int = 18096) -> str:
     """Generate Caddyfile reverse-proxy snippet with SSE `flush_interval -1` for Streamable HTTP MCP."""
-    clean_host = (domain or "").strip()
+    clean_host = (domain or "").replace("\r", "").replace("\n", "").strip()
     if "://" in clean_host:
         clean_host = urlsplit(clean_host).netloc or clean_host
     clean_host = clean_host.strip("/") or "mcp.example.com"
@@ -1770,8 +1852,10 @@ def generate_vps_caddy_snippet(domain: str, remote_port: int = 18096) -> str:
     return (
         f"{clean_host} {{\n"
         "    encode gzip\n"
+        f"{_CADDY_COSMOS_SECURITY_MATCHERS}"
         f"    reverse_proxy 127.0.0.1:{r_port} {{\n"
         "        flush_interval -1\n"
+        "        header_up X-Cosmos-Via-Tunnel 1\n"
         "        header_up Host {host}\n"
         "        header_up X-Forwarded-Proto {scheme}\n"
         "        header_up X-Real-IP {remote_host}\n"
@@ -2059,8 +2143,7 @@ def build_vps_hub_caddy_site_snippet(
     r_port = int(hub_port)
     proxy_body = (
         "    encode gzip\n"
-        "    @blocked_admin path /studio /studio/* /api/studio /api/studio/* /oauth/local-bridge /oauth/local-bridge/* /local-admin /local-admin/* /remote-admin /remote-admin/*\n"
-        '    respond @blocked_admin "Forbidden" 403\n'
+        f"{_CADDY_COSMOS_SECURITY_MATCHERS}"
         f"    reverse_proxy 127.0.0.1:{r_port} {{\n"
         "        flush_interval -1\n"
         "        header_up X-Cosmos-Via-Tunnel 1\n"
@@ -2310,7 +2393,7 @@ def build_vps_hub_systemd_unit(
 
 # Compact pure-stdlib 24h resident VPS Hub fallback: stays online 24/7 returning ERR_NODE_OFFLINE (never 502) when PC is off
 VPS_RESIDENT_HUB_PY = r'''"""24h Resident Cosmos MCP VPS Hub (`/_cosmos_node` WSS binary multiplexer + offline `ERR_NODE_OFFLINE` guard)."""
-import argparse, asyncio, base64, hashlib, hmac, importlib.util, json, os, struct, time, uuid
+import argparse, asyncio, base64, hashlib, hmac, importlib.util, json, os, posixpath, re, struct, time, urllib.parse, uuid
 
 FRAME_REQ_HEAD, FRAME_REQ_BODY, FRAME_REQ_END, FRAME_REQ_CANCEL = 0x10, 0x11, 0x12, 0x13
 FRAME_RES_HEAD, FRAME_RES_BODY, FRAME_RES_END = 0x20, 0x21, 0x22
@@ -2443,6 +2526,28 @@ async def handle_conn(hub: HubState, reader: asyncio.StreamReader, writer: async
             writer.close()
         return
 
+    unq_path = re.sub(r"/{2,}", "/", urllib.parse.unquote(path_only or "/").replace("\\", "/"))
+    norm_path = posixpath.normpath(unq_path)
+    if not norm_path.startswith("/"):
+        norm_path = "/" + norm_path
+    norm_low = norm_path.lower()
+    if (
+        norm_low == "/_cosmos_node"
+        or norm_low.startswith("/_cosmos_node/")
+        or path_only.lower().startswith("/_cosmos_node")
+        or norm_low == "/studio"
+        or norm_low.startswith("/studio/")
+        or norm_low == "/api/studio"
+        or norm_low.startswith("/api/studio/")
+        or norm_low.startswith("/oauth/local-bridge")
+    ):
+        writer.write(
+            b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden"
+        )
+        await writer.drain()
+        writer.close()
+        return
+
     try:
         clen = int(hdrs.get("content-length") or 0)
     except ValueError:
@@ -2556,6 +2661,8 @@ if __name__ == "__main__":
 class VpsWssNodeSupervisor(WorkersDevRelaySupervisor):
     """Registers the local PC as an outbound `:443 WSS` child node (`wss://<vps_host>/_cosmos_node`) on a 24h VPS Hub."""
 
+    _allow_verified_node_rpc: bool = True
+
     def __init__(
         self,
         vps_url: str,
@@ -2639,6 +2746,7 @@ class VpsWssNodeSupervisor(WorkersDevRelaySupervisor):
             on_state_change=on_state_change,
         )
         self.node_alias = eff_alias
+        self.node_secret = self.tunnel_secret
 
     def _read_local_api_token(self) -> str:
         auth_p = self.state_root / "secrets" / "auth.json"
@@ -2650,24 +2758,69 @@ class VpsWssNodeSupervisor(WorkersDevRelaySupervisor):
         return ""
 
     def _execute_local_http(self, req_state: Any, body_bytes: bytes) -> None:
-        if str(getattr(req_state, "path_qs", "") or "").startswith("/_cosmos_node/"):
+        raw_pq = str(getattr(req_state, "path_qs", "") or "/")
+        raw_path_only = raw_pq.split("?", 1)[0]
+        canon_path = self._canonicalize_local_path(raw_pq)
+        canon_low = canon_path.lower()
+        if (
+            canon_low == "/_cosmos_node"
+            or canon_low.startswith("/_cosmos_node/")
+            or raw_path_only.lower().startswith("/_cosmos_node")
+        ):
+            unq_raw = unquote(raw_path_only).replace("\\", "/")
+            if ".." in unq_raw.split("/") or canon_path not in ("/_cosmos_node/info", "/_cosmos_node/exec"):
+                self._send_local_forbidden(req_state, "Forbidden internal node endpoint.")
+                return
+            expected_sec = str(getattr(self, "node_secret", "") or getattr(self, "tunnel_secret", "") or "").strip()
+            raw_hdrs = getattr(req_state, "headers", ())
+            hdr_iter = list(raw_hdrs.items()) if isinstance(raw_hdrs, dict) else list(raw_hdrs or ())
+            bearer_tok = ""
+            for item in hdr_iter:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    hk_s = str(item[0] or "").strip().lower()
+                    hv_s = str(item[1] if item[1] is not None else "").strip()
+                    if hk_s == "authorization" and hv_s.lower().startswith("bearer "):
+                        bearer_tok = hv_s[7:].strip()
+                        break
+            if not expected_sec or not bearer_tok or not hmac.compare_digest(
+                bearer_tok.encode("utf-8"),
+                expected_sec.encode("utf-8"),
+            ):
+                self._send_local_forbidden(req_state, "Valid node_secret Bearer authorization required.")
+                return
+
             tok = self._read_local_api_token()
-            cleaned = [
-                (k, v)
-                for (k, v) in req_state.headers
-                if k.lower()
-                not in (
-                    "x-cosmos-via-tunnel",
-                    "x-cosmos-public-prefix",
-                    "x-cosmos-local-token",
-                    "x-forwarded-host",
-                    "x-forwarded-proto",
-                    "forwarded",
-                )
-            ]
+            cleaned: List[Tuple[str, str]] = []
+            for item in hdr_iter:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    k = str(item[0] or "").replace("\r", "").replace("\n", "").replace("\x00", "").strip()
+                    v = str(item[1] if item[1] is not None else "").replace("\r", "").replace("\n", "").replace("\x00", "")
+                    if not k:
+                        continue
+                    if k.lower() not in (
+                        "host",
+                        "content-length",
+                        "accept-encoding",
+                        "x-cosmos-via-tunnel",
+                        "x-cosmos-public-prefix",
+                        "x-cosmos-local-token",
+                        "x-forwarded-host",
+                        "x-forwarded-proto",
+                        "forwarded",
+                    ):
+                        cleaned.append((k, v))
             if tok:
                 cleaned.append(("X-Cosmos-Local-Token", tok))
+            req_state.path_qs = canon_path
             req_state.headers = cleaned
+            setattr(req_state, "_cosmos_verified_node_rpc", True)
+            super()._execute_local_http(req_state, body_bytes)
+            return
+
+        if self._is_blocked_local_admin_path(raw_pq):
+            self._send_local_forbidden(req_state, "Local management route is blocked over tunnel.")
+            return
+        req_state.headers = self._normalize_req_headers(getattr(req_state, "headers", ()))
         super()._execute_local_http(req_state, body_bytes)
 
 
@@ -2759,17 +2912,24 @@ def provision_vps_hub_oneclick(
     3) Caddy v2.11+ deployment (`default_sni <IP>`, `/var/lib/cosmos-mcp/caddy`, `shortlived` IP cert + `sslip.io` fallback).
     4) 24h systemd Cosmos MCP Hub (`ERR_NODE_OFFLINE` when PC is off, zero `502`) + `:443 WSS` child-node credentials.
     """
-    clean_host = (host or "").strip()
+    raw_host_str = "" if host is None else str(host)
+    raw_user_str = "" if ssh_user is None else str(ssh_user)
+    if _has_ascii_ctl(raw_host_str) or _has_ascii_ctl(raw_user_str):
+        raise ValueError("Invalid VPS SSH host or user: control characters are prohibited.")
+    clean_host = raw_host_str.strip()
+    if clean_host.startswith("-") or any(ch.isspace() for ch in clean_host):
+        raise ValueError(f"Invalid VPS host `{clean_host}`: leading '-' or whitespace is prohibited.")
     if "://" in clean_host:
         clean_host = (urlsplit(clean_host).hostname or clean_host).strip()
     if "@" in clean_host and ssh_user == "root":
         u_part, h_part = clean_host.rsplit("@", 1)
-        if u_part.strip() and h_part.strip():
+        if u_part.strip() or h_part.strip():
             ssh_user = u_part.strip()
             clean_host = h_part.strip()
-    clean_user = (ssh_user or "root").strip() or "root"
+    clean_user = _validate_ssh_user_value((ssh_user or "root"), label="ssh_user")
     if not clean_host:
         return {"ok": False, "error": "missing_vps_host", "message": "请填写云服务器公网 IP 或主机名。"}
+    clean_host = _validate_ssh_host_value(clean_host, label="host")
 
     st_root = Path(state_root).expanduser().resolve()
     eff_prefix = _norm_prefix(prefix)
@@ -2841,6 +3001,7 @@ def provision_vps_hub_oneclick(
                 "PreferredAuthentications=password,keyboard-interactive",
                 "-o",
                 "NumberOfPasswordPrompts=1",
+                "--",
                 f"{clean_user}@{clean_host}",
                 install_key_remote,
             ]
@@ -2869,6 +3030,7 @@ def provision_vps_hub_oneclick(
         str(int(ssh_port)),
         "-i",
         str(priv_key_path),
+        "--",
         f"{clean_user}@{clean_host}",
     ]
 
@@ -3062,7 +3224,9 @@ def provision_vps_hub_oneclick(
         loaded_after = json.loads(auth_json_path.read_text(encoding="utf-8-sig"))
         auth_doc_local = loaded_after if isinstance(loaded_after, dict) else {}
 
-    auth_json_bytes = (json.dumps(auth_doc_local, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    auth_doc_remote = dict(auth_doc_local)
+    auth_doc_remote.pop("local_api_token", None)
+    auth_json_bytes = (json.dumps(auth_doc_remote, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     node_secret_bytes = (node_secret + "\n").encode("utf-8")
     sec_tar_buf = io.BytesIO()
     with tarfile.open(fileobj=sec_tar_buf, mode="w:gz", compresslevel=9) as sec_tf:

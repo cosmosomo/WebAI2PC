@@ -22,6 +22,7 @@ Provides `BrowserPackPlugin` (`pack_id="browser"`, tool `browser_use`):
 import atexit
 import base64
 import contextlib
+import contextvars
 import ipaddress
 import json
 import os
@@ -65,6 +66,37 @@ from cosmos_mcp.packs.desktop import (
     compress_capture_bytes,
     save_optional_capture,
 )
+
+
+def _is_active_remote_transport_ctx() -> bool:
+    with contextlib.suppress(Exception):
+        from cosmos_mcp.protocol import transport as _tr_mod
+
+        ctx_var = getattr(_tr_mod, "_REQUEST_TRANSPORT_CTX", None)
+        if ctx_var is not None and ctx_var in contextvars.copy_context():
+            return bool(getattr(ctx_var.get(), "is_remote", False))
+    return False
+
+
+def _private_lan_cdp_block_patterns() -> List[str]:
+    pats: List[str] = [
+        "http://127.*",
+        "https://127.*",
+        "http://0.0.0.0*",
+        "https://0.0.0.0*",
+        "http://localhost*",
+        "https://localhost*",
+        "http://[::1]*",
+        "https://[::1]*",
+        "http://10.*",
+        "https://10.*",
+        "http://192.168.*",
+        "https://192.168.*",
+    ]
+    for oct2 in range(16, 32):
+        pats.append(f"http://172.{oct2}.*")
+        pats.append(f"https://172.{oct2}.*")
+    return pats
 
 
 def resolve_pack_effective_state_root(explicit_state_root: Optional[Path], policy: Any, guard: WorkspaceGuard) -> Path:
@@ -1583,20 +1615,7 @@ class _HeadlessCdpPage:
                 ]
             )
         if is_remote_session or not allow_loopback_dev:
-            patterns.extend(
-                [
-                    "http://127.*",
-                    "https://127.*",
-                    "http://localhost*",
-                    "https://localhost*",
-                    "http://[::1]*",
-                    "https://[::1]*",
-                    "http://10.*",
-                    "https://10.*",
-                    "http://192.168.*",
-                    "https://192.168.*",
-                ]
-            )
+            patterns.extend(_private_lan_cdp_block_patterns())
         if mcp_public_url:
             clean_pub = mcp_public_url.strip().rstrip("/")
             if clean_pub:
@@ -1985,20 +2004,7 @@ class _IsolatedBrowserWorker:
                     ]
                 )
             if is_rem_b or not allow_lb_b:
-                patterns.extend(
-                    [
-                        "http://127.*",
-                        "https://127.*",
-                        "http://localhost*",
-                        "https://localhost*",
-                        "http://[::1]*",
-                        "https://[::1]*",
-                        "http://10.*",
-                        "https://10.*",
-                        "http://192.168.*",
-                        "https://192.168.*",
-                    ]
-                )
+                patterns.extend(_private_lan_cdp_block_patterns())
             if mcp_pub_s.strip():
                 patterns.append(f"{mcp_pub_s.strip().rstrip('/')}*")
             pat_tup = tuple(patterns)
@@ -2453,10 +2459,18 @@ class BrowserPackPlugin:
                 return str(pub).strip()
         return ""
 
+    @property
+    def is_remote_session_fn(self) -> Optional[Callable[[], bool]]:
+        return self._is_remote_session_fn
+
+    @is_remote_session_fn.setter
+    def is_remote_session_fn(self, fn: Optional[Callable[[], bool]]) -> None:
+        self._is_remote_session_fn = fn
+
     def _is_remote_session(self) -> bool:
         if self._is_remote_session_fn is not None:
             return bool(self._is_remote_session_fn())
-        return False
+        return _is_active_remote_transport_ctx()
 
     def resolve_profile_dir(self, prefix: str = "") -> Path:
         eff_p = (prefix or self._effective_prefix() or "pc").strip()
@@ -2699,7 +2713,7 @@ class BrowserPackPlugin:
             }
 
         worker = self._get_or_create_worker(profile_dir)
-        worker.active_ssrf_ctx = {
+        call_ssrf_ctx: Dict[str, Any] = {
             "mcp_port": mcp_port,
             "blocked_local_ports": self._blocked_local_ports,
             "mcp_public_url": mcp_pub,
@@ -2707,6 +2721,7 @@ class BrowserPackPlugin:
             "allow_loopback_dev": self.allow_loopback_dev,
             "download_dir": str(dl_dir),
         }
+        worker.active_ssrf_ctx = dict(call_ssrf_ctx)
 
         def _verify_post_nav_url(page: Any) -> Optional[str]:
             cur_u = str(page.url or "").strip()
@@ -2748,8 +2763,20 @@ class BrowserPackPlugin:
         def _task(
             handles: Tuple[Callable[[], Tuple[Any, Any]], Callable[[], bool], Callable[[Any], None]],
         ) -> Dict[str, Any]:
+            worker.active_ssrf_ctx = dict(call_ssrf_ctx)
             ensure_page_fn, _, set_active_page_fn = handles
             ctx_obj, page = ensure_page_fn()
+            if is_rem and act in ("click", "fill", "select", "scroll"):
+                pre_err = _verify_post_nav_url(page)
+                if pre_err:
+                    return {
+                        "ok": False,
+                        "pack": "browser",
+                        "action": act,
+                        "blocked_by_guardrail": True,
+                        "blocked_by_ssrf_guard": True,
+                        "error": pre_err,
+                    }
 
             if act == "open":
                 try:

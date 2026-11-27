@@ -27,6 +27,7 @@ import contextlib
 import ctypes
 import fnmatch
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -893,21 +894,35 @@ class StdlibWebSocketClient:
     def __exit__(self, *_exc: Any) -> None:
         self.close()
 
+    @staticmethod
+    def _clean_hdr_val(val: Any) -> str:
+        return str(val if val is not None else "").replace("\r", "").replace("\n", "").replace("\x00", "")
+
+    @classmethod
+    def _clean_hdr_name(cls, name: Any) -> str:
+        return cls._clean_hdr_val(name).replace(":", "").strip()
+
     def build_handshake_bytes(self, ws_key: str) -> bytes:
-        host_hdr = f"{self.host}:{self.port}" if self.port not in (80, 443) else self.host
+        clean_host = self._clean_hdr_val(self.host)
+        clean_path = self._clean_hdr_val(self.path) or "/"
+        clean_key = self._clean_hdr_val(ws_key)
+        host_hdr = f"{clean_host}:{self.port}" if self.port not in (80, 443) else clean_host
         lines = [
-            f"GET {self.path} HTTP/1.1",
+            f"GET {clean_path} HTTP/1.1",
             f"Host: {host_hdr}",
             "Upgrade: websocket",
             "Connection: Upgrade",
-            f"Sec-WebSocket-Key: {ws_key}",
+            f"Sec-WebSocket-Key: {clean_key}",
             "Sec-WebSocket-Version: 13",
         ]
         if self.origin is not None:
-            lines.append(f"Origin: {self.origin}")
+            lines.append(f"Origin: {self._clean_hdr_val(self.origin)}")
         for hk, hv in self.extra_headers.items():
-            if hk.lower() not in ("host", "upgrade", "connection", "sec-websocket-key", "sec-websocket-version", "origin"):
-                lines.append(f"{hk}: {hv}")
+            clean_hk = self._clean_hdr_name(hk)
+            if not clean_hk:
+                continue
+            if clean_hk.lower() not in ("host", "upgrade", "connection", "sec-websocket-key", "sec-websocket-version", "origin"):
+                lines.append(f"{clean_hk}: {self._clean_hdr_val(hv)}")
         lines.extend(["", ""])
         return "\r\n".join(lines).encode("ascii")
 
@@ -972,13 +987,14 @@ class StdlibWebSocketClient:
                 if pscheme in ("socks5", "socks5h"):
                     _connect_socks5_tunnel(raw_sock, self.host, self.port, username=puser, password=ppass)
                 elif pscheme in ("http", "https"):
+                    clean_target_host = self._clean_hdr_val(self.host)
                     connect_lines = [
-                        f"CONNECT {self.host}:{self.port} HTTP/1.1",
-                        f"Host: {self.host}:{self.port}",
+                        f"CONNECT {clean_target_host}:{self.port} HTTP/1.1",
+                        f"Host: {clean_target_host}:{self.port}",
                     ]
                     if puser:
                         cred = f"{puser}:{ppass}"
-                        b64_cred = base64.b64encode(cred.encode("utf-8")).decode("ascii")
+                        b64_cred = self._clean_hdr_val(base64.b64encode(cred.encode("utf-8")).decode("ascii"))
                         connect_lines.append(f"Proxy-Authorization: Basic {b64_cred}")
                     connect_lines.extend(["", ""])
                     raw_sock.sendall("\r\n".join(connect_lines).encode("ascii"))
@@ -995,6 +1011,8 @@ class StdlibWebSocketClient:
                     parts = first_line.split()
                     if len(parts) < 2 or parts[1] != "200":
                         raise ConnectionError(f"HTTP CONNECT rejected by proxy: {first_line}")
+                    if proxy_leftover:
+                        raise ConnectionError("Unexpected trailing data in HTTP CONNECT proxy response")
                 else:
                     raise ValueError(f"Unsupported proxy scheme `{pscheme}` in `{proxy_url}`")
             else:
@@ -1018,7 +1036,7 @@ class StdlibWebSocketClient:
             with self._send_lock:
                 self.sock.sendall(req_bytes)
 
-            header_buf = proxy_leftover if not self.use_tls else b""
+            header_buf = b""
             while b"\r\n\r\n" not in header_buf:
                 chunk = self.sock.recv(2048)
                 if not chunk:
@@ -1028,16 +1046,28 @@ class StdlibWebSocketClient:
                     raise ConnectionError("WebSocket handshake header exceeded 32 KiB")
 
             head_part, leftover = header_buf.split(b"\r\n\r\n", 1)
-            status_line = head_part.splitlines()[0].decode("latin-1", errors="replace").strip()
+            head_lines = head_part.splitlines()
+            status_line = head_lines[0].decode("latin-1", errors="replace").strip() if head_lines else ""
             ws_parts = status_line.split()
             if len(ws_parts) < 2 or ws_parts[1] != "101":
                 raise ConnectionError(f"WebSocket upgrade rejected: {status_line}")
 
+            resp_hdrs: Dict[str, str] = {}
+            for raw_ln in head_lines[1:]:
+                ln_txt = raw_ln.decode("latin-1", errors="replace")
+                if ":" in ln_txt:
+                    rk, rv = ln_txt.split(":", 1)
+                    resp_hdrs[rk.strip().lower()] = rv.strip()
+
             expected_accept = base64.b64encode(
                 hashlib.sha1((ws_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
             ).decode("ascii")
-            if b"sec-websocket-accept:" in head_part.lower() and expected_accept.encode("ascii") not in head_part:
-                raise ConnectionError("Invalid Sec-WebSocket-Accept header")
+            actual_accept = resp_hdrs.get("sec-websocket-accept", "")
+            if not actual_accept or not hmac.compare_digest(
+                actual_accept.encode("ascii", errors="ignore"),
+                expected_accept.encode("ascii"),
+            ):
+                raise ConnectionError("Missing or invalid Sec-WebSocket-Accept header")
 
             self._rx_buf = bytearray(leftover)
             self._frag_opcode = None

@@ -1660,6 +1660,45 @@ def _is_managed_trash_payload(
     return False
 
 
+def _check_tx_write_paths(
+    paths: Sequence[Path],
+    *,
+    allowed_roots: Sequence[Path],
+    guard: Optional[Any],
+    action_label: str,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    for raw_p in paths:
+        cand_p = Path(raw_p).resolve()
+        if allowed_roots and not any(_is_under_dir(cand_p, ws_r) for ws_r in allowed_roots):
+            roots_s = ", ".join(str(r) for r in allowed_roots)
+            return {
+                "ok": False,
+                "action": action_label,
+                "blocked_by_guardrail": True,
+                "path": str(cand_p),
+                "original_path": str(cand_p),
+                "error": f"Cannot {action_label} `{cand_p}` outside workspace [{roots_s}].",
+            }
+        if guard is not None and callable(getattr(guard, "check_path_access", None)):
+            try:
+                g_err = guard.check_path_access(cand_p, mode="write", tool_name=tool_name)
+            except TypeError:
+                g_err = guard.check_path_access(cand_p, "write")
+            except Exception as exc:
+                g_err = f"[GUARD WORKSPACE SANDBOX]: {exc}"
+            if g_err:
+                return {
+                    "ok": False,
+                    "action": action_label,
+                    "blocked_by_guardrail": True,
+                    "path": str(cand_p),
+                    "original_path": str(cand_p),
+                    "error": str(g_err),
+                }
+    return None
+
+
 def restore_trash_item(
     action: str = "list",
     trash_id: str = "",
@@ -1763,14 +1802,15 @@ def restore_trash_item(
     orig_p = Path(str(found_rec.get("original_path") or "")).resolve()
     trash_p = Path(str(found_rec.get("trash_path") or "")).resolve()
 
-    if allowed_roots and not any(_is_under_dir(orig_p, ws_r) for ws_r in allowed_roots):
-        roots_s = ", ".join(str(r) for r in allowed_roots)
-        return {
-            "ok": False,
-            "blocked_by_guardrail": True,
-            "original_path": str(orig_p),
-            "error": f"Cannot restore `{orig_p}` outside workspace [{roots_s}].",
-        }
+    tx_gate_err = _check_tx_write_paths(
+        [orig_p],
+        allowed_roots=allowed_roots,
+        guard=guard,
+        action_label="restore",
+        tool_name="restore_trash",
+    )
+    if tx_gate_err is not None:
+        return tx_gate_err
 
     if not _is_managed_trash_payload(trash_p, candidate_indexes, state_root=state_root, guard=guard):
         return {
@@ -2034,6 +2074,15 @@ def undo_last_edit(
                 if redo_op in ("move", "rename"):
                     src_r = Path(str(latest_redo.get("src_path") or "")).resolve()
                     dst_r = Path(str(latest_redo.get("dst_path") or key)).resolve()
+                    mv_redo_err = _check_tx_write_paths(
+                        [src_r, dst_r],
+                        allowed_roots=allowed_roots,
+                        guard=guard,
+                        action_label="redo",
+                        tool_name="undo_edit",
+                    )
+                    if mv_redo_err is not None:
+                        return mv_redo_err
                     if not src_r.exists():
                         return {"ok": False, "action": "redo", "path": str(src_r), "error": f"Source missing for redo {redo_op}: {src_r}"}
                     dst_r.parent.mkdir(parents=True, exist_ok=True)
@@ -2066,6 +2115,16 @@ def undo_last_edit(
                         "destination": str(dst_r),
                         "remaining_redos": len(redo_hist),
                     }
+
+                redo_target_err = _check_tx_write_paths(
+                    [p],
+                    allowed_roots=allowed_roots,
+                    guard=guard,
+                    action_label="redo",
+                    tool_name="undo_edit",
+                )
+                if redo_target_err is not None:
+                    return redo_target_err
 
                 existed_before = bool(latest_redo.get("existed_before", True))
                 raw_redo_path = str(latest_redo.get("redo_path") or "").strip()
@@ -2253,6 +2312,16 @@ def undo_last_edit(
 
         # 1) Undo `trash`: restore item from trash vault
         if op_type == "trash":
+            tr_gate_err = _check_tx_write_paths(
+                [p],
+                allowed_roots=allowed_roots,
+                guard=guard,
+                action_label="undo",
+                tool_name="undo_edit",
+            )
+            if tr_gate_err is not None:
+                tr_gate_err["undone_op"] = "trash"
+                return tr_gate_err
             tid = str(latest.get("trash_id") or "").strip()
             tr_restore = restore_from_trash(
                 tid or "latest",
@@ -2263,13 +2332,16 @@ def undo_last_edit(
                 guard=guard,
             )
             if not tr_restore.get("ok"):
-                return {
+                out_tr_err: Dict[str, Any] = {
                     "ok": False,
                     "action": "undo",
                     "undone_op": "trash",
                     "path": key,
                     "error": str(tr_restore.get("error") or "Failed to restore trashed item."),
                 }
+                if tr_restore.get("blocked_by_guardrail"):
+                    out_tr_err["blocked_by_guardrail"] = True
+                return out_tr_err
             with get_file_lock(chosen_u_idx):
                 fresh_map = json.loads(chosen_u_idx.read_text(encoding="utf-8")) if chosen_u_idx.is_file() else {}
                 if isinstance(fresh_map, dict):
@@ -2295,17 +2367,16 @@ def undo_last_edit(
         if op_type in ("move", "rename"):
             src_p = Path(str(latest.get("src_path") or "")).resolve()
             dst_p = Path(str(latest.get("dst_path") or key)).resolve()
-            if allowed_roots and (
-                not any(_is_under_dir(src_p, ws_r) for ws_r in allowed_roots)
-                or not any(_is_under_dir(dst_p, ws_r) for ws_r in allowed_roots)
-            ):
-                return {
-                    "ok": False,
-                    "action": "undo",
-                    "blocked_by_guardrail": True,
-                    "path": str(dst_p),
-                    "error": f"Cannot undo {op_type} outside workspace.",
-                }
+            mv_undo_err = _check_tx_write_paths(
+                [src_p, dst_p],
+                allowed_roots=allowed_roots,
+                guard=guard,
+                action_label="undo",
+                tool_name="undo_edit",
+            )
+            if mv_undo_err is not None:
+                mv_undo_err["undone_op"] = op_type
+                return mv_undo_err
             with MultiFileLock([src_p, dst_p]):
                 if not dst_p.exists() and not dst_p.is_symlink():
                     return {
@@ -2342,8 +2413,10 @@ def undo_last_edit(
                             state_root=state_root,
                             guard=guard,
                         )
-                    elif ov_snap and Path(ov_snap).is_file() and not dst_p.exists():
-                        shutil.copy2(ov_snap, str(dst_p))
+                    elif ov_snap and not dst_p.exists():
+                        ov_snap_p = Path(ov_snap).resolve()
+                        if ov_snap_p.is_file() and any(_is_under_dir(ov_snap_p, ud) for ud in allowed_undo_dirs):
+                            shutil.copy2(str(ov_snap_p), str(dst_p))
                 except Exception as exc:
                     return {"ok": False, "action": "undo", "undone_op": op_type, "path": str(dst_p), "error": f"{type(exc).__name__}: {exc}"}
 
@@ -2379,6 +2452,16 @@ def undo_last_edit(
                 }
 
         # 3) Undo `create` / `edit`
+        edit_undo_err = _check_tx_write_paths(
+            [p],
+            allowed_roots=allowed_roots,
+            guard=guard,
+            action_label="undo",
+            tool_name="undo_edit",
+        )
+        if edit_undo_err is not None:
+            edit_undo_err["undone_op"] = op_type
+            return edit_undo_err
         with get_file_lock(p):
             existed_before = bool(latest.get("existed_before", True))
 

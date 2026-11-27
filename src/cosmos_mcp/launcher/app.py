@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import base64
 import contextlib
+import contextvars
 import errno
 import hmac
 import inspect
@@ -396,10 +397,15 @@ def _mount_vps_hub_node_routes(
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
+        node_auth_hdrs = {
+            "content-type": "application/json",
+            "authorization": f"Bearer {_resolve_expected_node_secret()}",
+        }
         st_code, resp_bytes = await sess.request_http(
             "POST",
             "/_cosmos_node/exec",
             payload_bytes,
+            headers=node_auth_hdrs,
             timeout_sec=90.0,
         )
         if st_code >= 500:
@@ -469,7 +475,17 @@ def _mount_vps_hub_node_routes(
 
         async def _sync_live_node_info() -> None:
             with contextlib.suppress(Exception):
-                st_c, body_b = await session.request_http("GET", "/_cosmos_node/info", b"", timeout_sec=5.0)
+                info_hdrs = {
+                    "accept": "application/json",
+                    "authorization": f"Bearer {_resolve_expected_node_secret()}",
+                }
+                st_c, body_b = await session.request_http(
+                    "GET",
+                    "/_cosmos_node/info",
+                    b"",
+                    headers=info_hdrs,
+                    timeout_sec=5.0,
+                )
                 if st_c == 200 and active_sessions.get(node_id) is session and not session.closed:
                     info_doc = json.loads(body_b.decode("utf-8", errors="replace"))
                     if isinstance(info_doc, dict) and info_doc.get("ok"):
@@ -1024,6 +1040,15 @@ def _mount_l1_capabilities(
 
     dispatcher.register_audit_callback("persist_audit_jsonl", _persist_audit_event)
 
+    def _is_remote_mcp_session() -> bool:
+        with contextlib.suppress(Exception):
+            from cosmos_mcp.protocol import transport as _tr_mod
+
+            ctx_var = getattr(_tr_mod, "_REQUEST_TRANSPORT_CTX", None)
+            if ctx_var is not None and ctx_var in contextvars.copy_context():
+                return bool(getattr(ctx_var.get(), "is_remote", False))
+        return False
+
     try:
         packs_raw = dp_mod.build_default_device_packs(
             guard=guard,
@@ -1035,6 +1060,9 @@ def _mount_l1_capabilities(
             mcp_public_url=mcp_public_url,
         )
         pack_plugins = list(packs_raw.values()) if isinstance(packs_raw, dict) else list(packs_raw)
+        for _pk in pack_plugins:
+            if getattr(_pk, "pack_id", "") == "browser" or _pk.__class__.__name__ == "BrowserPackPlugin":
+                _pk.is_remote_session_fn = _is_remote_mcp_session  # type: ignore[attr-defined]
     except TypeError:
         pack_plugins = [
             dp_mod.BrowserPackPlugin(
@@ -1044,6 +1072,7 @@ def _mount_l1_capabilities(
                 prefix=policy.eff_prefix,
                 mcp_port=mcp_port,
                 mcp_public_url=mcp_public_url,
+                is_remote_session_fn=_is_remote_mcp_session,
             ),
         ]
         if sys.platform == "win32":

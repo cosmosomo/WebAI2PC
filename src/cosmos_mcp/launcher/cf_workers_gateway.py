@@ -15,6 +15,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import secrets
 import select
@@ -28,7 +29,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 import urllib.request
 import uuid
 import zlib
@@ -2413,6 +2414,8 @@ def classify_wss_disconnect_reason_zh(
 class WorkersDevRelaySupervisor:
     """Supervises outbound `443 WSS` binary multiplexing relay to Cloudflare DO or VPS Hub."""
 
+    _allow_verified_node_rpc: bool = False
+
     def __init__(
         self,
         public_url: str,
@@ -2441,7 +2444,17 @@ class WorkersDevRelaySupervisor:
         if not parsed.scheme or not parsed.netloc:
             raise ValueError(f"Invalid `public_url` for WSS supervisor: {public_url!r}")
 
-        ws_scheme = "wss" if parsed.scheme.lower() in ("https", "wss") else "ws"
+        scheme_low = parsed.scheme.lower()
+        host_low = (parsed.hostname or "").strip().lower()
+        if scheme_low in ("https", "wss"):
+            ws_scheme = "wss"
+        elif scheme_low in ("http", "ws") and host_low in ("127.0.0.1", "localhost", "::1"):
+            ws_scheme = "ws"
+        else:
+            raise ValueError(
+                f"Cleartext `ws://` / `http://` relay is prohibited for non-loopback host `{host_low}` (use `https://`)."
+            )
+
         raw_path = (parsed.path or "").rstrip("/")
         t_match = _TENANT_PATH_RE.match(raw_path) if raw_path else None
         self.public_prefix = f"/u/{t_match.group(1).lower()}" if t_match else ""
@@ -2449,8 +2462,9 @@ class WorkersDevRelaySupervisor:
         ws_path = f"{self.public_prefix}{ep_sfx}" if self.public_prefix else ep_sfx
 
         self.public_url = f"{parsed.scheme}://{parsed.netloc}{self.public_prefix}"
+        self.worker_url = self.public_url
         self.ws_url = f"{ws_scheme}://{parsed.netloc}{ws_path}"
-        self._ws_host = (parsed.hostname or "").strip().lower()
+        self._ws_host = host_low
         self.tunnel_secret = (tunnel_secret or "").strip()
         if not self.tunnel_secret:
             raise ValueError("`tunnel_secret` must not be empty.")
@@ -2741,48 +2755,58 @@ class WorkersDevRelaySupervisor:
 
     def _normalize_req_headers(self, raw_headers: Any) -> List[Tuple[str, str]]:
         pairs: List[Tuple[str, str]] = []
-        has_tunnel_flag = False
         has_public_prefix = False
         has_forwarded_host = False
+
+        def _clean_item(raw_k: Any, raw_v: Any) -> Optional[Tuple[str, str]]:
+            nonlocal has_public_prefix, has_forwarded_host
+            k = str(raw_k or "").replace("\r", "").replace("\n", "").replace("\x00", "").strip()
+            if not k:
+                return None
+            kl = k.lower()
+            if kl in _HOP_BY_HOP_HEADERS or kl in (
+                "host",
+                "content-length",
+                "accept-encoding",
+                "x-cosmos-via-tunnel",
+                "x-cosmos-local-token",
+            ):
+                return None
+            v = str(raw_v if raw_v is not None else "").replace("\r", "").replace("\n", "").replace("\x00", "")
+            if kl == "x-forwarded-host":
+                v_clean = v.strip()
+                if not v_clean or has_forwarded_host:
+                    return None
+                has_forwarded_host = True
+                return (k, v_clean)
+            if kl == "x-cosmos-public-prefix":
+                v_clean = v.strip()
+                if not v_clean or has_public_prefix:
+                    return None
+                has_public_prefix = True
+                return (k, v_clean)
+            return (k, v)
+
         if isinstance(raw_headers, list):
             for item in raw_headers:
                 if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    k = str(item[0] or "").strip()
-                    v = str(item[1] if item[1] is not None else "")
-                    if k:
-                        kl = k.lower()
-                        if kl in _HOP_BY_HOP_HEADERS or kl in ("host", "content-length", "accept-encoding"):
-                            continue
-                        if kl == "x-cosmos-via-tunnel":
-                            has_tunnel_flag = True
-                        elif kl == "x-cosmos-public-prefix":
-                            has_public_prefix = True
-                        elif kl == "x-forwarded-host":
-                            has_forwarded_host = True
-                        pairs.append((k, v))
+                    cleaned_pair = _clean_item(item[0], item[1])
+                    if cleaned_pair is not None:
+                        pairs.append(cleaned_pair)
         elif isinstance(raw_headers, dict):
             for k_raw, v_raw in raw_headers.items():
-                k = str(k_raw or "").strip()
-                if not k:
-                    continue
-                kl = k.lower()
-                if kl in _HOP_BY_HOP_HEADERS or kl in ("host", "content-length", "accept-encoding"):
-                    continue
-                if kl == "x-cosmos-via-tunnel":
-                    has_tunnel_flag = True
-                elif kl == "x-cosmos-public-prefix":
-                    has_public_prefix = True
-                elif kl == "x-forwarded-host":
-                    has_forwarded_host = True
-                pairs.append((k, str(v_raw if v_raw is not None else "")))
+                cleaned_pair = _clean_item(k_raw, v_raw)
+                if cleaned_pair is not None:
+                    pairs.append(cleaned_pair)
 
-        pub_u = str(getattr(self, "public_url", "") or "").strip()
+        pub_u = str(getattr(self, "public_url", "") or getattr(self, "worker_url", "") or "").strip()
         if pub_u and not has_forwarded_host:
-            pub_netloc = urlsplit(pub_u).netloc
+            pub_candidate = pub_u if "://" in pub_u else f"https://{pub_u}"
+            pub_netloc = urlsplit(pub_candidate).netloc
             if pub_netloc:
                 pairs.append(("x-forwarded-host", pub_netloc))
-        if not has_tunnel_flag:
-            pairs.append(("x-cosmos-via-tunnel", "1"))
+        # Unconditionally enforce non-empty authoritative tunnel marker locally
+        pairs.append(("x-cosmos-via-tunnel", "1"))
         if getattr(self, "public_prefix", "") and not has_public_prefix:
             pairs.append(("x-cosmos-public-prefix", self.public_prefix))
         return pairs
@@ -2799,7 +2823,75 @@ class WorkersDevRelaySupervisor:
             return stripped + q_part
         return (p_part or "/") + q_part
 
+    def _canonicalize_local_path(self, raw_path_qs: str) -> str:
+        stripped = self._strip_tenant_prefix_if_present(str(raw_path_qs or "/"))
+        cur = stripped.split("?", 1)[0] or "/"
+        for _ in range(2):
+            dec = unquote(cur)
+            if dec == cur:
+                break
+            cur = dec
+        cur = cur.replace("\\", "/")
+        cur = re.sub(r"/{2,}", "/", cur)
+        norm = posixpath.normpath(cur)
+        if not norm.startswith("/"):
+            norm = "/" + norm
+        return norm
+
+    def _is_blocked_local_admin_path(self, raw_path_qs: str) -> bool:
+        low = self._canonicalize_local_path(raw_path_qs).lower()
+        return (
+            low == "/studio"
+            or low.startswith("/studio/")
+            or low == "/api/studio"
+            or low.startswith("/api/studio/")
+            or low.startswith("/oauth/local-bridge")
+            or low == "/local-admin"
+            or low.startswith("/local-admin/")
+            or low == "/remote-admin"
+            or low.startswith("/remote-admin/")
+        )
+
+    def _send_local_forbidden(self, req_state: Any, detail: str = "Forbidden") -> None:
+        req_id = getattr(req_state, "req_id", None)
+        setattr(req_state, "local_blocked_status", 403)
+        setattr(req_state, "finished", True)
+        if isinstance(req_id, (bytes, bytearray)) and len(req_id) == 16:
+            body_b = json.dumps(
+                {"ok": False, "error": "forbidden", "detail": detail},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            head_b = json.dumps(
+                {"status": 403, "headers": [["content-type", "application/json; charset=utf-8"]]},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_HEAD, bytes(req_id), head_b))
+            self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_BODY, bytes(req_id), body_b))
+            self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_END, bytes(req_id), b""))
+        lock = getattr(self, "_lock", None)
+        inflight = getattr(self, "_inflight", None)
+        if lock is not None and isinstance(inflight, dict) and req_id is not None:
+            with lock:
+                inflight.pop(req_id, None)
+
     def _execute_local_http(self, req_state: _MultiplexedLocalRequest, body_bytes: bytes) -> None:
+        is_verified_node_rpc = bool(
+            getattr(self, "_allow_verified_node_rpc", False)
+            and getattr(req_state, "_cosmos_verified_node_rpc", False)
+        )
+        if not is_verified_node_rpc:
+            raw_pq = str(getattr(req_state, "path_qs", "") or "/")
+            canon_low = self._canonicalize_local_path(raw_pq).lower()
+            if (
+                self._is_blocked_local_admin_path(raw_pq)
+                or canon_low == "/_cosmos_node"
+                or canon_low.startswith("/_cosmos_node/")
+            ):
+                self._send_local_forbidden(req_state, "Local management or internal node route is blocked over tunnel.")
+                return
+            req_state.headers = self._normalize_req_headers(getattr(req_state, "headers", ()))
+
         req_id = req_state.req_id
         conn = http.client.HTTPConnection("127.0.0.1", self.local_port, timeout=self.local_timeout_sec)
         head_sent = False

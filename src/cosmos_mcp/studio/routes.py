@@ -201,6 +201,7 @@ STUDIO_VERSION = "1.2"
 STUDIO_SESSION_COOKIE = "cosmos_studio_sid"
 STUDIO_SESSION_TTL_SEC = 12 * 3600
 ASSETS_PACKAGE = "cosmos_mcp.studio"
+_STUDIO_AUTH_SCRYPT_SEMAPHORE = threading.BoundedSemaphore(4)
 
 # Plain Chinese metadata for the 12 default core tools (zero exposed snake_case keys required in UI)
 CORE_12_TOOLS_CATALOG: Tuple[Dict[str, str], ...] = (
@@ -2631,6 +2632,7 @@ def _build_studio_state_payload(
     local_api_token: str,
     session_mgr: _StudioSessionManager,
     skills_service: Optional[SkillsMcpService] = None,
+    unlock_csrf: str = "",
 ) -> Dict[str, Any]:
     policy.refresh()
     if provider is not None:
@@ -2642,13 +2644,16 @@ def _build_studio_state_payload(
     is_unlocked = bool(is_loopback or has_session_cookie)
 
     if not is_loopback and not is_unlocked:
+        eff_unlock_csrf = unlock_csrf or hashlib.sha256(
+            f"cosmos-studio-unlock-csrf:{local_admin_csrf}".encode("utf-8")
+        ).hexdigest()[:43]
         return {
             "ok": True,
             "studio_version": STUDIO_VERSION,
             "locked": True,
             "unlocked": False,
             "is_loopback": False,
-            "csrf_token": local_admin_csrf,
+            "csrf_token": eff_unlock_csrf,
             "status_kind": "online",
             "status_text": "在线运行 · 输入管理口令解锁控制面板",
         }
@@ -2967,6 +2972,7 @@ def render_admin_status_html(
     admin_notice: str = "",
     admin_error: str = "",
     http_status: int = 200,
+    unlock_csrf: str = "",
 ) -> HTMLResponse:
     eff_sess_mgr = session_mgr or _StudioSessionManager()
     boot = _build_studio_state_payload(
@@ -2981,6 +2987,7 @@ def render_admin_status_html(
         local_admin_csrf=local_admin_csrf,
         local_api_token=local_api_token,
         session_mgr=eff_sess_mgr,
+        unlock_csrf=unlock_csrf,
     )
     q_notice = (request.query_params.get("admin_notice") or "").strip()
     if admin_notice or q_notice:
@@ -3004,7 +3011,15 @@ def render_admin_status_html(
     rendered = tpl
     for k, v in replacements.items():
         rendered = rendered.replace(k, v)
-    return HTMLResponse(rendered, status_code=http_status, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(
+        rendered,
+        status_code=http_status,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": "frame-ancestors 'none'",
+        },
+    )
 
 
 async def _parse_request_data(request: Request) -> Tuple[Optional[Dict[str, Any]], bool]:
@@ -3039,18 +3054,74 @@ def _verify_same_origin_and_csrf(
     strict_loopback_only: bool = False,
     port: int = 0,
     local_api_token: str = "",
+    extra_allowed_csrf: str = "",
 ) -> Optional[JSONResponse]:
+    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if sec_fetch_site == "cross-site":
+        return JSONResponse(
+            {"ok": False, "error": "拒绝跨站来源请求。"},
+            status_code=403,
+            headers={"Cache-Control": "no-store"},
+        )
+
     origin_hdr = (request.headers.get("origin") or "").strip()
     if origin_hdr:
-        orig_host = (urlsplit(origin_hdr).hostname or "").strip().lower()
-        req_host_full = (request.headers.get("host") or "").strip().lower()
-        req_host = req_host_full.split(":")[0] if ":" in req_host_full and not req_host_full.startswith("[") else req_host_full
+        if origin_hdr.lower() == "null":
+            return JSONResponse(
+                {"ok": False, "error": "拒绝跨站来源请求。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        try:
+            orig_parsed = urlsplit(origin_hdr)
+            orig_host = (orig_parsed.hostname or "").strip().lower()
+            orig_port = orig_parsed.port
+        except ValueError:
+            return JSONResponse(
+                {"ok": False, "error": "拒绝跨站来源请求。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        req_host_full = (request.headers.get("host") or "").strip()
+        try:
+            req_parsed = urlsplit(f"http://{req_host_full}") if req_host_full else None
+            req_host = (req_parsed.hostname or "").strip().lower() if req_parsed else ""
+            req_port = req_parsed.port if req_parsed else None
+        except ValueError:
+            return JSONResponse(
+                {"ok": False, "error": "拒绝跨站来源请求。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not orig_host:
+            return JSONResponse(
+                {"ok": False, "error": "拒绝跨站来源请求。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
         if strict_loopback_only:
             if orig_host not in ("127.0.0.1", "localhost", "::1"):
-                return JSONResponse({"ok": False, "error": "Forbidden: untrusted Origin for local admin."}, status_code=403, headers={"Cache-Control": "no-store"})
+                return JSONResponse(
+                    {"ok": False, "error": "Forbidden: untrusted Origin for local admin."},
+                    status_code=403,
+                    headers={"Cache-Control": "no-store"},
+                )
         else:
-            if orig_host not in ("127.0.0.1", "localhost", "::1", req_host):
-                return JSONResponse({"ok": False, "error": "拒绝跨站来源请求。"}, status_code=403, headers={"Cache-Control": "no-store"})
+            allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+            if req_host:
+                allowed_hosts.add(req_host)
+            if orig_host not in allowed_hosts:
+                return JSONResponse(
+                    {"ok": False, "error": "拒绝跨站来源请求。"},
+                    status_code=403,
+                    headers={"Cache-Control": "no-store"},
+                )
+        if orig_port is not None and req_port is not None and orig_port != req_port:
+            return JSONResponse(
+                {"ok": False, "error": "拒绝跨端口来源请求。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
 
     # CLI / local AI automation carrying a valid `Authorization: Bearer <local_api_token>` over strict loopback
     # is already authenticated via secret token and exempt from browser-form random `csrf_token` checks.
@@ -3064,7 +3135,10 @@ def _verify_same_origin_and_csrf(
         or request.headers.get("x-localpc-csrf")
         or ""
     ).strip()
-    if not csrf_val or not hmac.compare_digest(csrf_val, local_admin_csrf):
+    csrf_ok = bool(csrf_val and hmac.compare_digest(csrf_val, local_admin_csrf))
+    if not csrf_ok and extra_allowed_csrf and csrf_val:
+        csrf_ok = hmac.compare_digest(csrf_val, extra_allowed_csrf)
+    if not csrf_ok:
         return JSONResponse(
             {"ok": False, "error": "会话安全校验令牌无效，请刷新页面后重试。"},
             status_code=403,
@@ -3143,8 +3217,12 @@ async def handle_local_admin_permissions(
 
     if not is_l1_emergency_downgrade and not cookie_valid and not bearer_valid:
         locked, wait_sec = store.check_auth_lockout(bucket_key="local_admin")
-        if locked:
-            msg_lock = f"管理口令连续错误次数过多，请等待 {wait_sec} 秒后重试。"
+        glob_locked, glob_wait = (
+            store.check_global_auth_lockout() if hasattr(store, "check_global_auth_lockout") else (False, 0)
+        )
+        if locked or glob_locked:
+            eff_wait = max(int(wait_sec or 0), int(glob_wait or 0), 1)
+            msg_lock = f"管理口令连续错误次数过多，请等待 {eff_wait} 秒后重试。"
             if wants_html:
                 return render_admin_status_html(
                     request, policy=policy, dispatcher=dispatcher, store=store, provider=provider,
@@ -3154,9 +3232,51 @@ async def handle_local_admin_permissions(
             return JSONResponse({"ok": False, "error": "rate_limited", "detail": msg_lock}, status_code=429)
 
         raw_pw = str(data.get("owner_password") or data.get("password") or request.headers.get("x-cosmos-password") or "").strip()
-        if not provider.authenticate_owner(raw_pw):
-            if raw_pw:
-                store.record_auth_result(False, bucket_key="local_admin")
+        if not raw_pw:
+            err_msg = "操作需要验证管理口令（未填写或口令不正确）。"
+            if wants_html:
+                return render_admin_status_html(
+                    request, policy=policy, dispatcher=dispatcher, store=store, provider=provider,
+                    port=port, get_public_url=get_public_url, local_admin_csrf=local_admin_csrf,
+                    local_api_token=local_api_token, session_mgr=eff_sess, admin_error=err_msg, http_status=403,
+                )
+            return JSONResponse(
+                {"ok": False, "error": "Forbidden: invalid or missing owner_password.", "detail": err_msg},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not _STUDIO_AUTH_SCRYPT_SEMAPHORE.acquire(timeout=1.5):
+            return JSONResponse({"ok": False, "error": "rate_limited", "detail": "认证请求过于密集，请稍后重试。"}, status_code=429)
+        try:
+            pw_valid = provider.authenticate_owner(raw_pw)
+        finally:
+            _STUDIO_AUTH_SCRYPT_SEMAPHORE.release()
+        if not pw_valid:
+            now_l, rem_l = store.record_auth_result(False, bucket_key="local_admin")
+            glob_l, rem_g = (
+                store.record_global_auth_result(False, max_failures=8, window_sec=30, lockout_sec=60)
+                if hasattr(store, "record_global_auth_result")
+                else (False, 0)
+            )
+            if now_l or glob_l:
+                eff_w = max(int(rem_l or 0), int(rem_g or 0), 1)
+                msg_lock = f"管理口令连续错误次数过多，请等待 {eff_w} 秒后重试。"
+                if wants_html:
+                    return render_admin_status_html(
+                        request, policy=policy, dispatcher=dispatcher, store=store, provider=provider,
+                        port=port, get_public_url=get_public_url, local_admin_csrf=local_admin_csrf,
+                        local_api_token=local_api_token, session_mgr=eff_sess, admin_error=msg_lock, http_status=429,
+                    )
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "rate_limited",
+                        "reason": "global_auth_cooldown" if glob_l else "ip_password_lockout",
+                        "detail": msg_lock,
+                    },
+                    status_code=429,
+                    headers={"Cache-Control": "no-store"},
+                )
             err_msg = "操作需要验证管理口令（未填写或口令不正确）。"
             if wants_html:
                 return render_admin_status_html(
@@ -3170,6 +3290,8 @@ async def handle_local_admin_permissions(
                 headers={"Cache-Control": "no-store"},
             )
         store.record_auth_result(True, bucket_key="local_admin")
+        if hasattr(store, "record_global_auth_result"):
+            store.record_global_auth_result(True)
         mint_cookie_on_success = True
 
     app_state = getattr(getattr(request, "app", None), "state", None)
@@ -3397,6 +3519,7 @@ def mount_standalone_status_ui(
         pass
 
     local_admin_csrf = secrets.token_urlsafe(32)
+    unlock_csrf = secrets.token_urlsafe(32)
     session_mgr = _StudioSessionManager()
     origin_guards: List[Any] = []
     issuer_middlewares: List[Any] = []
@@ -3414,6 +3537,7 @@ def mount_standalone_status_ui(
         data: Dict[str, Any],
         *,
         allow_passwordless_loopback: bool = True,
+        allow_unlock_csrf: bool = False,
     ) -> Tuple[Optional[JSONResponse], bool]:
         """Return `(error_response_or_None, newly_authenticated_via_password)`."""
         csrf_err = _verify_same_origin_and_csrf(
@@ -3423,6 +3547,7 @@ def mount_standalone_status_ui(
             strict_loopback_only=False,
             port=port,
             local_api_token=local_api_token,
+            extra_allowed_csrf=unlock_csrf if allow_unlock_csrf else "",
         )
         if csrf_err is not None:
             return csrf_err, False
@@ -3435,6 +3560,15 @@ def mount_standalone_status_ui(
         if session_mgr.verify_token(cookie_tok, provider):
             return None, False
 
+        csrf_cand = str(
+            data.get("csrf")
+            or data.get("csrf_token")
+            or request.headers.get("x-studio-csrf")
+            or request.headers.get("x-localpc-csrf")
+            or ""
+        ).strip()
+        used_local_csrf = bool(csrf_cand and hmac.compare_digest(csrf_cand, local_admin_csrf))
+
         raw_pw = str(
             data.get("owner_password")
             or data.get("password")
@@ -3442,21 +3576,98 @@ def mount_standalone_status_ui(
             or ""
         ).strip()
 
-        if allow_passwordless_loopback and is_lb and not raw_pw:
+        if allow_passwordless_loopback and is_lb and not raw_pw and used_local_csrf:
             return None, False
 
         ip_bucket = "local_admin" if is_lb else f"studio_remote:{resolve_request_client_ip(request, getattr(provider, 'tunnel_mode', ''))[0]}"
         locked, wait_sec = store.check_auth_lockout(bucket_key=ip_bucket)
         if locked:
             return JSONResponse(
-                {"ok": False, "error": f"管理口令尝试次数过多，请等待 {wait_sec} 秒后重试。"},
+                {
+                    "ok": False,
+                    "error": f"管理口令尝试次数过多，请等待 {wait_sec} 秒后重试。",
+                    "reason": "ip_password_lockout",
+                    "retry_after": wait_sec,
+                },
                 status_code=429,
                 headers={"Cache-Control": "no-store"},
             ), False
 
-        if not raw_pw or not provider.authenticate_owner(raw_pw):
-            if raw_pw:
-                store.record_auth_result(False, bucket_key=ip_bucket)
+        glob_locked, glob_wait = (
+            store.check_global_auth_lockout() if hasattr(store, "check_global_auth_lockout") else (False, 0)
+        )
+        if glob_locked:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": f"管理口令尝试次数过多，请等待 {glob_wait} 秒后重试。",
+                    "reason": "global_auth_cooldown",
+                    "retry_after": glob_wait,
+                },
+                status_code=429,
+                headers={"Cache-Control": "no-store"},
+            ), False
+
+        if not raw_pw:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "need_unlock": True,
+                    "error": "请先在顶部输入一次管理口令解锁会话（解锁后本窗口所有操作免重复输入）。",
+                },
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            ), False
+
+        if not _STUDIO_AUTH_SCRYPT_SEMAPHORE.acquire(timeout=1.5):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "认证请求过于密集，请稍后重试。",
+                    "reason": "auth_busy",
+                    "retry_after": 2,
+                },
+                status_code=429,
+                headers={"Cache-Control": "no-store"},
+            ), False
+        try:
+            glob_locked_recheck, glob_wait_recheck = (
+                store.check_global_auth_lockout() if hasattr(store, "check_global_auth_lockout") else (False, 0)
+            )
+            if glob_locked_recheck:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": f"管理口令尝试次数过多，请等待 {glob_wait_recheck} 秒后重试。",
+                        "reason": "global_auth_cooldown",
+                        "retry_after": glob_wait_recheck,
+                    },
+                    status_code=429,
+                    headers={"Cache-Control": "no-store"},
+                ), False
+            pw_ok = provider.authenticate_owner(raw_pw)
+        finally:
+            _STUDIO_AUTH_SCRYPT_SEMAPHORE.release()
+
+        if not pw_ok:
+            now_locked, rem_ip = store.record_auth_result(False, bucket_key=ip_bucket)
+            glob_now_locked, rem_glob = (
+                store.record_global_auth_result(False, max_failures=8, window_sec=30, lockout_sec=60)
+                if hasattr(store, "record_global_auth_result")
+                else (False, 0)
+            )
+            if now_locked or glob_now_locked:
+                eff_wait_s = max(int(rem_ip or 0), int(rem_glob or 0), 1)
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": f"管理口令尝试次数过多，请等待 {eff_wait_s} 秒后重试。",
+                        "reason": "global_auth_cooldown" if glob_now_locked else "ip_password_lockout",
+                        "retry_after": eff_wait_s,
+                    },
+                    status_code=429,
+                    headers={"Cache-Control": "no-store"},
+                ), False
             return JSONResponse(
                 {
                     "ok": False,
@@ -3468,6 +3679,8 @@ def mount_standalone_status_ui(
             ), False
 
         store.record_auth_result(True, bucket_key=ip_bucket)
+        if hasattr(store, "record_global_auth_result"):
+            store.record_global_auth_result(True)
         return None, True
 
     def _json_with_optional_cookie(payload: Dict[str, Any], request: Request, mint_cookie: bool, status_code: int = 200) -> JSONResponse:
@@ -3492,6 +3705,7 @@ def mount_standalone_status_ui(
             local_api_token=local_api_token,
             session_mgr=session_mgr,
             skills_service=skills_service,
+            unlock_csrf=unlock_csrf,
         )
 
     async def standalone_root(request: Request) -> Response:
@@ -3522,6 +3736,7 @@ def mount_standalone_status_ui(
             local_admin_csrf=local_admin_csrf,
             local_api_token=local_api_token,
             session_mgr=session_mgr,
+            unlock_csrf=unlock_csrf,
         )
 
     async def studio_page_ep(request: Request) -> Response:
@@ -3537,12 +3752,20 @@ def mount_standalone_status_ui(
             local_admin_csrf=local_admin_csrf,
             local_api_token=local_api_token,
             session_mgr=session_mgr,
+            unlock_csrf=unlock_csrf,
         )
 
     async def tutorials_page_ep(request: Request) -> Response:
         _ = request
         html_doc = read_asset_text("tutorials.html")
-        return HTMLResponse(html_doc, headers={"Cache-Control": "no-store"})
+        return HTMLResponse(
+            html_doc,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Frame-Options": "DENY",
+                "Content-Security-Policy": "frame-ancestors 'none'",
+            },
+        )
 
     async def favicon_ep(request: Request) -> Response:
         _ = request
@@ -3610,25 +3833,20 @@ def mount_standalone_status_ui(
         data, _ = await _parse_request_data(request)
         if data is None:
             return JSONResponse({"ok": False, "error": "请求格式无效。"}, status_code=400)
-        err_resp, _ = _check_studio_auth(request, data)
+        err_resp, _ = _check_studio_auth(request, data, allow_unlock_csrf=True)
         if err_resp is not None:
             return err_resp
         is_lb = is_strict_direct_loopback(request, port)
         is_https = get_public_url().startswith("https://")
+        if not is_lb:
+            cookie_tok = session_mgr.mint_token(provider, is_loopback=False)
+            request._cookies = {**dict(request.cookies), STUDIO_SESSION_COOKIE: cookie_tok}
         snap = _state_snapshot(request)
         snap["locked"] = False
         snap["unlocked"] = True
-        snap["message"] = "管理会话已解锁，本窗口后续操作无需重复输入口令。"
+        snap["message"] = "管理会话已解锁，本窗口后续操作无需重复输入口令。" if is_lb else "远程管理会话已解锁。"
         resp = JSONResponse(snap, status_code=200, headers={"Cache-Control": "no-store"})
         session_mgr.attach_cookie(resp, provider, is_loopback=is_lb, is_https=is_https)
-        if not is_lb and snap.get("locked"):
-            # Re-render full unlocked snapshot now that unlocked=True
-            cookie_tok = session_mgr.mint_token(provider, is_loopback=False)
-            request._cookies = {**dict(request.cookies), STUDIO_SESSION_COOKIE: cookie_tok}
-            full_snap = _state_snapshot(request)
-            full_snap["message"] = "远程管理会话已解锁。"
-            resp = JSONResponse(full_snap, status_code=200, headers={"Cache-Control": "no-store"})
-            session_mgr.attach_cookie(resp, provider, is_loopback=False, is_https=is_https)
         return resp
 
     async def studio_lock_ep(request: Request) -> Response:
@@ -5716,6 +5934,7 @@ def mount_standalone_status_ui(
         rebuilt_routes.append(Route("/u/{node_id}/consent/complete", endpoint=consent_complete_fallback_ep, methods=["GET"]))
     app.router.routes[:] = rebuilt_routes
     app.state.local_admin_csrf = local_admin_csrf
+    app.state.unlock_csrf = unlock_csrf
     app.state.studio_session_mgr = session_mgr
     app.state.get_public_url = get_public_url
     return local_admin_csrf, origin_guards, issuer_middlewares
