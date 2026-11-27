@@ -3794,6 +3794,33 @@ def mount_standalone_status_ui(
             headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
         )
 
+    _allowed_showcase_png_files = frozenset(
+        {
+            "case-01-blackhole.png",
+            "case-02-holo-cards.png",
+            "case-03-neon-canyon.png",
+        }
+    )
+
+    async def static_showcase_asset_ep(request: Request) -> Response:
+        showcase_file = str(request.path_params.get("showcase_file", "") or "").strip()
+        if showcase_file not in _allowed_showcase_png_files:
+            return Response("Not Found", status_code=404)
+        base_dir = Path(__file__).resolve().parent
+        candidates = [
+            base_dir / "static" / "showcase" / showcase_file,
+            base_dir.parent.parent / "assets" / "tutorials" / showcase_file,
+            base_dir.parent.parent.parent / "assets" / "tutorials" / showcase_file,
+        ]
+        for cand in candidates:
+            if cand.is_file():
+                return Response(
+                    cand.read_bytes(),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
+                )
+        return Response("Not Found", status_code=404)
+
     async def tutorials_md_ep(request: Request) -> Response:
         _ = request
         from cosmos_mcp.core.tutorials_catalog import render_public_tutorials_markdown
@@ -5952,6 +5979,7 @@ def mount_standalone_status_ui(
     rebuilt_routes: List[Any] = [
         Route("/favicon.ico", endpoint=favicon_ep, methods=["GET"]),
         Route("/static/brand/{brand_file}", endpoint=static_brand_asset_ep, methods=["GET"]),
+        Route("/static/showcase/{showcase_file}", endpoint=static_showcase_asset_ep, methods=["GET"]),
         Route("/static/{asset_name}", endpoint=static_asset_ep, methods=["GET"]),
         Route("/studio", endpoint=studio_page_ep, methods=["GET"]),
         Route("/tutorials", endpoint=tutorials_page_ep, methods=["GET"]),

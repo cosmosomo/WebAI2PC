@@ -899,7 +899,26 @@
       var promptBtn = ev.target.closest("[data-copy-prompt]");
       if (promptBtn) {
         var promptText = promptBtn.getAttribute("data-copy-prompt") || "";
-        copyTextToClipboard(promptText, promptBtn, "已复制指令，可直接粘贴发送");
+        copyTextToClipboard(promptText, promptBtn, "已复制，在 AI 对话框输入 @ 选你的连接器后粘贴即可");
+        return;
+      }
+
+      var togglePrev = ev.target.closest("[data-toggle-prompt-preview]");
+      if (togglePrev) {
+        var card = togglePrev.closest(".prompt-card");
+        var pre = card ? card.querySelector(".prompt-code-box") : null;
+        if (pre) {
+          var willShow = pre.hasAttribute("hidden");
+          if (willShow) {
+            pre.removeAttribute("hidden");
+            togglePrev.setAttribute("aria-expanded", "true");
+            togglePrev.textContent = "收起提示词";
+          } else {
+            pre.setAttribute("hidden", "");
+            togglePrev.setAttribute("aria-expanded", "false");
+            togglePrev.textContent = "查看提示词";
+          }
+        }
         return;
       }
     });

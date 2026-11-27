@@ -3271,22 +3271,36 @@
       });
     });
 
-    // One-Shot Showcase Prompt Copy Buttons (auto-adapts `@Cosmos` vs `@WebAI2PC` based on active host scene tab)
+    // One-Shot Showcase Prompt Copy Buttons (pure task prompt without guessing connector name)
     document.querySelectorAll("[data-copy-showcase]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var caseKey = btn.getAttribute("data-copy-showcase") || "";
         var bodyText = SHOWCASE_PROMPTS[caseKey] || "";
         if (!bodyText) return;
-        var isCgptScene = Boolean($("host-panel-chatgpt") && $("host-panel-chatgpt").classList.contains("active"));
-        var prefix = isCgptScene ? "@WebAI2PC " : "@Cosmos ";
-        var fullPrompt = prefix + bodyText;
-        copyText(fullPrompt, btn);
-        showToast(
-          isCgptScene
-            ? "已复制 " + "@WebAI2PC 实机案例提示词（可直接粘贴到 ChatGPT 普通 Chat 模式运行，零扣 Work/Codex 额度）"
-            : "已复制 " + "@Cosmos 实机案例提示词，直接粘贴到网页版 Gemini 发送即可本地生成运行",
-          false
-        );
+        copyText(bodyText, btn);
+        showToast("已复制，在 AI 对话框输入 @ 选你的连接器后粘贴即可", false);
+      });
+    });
+
+    // Showcase "查看全文" expandable prompt preview toggles
+    document.querySelectorAll("[data-toggle-showcase-prompt]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var caseKey = btn.getAttribute("data-toggle-showcase-prompt") || "";
+        var preview = document.querySelector('[data-showcase-preview="' + caseKey + '"]');
+        if (!preview) return;
+        if (!preview.textContent) {
+          preview.textContent = SHOWCASE_PROMPTS[caseKey] || "";
+        }
+        var willShow = preview.hasAttribute("hidden");
+        if (willShow) {
+          preview.removeAttribute("hidden");
+          btn.setAttribute("aria-expanded", "true");
+          btn.textContent = "收起全文";
+        } else {
+          preview.setAttribute("hidden", "");
+          btn.setAttribute("aria-expanded", "false");
+          btn.textContent = "查看全文";
+        }
       });
     });
 

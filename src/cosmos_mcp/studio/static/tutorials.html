@@ -212,8 +212,10 @@
     .prompt-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .prompt-card-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); }
     .prompt-code-box { margin: 0; padding: 9px 10px; border-radius: 7px; background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .tut-showcase-art { width: 100%; height: 96px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: #070b14; margin-bottom: 8px; }
-    .tut-showcase-art svg { width: 100%; height: 100%; display: block; }
+    #tut-anti-share-strip { display: none !important; }
+    .tut-showcase-thumb { width: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #070b14; margin-bottom: 8px; display: block; }
+    .prompt-card-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .prompt-code-box { margin: 8px 0 0; }
 
     .safety-tier-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
     .safety-tier-pill { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 11px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-alt); cursor: pointer; text-align: left; }
@@ -370,7 +372,7 @@
         <button type="button" class="tut-mobile-pill active" role="tab" aria-selected="true" data-mod-target="mod-gemini">1. Gemini 与手机远控</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">2. ChatGPT Work/Chat 分工</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-channels">3. 通道选型器</button>
-        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-templates">4. 实战指令库</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-templates">4. 连上后可以试试看</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-safety">5. 安全与快照</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-troubleshoot">6. 常见排障</button>
       </nav>
@@ -411,7 +413,7 @@
               <span class="tut-nav-count" data-mod-badge="mod-channels">0/4</span>
             </button>
             <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-templates">
-              <span class="tut-nav-title">4. 多智能体与办公模板库</span>
+              <span class="tut-nav-title">4. 连上后可以试试看</span>
               <span class="tut-nav-count" data-mod-badge="mod-templates">0/3</span>
             </button>
             <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-safety">
@@ -806,176 +808,183 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
           </ul>
         </article>
 
-        <!-- 教程 4：多智能体并行与本地办公/代码实战模板库 -->
+        <!-- 教程 4：连上后可以试试看 -->
         <article class="card tut-module" id="mod-templates" data-module-id="mod-templates">
           <div class="tut-mod-header">
             <div>
-              <div class="tut-mod-kicker">教程 4 · 9 张实机炫技与高频办公提示词卡（点击一键复制即联动 IP 图标）</div>
-              <h2 class="card-title">一句话 3D 实机效果案例 &amp; 本地办公 / 代码实战模板库</h2>
-              <p class="card-desc" style="margin-bottom:0;">连好后复制任意卡片发给网页版 Gemini（<code>@Cosmos</code>）或网页版 ChatGPT 普通 <code>Chat</code> 模式（<code>@WebAI2PC</code>，零扣 <code>Work / Codex</code> 额度），直接在授权文件夹生成纯离线工程并本地运行。</p>
+              <div class="tut-mod-kicker">第 4 步 · 连上后立刻体验</div>
+              <h2 class="card-title">连上电脑后，可以马上试试这些</h2>
+              <p class="card-desc" style="margin-bottom:0;">点一下复制，直接发给网页版 Gemini 或 ChatGPT，看它帮你写离线 3D 作品或处理本地文件。复制后，在对话框里输入 <code>@</code> 选中你刚命名的连接器，再粘贴发送。</p>
             </div>
-            <div class="ts-pills-row" id="tpl-filter-bar" role="tablist" aria-label="模板分类筛选">
+            <div class="ts-pills-row" id="tpl-filter-bar" role="tablist" aria-label="案例分类筛选">
               <button type="button" class="ts-pill active" data-tpl-cat="all">全部 (9)</button>
-              <button type="button" class="ts-pill" data-tpl-cat="showcase">3D 实机效果案例 (3)</button>
-              <button type="button" class="ts-pill" data-tpl-cat="code">并行审查与后台编译</button>
+              <button type="button" class="ts-pill" data-tpl-cat="showcase">3D 作品体验 (3)</button>
+              <button type="button" class="ts-pill" data-tpl-cat="code">代码审查与后台运行</button>
               <button type="button" class="ts-pill" data-tpl-cat="office">Word / Excel / PDF 看图</button>
-              <button type="button" class="ts-pill" data-tpl-cat="fleet">多机协同与身份备份</button>
+              <button type="button" class="ts-pill" data-tpl-cat="fleet">多电脑与备份</button>
             </div>
           </div>
 
           <div class="prompt-cards-grid" id="prompt-cards-grid">
             <div class="prompt-card" data-tpl-item="showcase" data-pose-trigger="terminal">
               <div>
-                <div class="tut-showcase-art"><svg viewBox="0 0 320 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><radialGradient id="bhGlow" cx="50%" cy="50%" r="52%"><stop offset="0%" stop-color="#000000"/><stop offset="34%" stop-color="#05070d"/><stop offset="44%" stop-color="#ffb454"/><stop offset="60%" stop-color="#ea580c" stop-opacity="0.72"/><stop offset="100%" stop-color="#060913" stop-opacity="0"/></radialGradient><linearGradient id="bhDisk" x1="0%" y1="50%" x2="100%" y2="50%"><stop offset="0%" stop-color="#60a5fa" stop-opacity="0.15"/><stop offset="28%" stop-color="#93c5fd"/><stop offset="52%" stop-color="#fde68a"/><stop offset="78%" stop-color="#f97316"/><stop offset="100%" stop-color="#7c2d12" stop-opacity="0.1"/></linearGradient></defs><rect width="320" height="112" fill="#060913"/><circle cx="44" cy="24" r="1" fill="#94a3b8"/><circle cx="274" cy="20" r="1.2" fill="#cbd5e1"/><circle cx="246" cy="86" r="1" fill="#64748b"/><circle cx="78" cy="88" r="1.1" fill="#94a3b8"/><circle cx="152" cy="56" r="46" fill="url(#bhGlow)"/><ellipse cx="152" cy="56" rx="86" ry="15" fill="none" stroke="url(#bhDisk)" stroke-width="7" transform="rotate(-11 152 56)"/><circle cx="152" cy="56" r="21" fill="#020308" stroke="#fde68a" stroke-width="1.6"/><rect x="236" y="14" width="72" height="84" rx="6" fill="#0f172a" fill-opacity="0.82" stroke="#334155" stroke-width="1"/><rect x="244" y="24" width="42" height="4" rx="2" fill="#94a3b8"/><rect x="244" y="36" width="56" height="3" rx="1.5" fill="#38bdf8"/><rect x="244" y="48" width="48" height="3" rx="1.5" fill="#f59e0b"/><rect x="244" y="60" width="52" height="3" rx="1.5" fill="#fb923c"/><rect x="244" y="75" width="56" height="14" rx="4" fill="#1e293b"/></svg></div>
+                <img class="tut-showcase-thumb" src="/static/showcase/case-01-blackhole.png" alt="黑洞引力透镜 3D 实时仿真效果图" loading="lazy" width="640" height="360">
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">案例 01 · 黑洞引力透镜实时仿真 (<code>blackhole_studio.html</code>)</h3>
-                  <span class="tag tag-info">单文件 WebGL2 · 60fps</span>
+                  <h3 class="prompt-card-title">黑洞引力透镜仿真</h3>
+                  <span class="tag tag-info">单文件 3D</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">零第三方库与 CDN，GLSL 300 实时光线步进渲染发光吸积盘与爱因斯坦环，内置三组电影机位与 4 项物理滑块。</p>
-                <pre class="prompt-code-box">@Cosmos 在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">纯离线单文件生成带发光吸积盘的 3D 黑洞网页，支持三组电影机位与 4 项物理滑块。</p>
+                <pre class="prompt-code-box" hidden>在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。</pre>
               </div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。">复制给 Gemini (@Cosmos)</button>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-prompt="@WebAI2PC 在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。">复制给 ChatGPT Chat (@WebAI2PC)</button>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
 
             <div class="prompt-card" data-tpl-item="showcase" data-pose-trigger="terminal">
               <div>
-                <div class="tut-showcase-art"><svg viewBox="0 0 320 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="holoC" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1e293b"/><stop offset="50%" stop-color="#334155"/><stop offset="100%" stop-color="#0f172a"/></linearGradient><linearGradient id="holoH" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="48%" stop-color="#a855f7"/><stop offset="100%" stop-color="#14b8a6"/></linearGradient><linearGradient id="holoNe" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f43f5e"/><stop offset="52%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#ec4899"/></linearGradient></defs><rect width="320" height="112" fill="#070b14"/><g transform="translate(46,16) rotate(-8 34 40)"><rect width="64" height="82" rx="7" fill="url(#holoC)" stroke="#94a3b8" stroke-width="1.2"/><text x="10" y="20" fill="#cbd5e1" font-size="9" font-family="monospace">06</text><text x="22" y="52" fill="#f8fafc" font-size="24" font-weight="700" font-family="sans-serif">C</text><text x="12" y="70" fill="#94a3b8" font-size="8" font-family="sans-serif">Carbon</text></g><g transform="translate(126,11)"><rect width="68" height="88" rx="8" fill="url(#holoH)" stroke="#e0f2fe" stroke-width="1.5"/><text x="10" y="20" fill="#f0f9ff" font-size="9" font-family="monospace">01</text><text x="23" y="55" fill="#ffffff" font-size="26" font-weight="700" font-family="sans-serif">H</text><text x="12" y="74" fill="#e0f2fe" font-size="8" font-family="sans-serif">Hydrogen</text></g><g transform="translate(208,16) rotate(8 34 40)"><rect width="64" height="82" rx="7" fill="url(#holoNe)" stroke="#fecdd3" stroke-width="1.2"/><text x="10" y="20" fill="#fff1f2" font-size="9" font-family="monospace">10</text><text x="16" y="52" fill="#ffffff" font-size="23" font-weight="700" font-family="sans-serif">Ne</text><text x="14" y="70" fill="#ffe4e6" font-size="8" font-family="sans-serif">Neon</text></g></svg></div>
+                <img class="tut-showcase-thumb" src="/static/showcase/case-02-holo-cards.png" alt="元素全息金属典藏卡 3D 效果图" loading="lazy" width="640" height="360">
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">案例 02 · 元素周期表全息金属典藏卡 (<code>gemini_holo_cards.html</code>)</h3>
-                  <span class="tag tag-info">薄膜干涉 3D 卡</span>
+                  <h3 class="prompt-card-title">元素全息金属典藏卡</h3>
+                  <span class="tag tag-info">全息 3D 卡</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">程序化 Canvas + WebGL2 实时生成拉丝金属与薄膜干涉彩虹光影，含 <code>06 C / 01 H / 10 Ne</code> 三卡弹簧倾角、180° 翻转与三档色温。</p>
-                <pre class="prompt-code-box">@Cosmos 在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">无外部图片生成 3 张带彩虹金属反光的 3D 元素卡，支持悬停倾角、180° 翻转与色温切换。</p>
+                <pre class="prompt-code-box" hidden>在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。</pre>
               </div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。">复制给 Gemini (@Cosmos)</button>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-prompt="@WebAI2PC 在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。">复制给 ChatGPT Chat (@WebAI2PC)</button>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
 
             <div class="prompt-card" data-tpl-item="showcase" data-pose-trigger="terminal">
               <div>
-                <div class="tut-showcase-art"><svg viewBox="0 0 320 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sunGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#fde047"/><stop offset="55%" stop-color="#f97316"/><stop offset="100%" stop-color="#db2777"/></linearGradient></defs><rect width="320" height="112" fill="#090514"/><circle cx="160" cy="52" r="26" fill="url(#sunGrad)"/><rect x="130" y="48" width="60" height="2.5" fill="#090514"/><rect x="130" y="55" width="60" height="3" fill="#090514"/><rect x="130" y="63" width="60" height="4" fill="#090514"/><polygon points="0,112 0,38 118,62 82,112" fill="#120924" stroke="#22d3ee" stroke-width="1.2"/><polygon points="320,112 320,36 202,62 238,112" fill="#120924" stroke="#22d3ee" stroke-width="1.2"/><line x1="82" y1="112" x2="238" y2="112" stroke="#ec4899" stroke-width="1.5"/><line x1="104" y1="84" x2="216" y2="84" stroke="#ec4899" stroke-opacity="0.65" stroke-width="1"/><line x1="118" y1="62" x2="202" y2="62" stroke="#22d3ee" stroke-opacity="0.8" stroke-width="1"/><circle cx="160" cy="70" r="13" fill="none" stroke="#38bdf8" stroke-width="2.4"/><polygon points="160,82 149,95 160,91 171,95" fill="#f8fafc" stroke="#22d3ee" stroke-width="1"/></svg></div>
+                <img class="tut-showcase-thumb" src="/static/showcase/case-03-neon-canyon.png" alt="霓虹峡谷 3D 低空飞行游戏效果图" loading="lazy" width="640" height="360">
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">案例 03 · 霓虹峡谷 3D 低空飞行 (<code>neon_canyon/</code>)</h3>
-                  <span class="tag tag-ok">5 文件工程 + 合成音效</span>
+                  <h3 class="prompt-card-title">霓虹峡谷 3D 低空飞行</h3>
+                  <span class="tag tag-ok">5 文件工程</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">自动拆分 <code>index.html / styles.css / terrain.js / audio.js / game.js</code> 5 个文件，含穿环加速连击与 Web Audio 实时合成音效。</p>
-                <pre class="prompt-code-box">@Cosmos 在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">自动新建 5 文件本地工程，写出带 Web Audio 实时合成音效的 3D 低空飞行小游戏。</p>
+                <pre class="prompt-code-box" hidden>在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。</pre>
               </div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。">复制给 Gemini (@Cosmos)</button>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-prompt="@WebAI2PC 在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。">复制给 ChatGPT Chat (@WebAI2PC)</button>
-              </div>
-            </div>
-            <div class="prompt-card" data-tpl-item="code" data-pose-trigger="terminal">
-              <div>
-                <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">1. 跨目录并行子任务代码审查</h3>
-                  <span class="tag tag-info">并行 Subagent</span>
-                </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">拆分多路并行只读子任务分别核查不同子目录，汇总行号与修复建议，避免塞满主会话上下文。</p>
-                <pre class="prompt-code-box">@Cosmos 请先查看当前工作区目录结构，再拆分为并行子任务分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件（每路子任务开头带上 @Cosmos 并标记 caller），最后汇总具体文件路径、行号与修改方案。</pre>
-              </div>
-              <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请先查看当前工作区目录结构，再拆分为并行子任务分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件（每路子任务开头带上 @Cosmos 并标记 caller），最后汇总具体文件路径、行号与修改方案。">复制实战指令 1</button>
-              </div>
-            </div>
-
-            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
-              <div>
-                <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">2. Word <code>.docx</code> 保样式修订与 Excel <code>.xlsx</code> 公式填写</h3>
-                  <span class="tag tag-ok">Office 安全修订</span>
-                </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);"><code>pc_edit_file</code> 支持跨 <code>&lt;w:r&gt;</code> 节点替换文字保留原字体样式，并按 <code>Sheet!A1</code> 坐标更新单元格与公式。</p>
-                <pre class="prompt-code-box">@Cosmos 请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。</pre>
-              </div>
-              <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。">复制实战指令 2</button>
-              </div>
-            </div>
-
-            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
-              <div>
-                <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">3. PDF 文档提取与本地截图直读分析</h3>
-                  <span class="tag tag-ok">原生看图 + PDF</span>
-                </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);"><code>pc_read_file</code> 对本地 PNG / JPEG / WebP 直接返回二进制图像块供模型看图，并提取中文 PDF、<code>.docx</code>、<code>.xlsx</code>、<code>.pptx</code> 文本。</p>
-                <pre class="prompt-code-box">@Cosmos 请用 pc_find_files 查找当前工作区内的 PDF 需求文档与最新 UI 截图，用 pc_read_file 直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。</pre>
-              </div>
-              <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请用 pc_find_files 查找当前工作区内的 PDF 需求文档与最新 UI 截图，用 pc_read_file 直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。">复制实战指令 3</button>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
 
             <div class="prompt-card" data-tpl-item="code" data-pose-trigger="terminal">
               <div>
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">4. 超时编译与全量测试转 <code>pc_bg_command</code> 后台运行</h3>
-                  <span class="tag tag-info">无窗口后台任务</span>
+                  <h3 class="prompt-card-title">跨目录并行代码审查</h3>
+                  <span class="tag tag-info">代码审查</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">耗时超过同步等待阈值的构建或测试通过 <code>pc_bg_command</code> 在后台静默执行，零弹窗不抢焦点。</p>
-                <pre class="prompt-code-box">@Cosmos 请使用 pc_bg_command 在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒轮询一次运行状态与尾部日志，完成后汇总失败用例与原因。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">让 AI 分目录检查后端、前端与测试里的异常处理和边界问题，直接汇总文件路径与行号。</p>
+                <pre class="prompt-code-box" hidden>请先查看当前工作区目录结构，再分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件，最后汇总具体文件路径、行号与修改方案。</pre>
               </div>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请先查看当前工作区目录结构，再分别审查后端接口层、前端静态资源层与测试目录的异常处理和边界条件，最后汇总具体文件路径、行号与修改方案。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
               <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请使用 pc_bg_command 在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒轮询一次运行状态与尾部日志，完成后汇总失败用例与原因。">复制实战指令 4</button>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">Word 保样式改稿 + Excel 填公式</h3>
+                  <span class="tag tag-ok">Office 修订</span>
+                </div>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">保留原段落字体直接修改 .docx，并按单元格坐标更新 .xlsx 汇总公式，改前自动留快照。</p>
+                <pre class="prompt-code-box" hidden>请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。</pre>
+              </div>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请读取当前目录下的项目周报 .docx 与预算明细 .xlsx：保留原有段落与表格样式将周报中的交付日期更新为本周五，并在 Excel 的 Summary!E12 单元格填入前 10 行金额的 SUM 汇总公式，修改前确保留存可撤回快照。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="office" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">对照 PDF 需求直接看本地截图</h3>
+                  <span class="tag tag-ok">看图 + PDF</span>
+                </div>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">免手动上传附件，直接读取本地 PDF 与界面截图，逐项核对遗漏字段和排版问题。</p>
+                <pre class="prompt-code-box" hidden>请查找当前工作区内的 PDF 需求文档与最新 UI 截图，直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。</pre>
+              </div>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请查找当前工作区内的 PDF 需求文档与最新 UI 截图，直接查看截图画面并对照 PDF 中的字段要求，列出界面上遗漏的表单项或排版错位位置。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
+              </div>
+            </div>
+
+            <div class="prompt-card" data-tpl-item="code" data-pose-trigger="terminal">
+              <div>
+                <div class="prompt-card-head">
+                  <h3 class="prompt-card-title">后台静默跑测试与打包</h3>
+                  <span class="tag tag-info">后台无弹窗</span>
+                </div>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">耗时较长的编译和测试放后台静默跑，不弹黑框不抢焦点，定时看尾部日志并汇总结果。</p>
+                <pre class="prompt-code-box" hidden>请在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒查看一次运行状态与尾部日志，完成后汇总失败用例与原因。</pre>
+              </div>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请在后台启动当前项目的完整测试与打包构建流程，每隔 20 秒查看一次运行状态与尾部日志，完成后汇总失败用例与原因。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
 
             <div class="prompt-card" data-tpl-item="fleet" data-pose-trigger="terminal">
               <div>
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">5. 跨设备前缀协同（<code>desk_*</code> / <code>laptop_*</code> 与 <code>target="auto"</code>）</h3>
-                  <span class="tag">多电脑组网</span>
+                  <h3 class="prompt-card-title">多台电脑环境对比</h3>
+                  <span class="tag">多电脑协同</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">支持多连接器自定义 <code>tool_prefix</code> 同窗调用，或 24h 主站单入口传 <code>target="server"</code> / <code>target="local"</code> 路由。</p>
-                <pre class="prompt-code-box">@Cosmos 请对比当前连接的台式机（desk_get_status）与轻薄本（laptop_get_status）的 Python 依赖版本差异；若挂载在 24h 服务器主站，请分别检查 target="server" 与 target="local" 的工作目录状态。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">同时连着台式机、轻薄本或 24 小时服务器时，一句话对比环境依赖与目录状态。</p>
+                <pre class="prompt-code-box" hidden>请对比当前连接的台式机与轻薄本的 Python 依赖版本差异；如果挂载了 24h 服务器主站，请分别检查服务器端与本地电脑的工作目录状态。</pre>
               </div>
-              <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请对比当前连接的台式机（desk_get_status）与轻薄本（laptop_get_status）的 Python 依赖版本差异；若挂载在 24h 服务器主站，请分别检查 target=&quot;server&quot; 与 target=&quot;local&quot; 的工作目录状态。">复制实战指令 5</button>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请对比当前连接的台式机与轻薄本的 Python 依赖版本差异；如果挂载了 24h 服务器主站，请分别检查服务器端与本地电脑的工作目录状态。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
 
             <div class="prompt-card" data-tpl-item="fleet" data-pose-trigger="terminal">
               <div>
                 <div class="prompt-card-head">
-                  <h3 class="prompt-card-title">6. 导出 / 导入加密身份备份 PNG 与迁移核验</h3>
-                  <span class="tag">节点迁移</span>
+                  <h3 class="prompt-card-title">换机恢复后的状态核验</h3>
+                  <span class="tag">身份备份</span>
                 </div>
-                <p style="margin:4px 0 8px;font-size:12.5px;color:var(--muted);">在 Studio「总览与网页连接 -&gt; 通道 1」点击「导出身份恢复卡 PNG」设口令下载图片；换机后点「导入恢复卡 PNG」恢复原固定网址。</p>
-                <pre class="prompt-code-box">@Cosmos 我已完成身份恢复卡 PNG 导入并切回新电脑，请调用 pc_get_status 核对当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。</pre>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">导入加密恢复卡 PNG 换机后，一句话核对设备标识、权限档位和开放目录是否就绪。</p>
+                <pre class="prompt-code-box" hidden>我已完成身份恢复卡 PNG 导入并切回新电脑，请检查当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。</pre>
               </div>
-              <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 我已完成身份恢复卡 PNG 导入并切回新电脑，请调用 pc_get_status 核对当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。">复制实战指令 6</button>
+              <div class="prompt-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="我已完成身份恢复卡 PNG 导入并切回新电脑，请检查当前设备标识、安全档位、已开放的可读写与只读目录列表以及活跃工作区技能是否全部正常。">复制提示词</button>
+                <button type="button" class="btn-link-subtle" data-toggle-prompt-preview aria-expanded="false">查看提示词</button>
               </div>
             </div>
           </div>
 
           <ul class="tut-step-list" style="margin-top:12px;">
             <li class="tut-step-item" data-step-wrap="t1">
-              <input type="checkbox" class="tut-step-chk" data-step-id="t1" aria-label="试用代码审查或文件读取模板">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t1" aria-label="试用体验卡片">
               <div class="tut-step-body">
-                <div class="tut-step-title">实操打卡 1：复制任一代码或文档指令卡到网页端执行</div>
-                <p class="tut-step-desc">体验免上传附件直读本地大代码仓、PDF 与截图。</p>
+                <div class="tut-step-title">试试看 1：复制上方任意体验卡发给网页端 AI</div>
+                <p class="tut-step-desc">在对话框输入 <code>@</code> 选中你的连接器后粘贴发送，体验直接写本地作品或读文档看图。</p>
               </div>
             </li>
             <li class="tut-step-item" data-step-wrap="t2">
-              <input type="checkbox" class="tut-step-chk" data-step-id="t2" aria-label="试用后台任务管理">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t2" aria-label="查看后台任务日志">
               <div class="tut-step-body">
-                <div class="tut-step-title">实操打卡 2：在 Studio「实时任务与修改恢复」查看后台任务尾部日志</div>
-                <p class="tut-step-desc">验证子进程全程无黑框弹窗且支持一键终止。</p>
+                <div class="tut-step-title">试试看 2：在 Studio「实时任务与修改恢复」查看执行记录</div>
+                <p class="tut-step-desc">后台执行全程无黑框弹窗，每次改文件自动留快照，随时可一键撤回。</p>
               </div>
             </li>
             <li class="tut-step-item" data-step-wrap="t3">
-              <input type="checkbox" class="tut-step-chk" data-step-id="t3" aria-label="熟悉多机工具前缀或恢复卡">
+              <input type="checkbox" class="tut-step-chk" data-step-id="t3" aria-label="保存身份恢复卡">
               <div class="tut-step-body">
-                <div class="tut-step-title">实操打卡 3：按需配置 <code>tool_prefix</code> 或保存加密身份恢复卡 PNG</div>
-                <p class="tut-step-desc">多台电脑同连一个对话时可在「工具中心与安全开关」修改工具前缀并点「保存工具前缀」。</p>
+                <div class="tut-step-title">试试看 3：按需保存加密身份恢复卡 PNG 或设置多机工具前缀</div>
+                <p class="tut-step-desc">重装或换电脑时导入恢复卡即可沿用原固定网址，多台电脑同连可在设置里改工具前缀。</p>
               </div>
             </li>
           </ul>

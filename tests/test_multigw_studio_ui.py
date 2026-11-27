@@ -1220,36 +1220,38 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     assert secret_val not in full_prompt
                     assert secret_val not in ro_prompt
 
-            # 2c) Showcase 1-click prompt button adapts prefix between Gemini (`@Cosmos `) and ChatGPT (`@WebAI2PC `)
-            driver.select_host_scene("gemini")
+            # 2c) Directly-visible showcase strip copies pure task prompt (no hardcoded connector name), shows @ toast, and expands on click
             driver.evaluate(
                 """() => {
-                    const det = document.getElementById('showcase-prompts-details');
-                    if (det) det.open = true;
                     window.__copiedHistory = [];
                     document.getElementById('copy-showcase-blackhole-btn').click();
                 }"""
             )
-            gem_showcase = driver.wait_until(
+            pure_showcase = driver.wait_until(
                 "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
-                description="Gemini showcase prompt copied",
+                description="Pure showcase prompt copied",
             )
-            assert gem_showcase.startswith(f"{at_sym}Cosmos ")
-            assert "blackhole_studio.html" in gem_showcase
+            assert not pure_showcase.startswith(f"{at_sym}Cosmos")
+            assert not pure_showcase.startswith(f"{at_sym}WebAI2PC")
+            assert "blackhole_studio.html" in pure_showcase
+            toast_sc = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
+            assert f"{at_sym}" in toast_sc and "连接器" in toast_sc
 
-            driver.select_host_scene("chatgpt")
-            driver.evaluate(
+            # Preview is hidden by default and expands only when clicking 查看全文
+            preview_states = driver.evaluate(
                 """() => {
-                    window.__copiedHistory = [];
-                    document.getElementById('copy-showcase-blackhole-btn').click();
+                    const pre = document.querySelector('[data-showcase-preview="blackhole"]');
+                    const btn = document.querySelector('[data-toggle-showcase-prompt="blackhole"]');
+                    const hiddenBefore = pre ? pre.hasAttribute('hidden') : null;
+                    if (btn) btn.click();
+                    const hiddenAfter = pre ? pre.hasAttribute('hidden') : null;
+                    const textAfter = pre ? pre.textContent : '';
+                    return { hiddenBefore, hiddenAfter, textAfter };
                 }"""
             )
-            cgpt_showcase = driver.wait_until(
-                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
-                description="ChatGPT showcase prompt copied",
-            )
-            assert cgpt_showcase.startswith(f"{at_sym}WebAI2PC ")
-            assert "blackhole_studio.html" in cgpt_showcase
+            assert preview_states["hiddenBefore"] is True
+            assert preview_states["hiddenAfter"] is False
+            assert "blackhole_studio.html" in preview_states["textAfter"]
 
             # 3) Verify `/tutorials` Module 2 primary & secondary buttons unlock on live sync and stub window.open cleanly
             driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
