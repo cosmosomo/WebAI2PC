@@ -682,3 +682,160 @@ def test_studio_zero_html_password_remote_redaction_actions_and_uninstall_gate(
         assert not st_root.exists()
         # User workspace files must remain 100% untouched!
         assert user_code_file.is_file() and user_code_file.read_text(encoding="utf-8") == "x = 42\n"
+
+
+def test_stealth_404_allows_issued_pat_bearer_on_bare_mcp_and_enforces_readonly_scope(tmp_path: Path) -> None:
+    """When `/u/<endpoint_secret>` stealth 404 is enabled, valid PAT Bearer tokens pass smoothly on `/mcp` & `/mcp/readonly`."""
+    st_root = tmp_path / "state_pat"
+    ws_dir = tmp_path / "ws_pat"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    port = 18824
+    public_base = "https://sec-pat.srv.us"
+    workers_base = "https://my-gw.demo.workers.dev"
+    _setup_public_gateway_state(st_root, ws_dir, port=port, public_base=public_base)
+    cfg_p = resolve_service_cfg_path(st_root, "pc")
+    cfg_d = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
+    cfg_d["gateways"]["workers_dev"]["enabled"] = True
+    atomic_write_json(cfg_p, cfg_d)
+
+    app = create_standalone_app(state_dir=str(st_root), port=port, workspace=str(ws_dir))
+    mcp_list_req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    mcp_hdrs_base = {"Accept": "application/json, text/event-stream"}
+
+    with TestClient(app, raise_server_exceptions=False) as _lifespan_holder:
+        _ = _lifespan_holder
+        lb_client = TestClient(
+            app,
+            base_url=f"http://127.0.0.1:{port}",
+            client=("127.0.0.1", 52100),
+            raise_server_exceptions=False,
+        )
+        rem_client = TestClient(
+            app,
+            base_url=public_base,
+            client=("198.51.100.88", 52100),
+            raise_server_exceptions=False,
+        )
+        wd_client = TestClient(
+            app,
+            base_url=workers_base,
+            client=("198.51.100.89", 52101),
+            raise_server_exceptions=False,
+        )
+
+        st_doc = lb_client.get("/api/studio/state").json()
+        csrf = st_doc["csrf_token"]
+
+        # Enable `/u/<endpoint_secret>` stealth 404
+        r_rot = lb_client.post(
+            "/api/studio/connection",
+            json={"action": "rotate_endpoint_secret", "revoke_sessions": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_rot.status_code == 200, r_rot.text
+        ep_sec = load_endpoint_secret(st_root, "pc")
+        assert len(ep_sec) >= 24
+
+        # Unauthenticated or forged PAT on bare `/mcp` and `/mcp/readonly` still hits Stealth 404
+        assert rem_client.post("/mcp", json=mcp_list_req, headers=mcp_hdrs_base).status_code == 404
+        assert (
+            rem_client.post(
+                "/mcp/readonly",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": "Bearer cmcp_forged_nonexistent_pat_token"},
+            ).status_code
+            == 404
+        )
+        assert wd_client.post("/mcp", json=mcp_list_req, headers=mcp_hdrs_base).status_code == 404
+
+        # Mint a readonly PAT and a full-access PAT via loopback Studio endpoint
+        r_ro_pat = lb_client.post(
+            "/api/studio/tokens/mint",
+            json={"label": "Sites RO", "readonly": True, "ttl_days": 7, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_ro_pat.status_code == 200, r_ro_pat.text
+        ro_tok = r_ro_pat.json()["minted_token"]["token"]
+
+        r_rw_pat = lb_client.post(
+            "/api/studio/tokens/mint",
+            json={"label": "CLI RW", "readonly": False, "ttl_days": 7, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_rw_pat.status_code == 200, r_rw_pat.text
+        rw_mint = r_rw_pat.json()["minted_token"]
+        rw_tok = rw_mint["token"]
+        rw_cid = rw_mint["client_id"]
+
+        # Readonly PAT smoothly passes Stealth 404 on bare `/mcp/readonly` AND `/u/<secret>/mcp/readonly` (including workers_dev),
+        # while upward escalation to `/mcp` is blocked with 403 `forbidden_cross_resource`.
+        assert (
+            rem_client.post(
+                "/mcp/readonly",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {ro_tok}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            wd_client.post(
+                "/mcp/readonly",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {ro_tok}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            rem_client.post(
+                f"/u/{ep_sec}/mcp/readonly",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {ro_tok}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            rem_client.post(
+                "/mcp",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {ro_tok}"},
+            ).status_code
+            == 403
+        )
+
+        # Full PAT smoothly passes Stealth 404 on bare `/mcp` AND `/mcp/readonly` across both gateways
+        assert (
+            rem_client.post(
+                "/mcp",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {rw_tok}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            wd_client.post(
+                "/mcp",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {rw_tok}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            rem_client.post(
+                "/mcp/readonly",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {rw_tok}"},
+            ).status_code
+            == 200
+        )
+
+        # Revoking the PAT immediately restores Stealth 404 on bare `/mcp`
+        app.state.provider.store.revoke_client(rw_cid, delete_client=True)
+        assert (
+            rem_client.post(
+                "/mcp",
+                json=mcp_list_req,
+                headers={**mcp_hdrs_base, "Authorization": f"Bearer {rw_tok}"},
+            ).status_code
+            == 404
+        )
+

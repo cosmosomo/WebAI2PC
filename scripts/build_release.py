@@ -74,6 +74,7 @@ REQUIRED_STUDIO_STATIC_FILES: Tuple[str, ...] = (
     "src/cosmos_mcp/studio/static/themes.css",
     "src/cosmos_mcp/studio/static/tutorials.html",
     "src/cosmos_mcp/studio/static/tutorials.js",
+    "src/cosmos_mcp/studio/static/security-uninstall.js",
     "src/cosmos_mcp/studio/static/favicon.svg",
     "src/cosmos_mcp/studio/static/brand/webai2pc-icon-v2-dark.svg",
     "src/cosmos_mcp/studio/static/brand/webai2pc-icon-v2-light.svg",
@@ -90,9 +91,11 @@ REQUIRED_SANDBOX_FILES: Tuple[str, ...] = (
 REQUIRED_ASSET_FILES: Tuple[str, ...] = (
     "assets/readme/cases-trio-banner-dark.png",
 )
-GENERATED_LAUNCHERS: Tuple[str, str] = (
+GENERATED_LAUNCHERS: Tuple[str, ...] = (
     "一键启动_Cosmos_MCP.bat",
     "start_cosmos_mcp.sh",
+    "一键卸载_Cosmos_MCP.bat",
+    "uninstall_cosmos_mcp.sh",
 )
 REQUIRED_EMBED_PACKAGES: Tuple[str, ...] = (
     "mcp",
@@ -870,14 +873,12 @@ def build_release_zip(
     target_zip.parent.mkdir(parents=True, exist_ok=True)
 
     manifest = collect_release_manifest(repo_root)
-    win_bat_p = repo_root / GENERATED_LAUNCHERS[0]
-    sh_p = repo_root / GENERATED_LAUNCHERS[1]
-    if not win_bat_p.is_file():
-        raise FileNotFoundError(f"Missing required launcher script: {GENERATED_LAUNCHERS[0]}")
-    if not sh_p.is_file():
-        raise FileNotFoundError(f"Missing required launcher script: {GENERATED_LAUNCHERS[1]}")
-    win_bat_bytes = win_bat_p.read_bytes()
-    sh_bytes = sh_p.read_bytes()
+    launcher_payloads: List[Tuple[str, bytes, bool]] = []
+    for gl in GENERATED_LAUNCHERS:
+        gl_p = repo_root / gl
+        if not gl_p.is_file():
+            raise FileNotFoundError(f"Missing required launcher script: {gl}")
+        launcher_payloads.append((gl, gl_p.read_bytes(), gl.lower().endswith(".sh")))
     quickstart_bytes = render_quickstart_txt(version)
 
     embed_entries: List[Tuple[str, bytes, bool]] = []
@@ -893,8 +894,8 @@ def build_release_zip(
         _write_zip_entry(zf, QUICKSTART_TXT_NAME, quickstart_bytes, executable=False)
         for arc, fp in manifest:
             _write_zip_entry(zf, arc, fp.read_bytes(), executable=arc.endswith(".sh"))
-        _write_zip_entry(zf, GENERATED_LAUNCHERS[0], win_bat_bytes, executable=False)
-        _write_zip_entry(zf, GENERATED_LAUNCHERS[1], sh_bytes, executable=True)
+        for gl_arc, gl_bytes, gl_exec in launcher_payloads:
+            _write_zip_entry(zf, gl_arc, gl_bytes, executable=gl_exec)
         for arc, payload, is_exec in embed_entries:
             _write_zip_entry(zf, arc, payload, executable=is_exec)
         for arc, payload, is_exec in wheel_entries:

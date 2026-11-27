@@ -3967,7 +3967,11 @@ class OAuthProvider:
                 return True
             eff_map = self.get_effective_trusted_gateways()
             req_pfx = (req_gw.public_prefix or "").lower()
-            return (req_gw.authority, req_pfx) in eff_map or (req_gw.authority, "") in eff_map
+            return (
+                (req_gw.authority, req_pfx) in eff_map
+                or (req_gw.authority, "") in eff_map
+                or any(m_auth == req_gw.authority for (m_auth, _) in eff_map)
+            )
         if norm_tok not in self.allowed_resources:
             return False
         req_gw = _REQUEST_GATEWAY_VAR.get()

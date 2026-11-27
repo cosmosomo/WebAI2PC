@@ -180,6 +180,8 @@ from cosmos_mcp.core.path_heal import is_link_or_junction
 from cosmos_mcp.core.proc import DEFAULT_PROCESS_MANAGER, ProcessManager, append_audit_log
 from cosmos_mcp.protocol.dispatcher import KernelDispatcher, SafetyBand, ToolSpec
 from cosmos_mcp.protocol.oauth import (
+    PAT_FULL_RESOURCE,
+    PAT_READONLY_RESOURCE,
     READONLY_SCOPES,
     SCOPES,
     IssuerResponseMiddleware,
@@ -813,6 +815,16 @@ def _authority_matches_gateway(res_url: str, gw: TrustedGatewayEndpoint, provide
     clean = str(res_url or "").strip().rstrip("/")
     if not clean:
         return True
+    if clean in (PAT_FULL_RESOURCE, PAT_READONLY_RESOURCE):
+        if gw.is_loopback:
+            return True
+        eff_map = provider.get_effective_trusted_gateways()
+        gw_pfx = (gw.public_prefix or "").lower()
+        return (
+            (gw.authority, gw_pfx) in eff_map
+            or (gw.authority, "") in eff_map
+            or any(m_auth == gw.authority for (m_auth, _) in eff_map)
+        )
     tok_auth = _normalize_url_authority(clean)
     if not tok_auth:
         return False
@@ -1536,7 +1548,7 @@ class McpTransportEnvelopeASGI:
                 if isinstance(c_doc, dict):
                     c_name = str(c_doc.get("client_name") or "")
                     c_uris = c_doc.get("redirect_uris") or []
-                    client_platform, _ = identify_client_platform(c_name, c_uris)
+                    client_platform, _ = identify_client_platform(c_name, c_uris, client_id=client_id)
                     if is_google_gemini_client(c_name, c_uris):
                         is_gemini = True
         elif user_obj is not None and bool(getattr(user_obj, "is_authenticated", False)):

@@ -109,7 +109,7 @@ packages = [
 
 [tool.setuptools.package-data]
 "cosmos_mcp.protocol" = ["templates/*.html"]
-"cosmos_mcp.studio" = ["static/*", "static/brand/*.svg"]
+"cosmos_mcp.studio" = ["static/*", "static/brand/*.svg", "static/showcase/*.png"]
 "cosmos_mcp.host_skills" = ["SKILL.md", "*.md", "webai2pc-setup-tutorial/*.md"]
 
 [tool.pytest.ini_options]
