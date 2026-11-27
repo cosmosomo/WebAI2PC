@@ -466,13 +466,10 @@ def test_guard_write_blocked_prefixes_l4_readonly_roots_and_cmcp_redact(tmp_path
         # Normal workspace file remains writable
         assert g.check_path_access(ws_dir / "main.py", mode="write") is None
 
-        # 2) Explicit `readonly_workspace_roots` blocks writes in workspace-restricted L3 while L4 (`tier4_full_power`) preserves full-power UX
+        # 2) Explicit `readonly_workspace_roots` blocks writes across both L3 and L4 (honoring user's explicit read-only mount)
         assert g.check_path_access(ro_dir / "reference.md", mode="read") is None
         ro_err = g.check_path_access(ro_dir / "reference.md", mode="write")
-        if tier_code != "L4":
-            assert ro_err is not None and "ERR_READONLY_WORKSPACE" in ro_err
-        else:
-            assert ro_err is None
+        assert ro_err is not None and "ERR_READONLY_WORKSPACE" in ro_err
         # Longest-prefix writable child under `ro_dir` remains writable
         assert g.check_path_access(rw_sub / "editable.py", mode="write") is None
 
