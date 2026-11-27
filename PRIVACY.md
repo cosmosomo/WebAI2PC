@@ -1,5 +1,7 @@
 # 隐私政策与零遥测声明（PRIVACY.md）
 
+> 🌐 **Language:** 简体中文（当前） · [English](PRIVACY_EN.md)
+
 ## 一、产品定位与默认零遥测声明
 
 Cosmos MCP 面向 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（首次代连用 `Work` 模式受控浏览器或本机手动装插件，安装后支持普通 `Chat` 模式日常开发与 `Work` 模式长程/定时任务；工作区全功能 `/mcp` 与个人订阅只读 `/mcp/readonly`）** 提供受控的本地工作区连接服务。

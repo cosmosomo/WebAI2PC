@@ -1,5 +1,7 @@
 # WebAI2PC 文档中心
 
+> 🌐 **Language:** 简体中文（当前） · [English Documentation](en/README.md)
+
 本目录存放 **WebAI2PC** 的二级实操教程、连接架构说明、安全护栏与内置工具参考。
 
 > 返回项目首页：[README.md](../README.md) · 前往下载发行包：[Releases](https://github.com/cosmosomo/WebAI2PC/releases)
