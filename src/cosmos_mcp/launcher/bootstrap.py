@@ -12,6 +12,7 @@ Enforces:
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
 import json
 import os
@@ -23,7 +24,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 import urllib.request
 
 from cosmos_mcp.core.fs_tx import safe_trash_file
@@ -572,6 +573,138 @@ def find_wheelhouse_dir(repo_root: Optional[Path] = None) -> Optional[Path]:
     return None
 
 
+APP_SRC_UPDATE_META_FILENAME = ".cosmos_update_meta.json"
+_INIT_VERSION_RE = re.compile(r"""__version__\s*=\s*['"]([^'"]+)['"]""")
+
+
+def parse_semver_tuple(raw_version: str) -> Tuple[int, ...]:
+    """Parse semantic version string (e.g. `1.2.1` or `v9.9.9`) into a comparable integer tuple."""
+    clean = str(raw_version or "").strip().lstrip("vV")
+    base = clean.split("+", 1)[0].split("-", 1)[0]
+    nums = [int(x) for x in re.findall(r"\d+", base)]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def read_package_init_version(pkg_init_file: Path) -> str:
+    """Extract `__version__` literal from `<dir>/cosmos_mcp/__init__.py` without importing it."""
+    try:
+        if not pkg_init_file.is_file():
+            return ""
+        txt = pkg_init_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    m = _INIT_VERSION_RE.search(txt)
+    return m.group(1).strip() if m else ""
+
+
+def compute_source_tree_hash(src_cosmos_dir: Path) -> str:
+    """Compute deterministic full SHA-256 hex digest over `cosmos_mcp` source tree."""
+    root_p = Path(src_cosmos_dir).expanduser().resolve()
+    if (root_p / "cosmos_mcp" / "__init__.py").is_file():
+        root_p = (root_p / "cosmos_mcp").resolve()
+    if not root_p.is_dir():
+        return ""
+    hasher = hashlib.sha256()
+    entries: List[Tuple[str, Path]] = []
+    for cur_root, dirs, files in os.walk(root_p):
+        dirs[:] = [d for d in sorted(dirs) if d not in _SYNC_SKIP_DIRS and not d.lower().endswith(".egg-info")]
+        rel_dir = Path(cur_root).relative_to(root_p)
+        for fname in sorted(files):
+            if any(fname.lower().endswith(sfx) for sfx in _SYNC_SKIP_SUFFIXES):
+                continue
+            if fname == APP_SRC_UPDATE_META_FILENAME:
+                continue
+            fp = Path(cur_root) / fname
+            rel_posix = (rel_dir / fname).as_posix()
+            entries.append((rel_posix, fp))
+    entries.sort(key=lambda item: item[0])
+    for rel_posix, fp in entries:
+        hasher.update(rel_posix.encode("utf-8") + b"\x00")
+        try:
+            data = fp.read_bytes()
+        except OSError:
+            continue
+        if rel_posix.lower().endswith((".py", ".toml", ".md", ".json", ".js", ".css", ".html", ".svg", ".txt", ".sh", ".bat")):
+            data = data.replace(b"\r\n", b"\n")
+        hasher.update(str(len(data)).encode("ascii") + b"\x00")
+        hasher.update(data + b"\x00")
+    return hasher.hexdigest()
+
+
+def _max_source_tree_mtime(src_cosmos_dir: Path) -> float:
+    root_p = Path(src_cosmos_dir).expanduser().resolve()
+    if not root_p.is_dir():
+        return 0.0
+    latest = 0.0
+    for cur_root, dirs, files in os.walk(root_p):
+        dirs[:] = [d for d in sorted(dirs) if d not in _SYNC_SKIP_DIRS and not d.lower().endswith(".egg-info")]
+        for fname in files:
+            if any(fname.lower().endswith(sfx) for sfx in _SYNC_SKIP_SUFFIXES):
+                continue
+            try:
+                mt = (Path(cur_root) / fname).stat().st_mtime
+                if mt > latest:
+                    latest = mt
+            except OSError:
+                continue
+    return latest
+
+
+def read_app_src_update_meta(app_src_dir: Path) -> Dict[str, Any]:
+    """Read `<app_src>/.cosmos_update_meta.json` if present and valid."""
+    meta_fp = Path(app_src_dir).expanduser().resolve() / APP_SRC_UPDATE_META_FILENAME
+    if not meta_fp.is_file():
+        return {}
+    try:
+        loaded = json.loads(meta_fp.read_text(encoding="utf-8-sig"))
+        if isinstance(loaded, dict):
+            return loaded
+    except Exception:
+        return {}
+    return {}
+
+
+def write_app_src_update_meta(app_src_dir: Path, meta: Dict[str, Any]) -> None:
+    """Atomically write `<app_src>/.cosmos_update_meta.json` metadata record."""
+    target_dir = Path(app_src_dir).expanduser().resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    payload: Dict[str, Any] = {
+        "version": str(meta.get("version") or ""),
+        "commit_sha": str(meta.get("commit_sha") or ""),
+        "source_tree_hash": str(meta.get("source_tree_hash") or ""),
+        "self_updated_at": meta.get("self_updated_at"),
+    }
+    for k, v in meta.items():
+        if k not in payload:
+            payload[k] = v
+    atomic_write_text(
+        target_dir / APP_SRC_UPDATE_META_FILENAME,
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
+def _files_identical(src_fp: Path, dst_fp: Path, size_bytes: int) -> bool:
+    try:
+        if size_bytes <= 2 * 1024 * 1024:
+            return src_fp.read_bytes() == dst_fp.read_bytes()
+        h_s = hashlib.sha256()
+        h_d = hashlib.sha256()
+        with src_fp.open("rb") as fs, dst_fp.open("rb") as fd:
+            while True:
+                bs = fs.read(65536)
+                bd = fd.read(65536)
+                if bs != bd:
+                    return False
+                if not bs:
+                    return True
+                h_s.update(bs)
+                h_d.update(bd)
+    except OSError:
+        return False
+
+
 def _sync_clean_dir_tree(src_tree: Path, dst_tree: Path, *, undo_dir: Path) -> None:
     """Incrementally sync `src_tree` -> `dst_tree` excluding caches and retiring stale files via `safe_trash_file`."""
     src_resolved = src_tree.resolve()
@@ -597,7 +730,11 @@ def _sync_clean_dir_tree(src_tree: Path, dst_tree: Path, *, undo_dir: Path) -> N
                 try:
                     s_st = s_fp.stat()
                     d_st = d_fp.stat()
-                    if s_st.st_size == d_st.st_size and abs(s_st.st_mtime - d_st.st_mtime) < 1.0:
+                    if (
+                        s_st.st_size == d_st.st_size
+                        and abs(s_st.st_mtime - d_st.st_mtime) < 1.0
+                        and _files_identical(s_fp, d_fp, int(s_st.st_size))
+                    ):
                         need_copy = False
                 except OSError:
                     need_copy = True
@@ -616,8 +753,13 @@ def _sync_clean_dir_tree(src_tree: Path, dst_tree: Path, *, undo_dir: Path) -> N
                     safe_trash_file(Path(root) / fname, reason="sync_app_src_stale", undo_dir=undo_dir)
 
 
-def sync_portable_app_src(state_root: Path, *, source_src_dir: Optional[Path] = None) -> Optional[Path]:
-    """Sync uninstalled `src/cosmos_mcp` (and `host_skills`) into `<state_root>/app_src` so deleting Downloads stays safe."""
+def sync_portable_app_src(
+    state_root: Path,
+    *,
+    source_src_dir: Optional[Path] = None,
+    force_overwrite: bool = False,
+) -> Optional[Path]:
+    """Sync uninstalled `src/cosmos_mcp` (and `host_skills`) into `<state_root>/app_src` with anti-downgrade guard."""
     st_root = Path(state_root).expanduser().resolve()
     app_src = (st_root / "app_src").resolve()
     src_dir = (Path(source_src_dir).expanduser().resolve() if source_src_dir is not None else find_repo_src_dir())
@@ -634,6 +776,50 @@ def sync_portable_app_src(state_root: Path, *, source_src_dir: Optional[Path] = 
     if not (pkg_src / "__init__.py").is_file():
         return app_src if (app_src / "cosmos_mcp" / "__init__.py").is_file() else None
 
+    existing_meta = read_app_src_update_meta(app_src) if (app_src / "cosmos_mcp" / "__init__.py").is_file() else {}
+    has_self_update_lock = bool(
+        existing_meta
+        and existing_meta.get("self_updated_at")
+        and (existing_meta.get("version") or existing_meta.get("source_tree_hash"))
+    )
+
+    if has_self_update_lock and not force_overwrite:
+        src_ver_str = read_package_init_version(pkg_src / "__init__.py")
+        dst_ver_str = (
+            str(existing_meta.get("version") or "").strip()
+            or read_package_init_version(app_src / "cosmos_mcp" / "__init__.py")
+        )
+        src_ver = parse_semver_tuple(src_ver_str)
+        dst_ver = parse_semver_tuple(dst_ver_str)
+        if src_ver < dst_ver:
+            return app_src
+        if src_ver == dst_ver:
+            src_hash = compute_source_tree_hash(pkg_src)
+            upd_hash = (
+                str(existing_meta.get("source_tree_hash") or "").strip()
+                or compute_source_tree_hash(app_src / "cosmos_mcp")
+            )
+            if src_hash == upd_hash:
+                return app_src
+            prev_hashes: set[str] = set()
+            prev_single = str(existing_meta.get("previous_source_tree_hash") or "").strip()
+            if prev_single:
+                prev_hashes.add(prev_single)
+            raw_replaced = existing_meta.get("replaced_tree_hashes")
+            if isinstance(raw_replaced, list):
+                for item_h in raw_replaced:
+                    if item_h:
+                        prev_hashes.add(str(item_h).strip())
+            is_git_worktree = any((cand_g / ".git").exists() for cand_g in (src_dir.parent, src_dir))
+            if src_hash in prev_hashes or not is_git_worktree:
+                return app_src
+            try:
+                upd_ts = float(existing_meta.get("self_updated_at") or 0.0)
+            except (TypeError, ValueError):
+                upd_ts = 0.0
+            if upd_ts > 0.0 and _max_source_tree_mtime(pkg_src) <= upd_ts:
+                return app_src
+
     undo_dir = st_root / ".undo_history"
     app_src.mkdir(parents=True, exist_ok=True)
     _sync_clean_dir_tree(pkg_src, app_src / "cosmos_mcp", undo_dir=undo_dir)
@@ -642,6 +828,29 @@ def sync_portable_app_src(state_root: Path, *, source_src_dir: Optional[Path] = 
         if hs_cand.is_dir():
             _sync_clean_dir_tree(hs_cand, app_src / "host_skills", undo_dir=undo_dir)
             break
+
+    if has_self_update_lock or (force_overwrite and existing_meta):
+        synced_ver = read_package_init_version(app_src / "cosmos_mcp" / "__init__.py")
+        synced_hash = compute_source_tree_hash(app_src / "cosmos_mcp")
+        prev_list: List[str] = []
+        raw_prev = existing_meta.get("replaced_tree_hashes")
+        if isinstance(raw_prev, list):
+            prev_list.extend(str(x) for x in raw_prev if x)
+        old_upd_h = str(existing_meta.get("source_tree_hash") or "").strip()
+        if old_upd_h and old_upd_h != synced_hash and old_upd_h not in prev_list:
+            prev_list.append(old_upd_h)
+        write_app_src_update_meta(
+            app_src,
+            {
+                "version": synced_ver,
+                "commit_sha": "",
+                "source_tree_hash": synced_hash,
+                "previous_source_tree_hash": old_upd_h,
+                "replaced_tree_hashes": prev_list[-10:],
+                "self_updated_at": round(time.time(), 3),
+                "synced_from_source": str(src_dir),
+            },
+        )
 
     emb_src = src_dir.parent / "python-embed"
     if (

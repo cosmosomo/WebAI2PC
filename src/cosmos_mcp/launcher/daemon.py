@@ -46,6 +46,8 @@ from cosmos_mcp.core.proc import (
 )
 from cosmos_mcp.launcher.bootstrap import (
     atomic_write_text,
+    compute_source_tree_hash,
+    find_repo_src_dir,
     resolve_persisted_src_dir,
     resolve_windowless_python,
 )
@@ -518,6 +520,65 @@ def daemon_stop_flag_path(state_root: Path, prefix: str = "pc") -> Path:
     return Path(state_root) / "state" / (f"daemon_stop_{eff}.flag" if eff != "pc" else "daemon_stop.flag")
 
 
+def worker_reload_flag_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff = _norm_prefix(prefix)
+    return Path(state_root) / "state" / f"worker_reload_{eff}.flag"
+
+
+def request_worker_hot_reload(state_root: Path, prefix: str = "pc") -> Path:
+    """Signal `StandaloneSupervisorLoop` to gracefully hot-reload `app.py` while keeping all public tunnels alive."""
+    st_root = Path(state_root).expanduser().resolve()
+    flag = worker_reload_flag_path(st_root, prefix)
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    now_ts = time.time()
+    atomic_write_text(flag, f"RELOAD_WORKER:{now_ts:.6f}:{time.time_ns()}\n")
+    return flag
+
+
+def _read_worker_reload_signal(state_root: Path, prefix: str = "pc") -> Tuple[str, float]:
+    st_root = Path(state_root)
+    eff = _norm_prefix(prefix)
+    candidates: List[Path] = [worker_reload_flag_path(st_root, eff)]
+    if eff == "pc":
+        candidates.append(st_root / "state" / "worker_reload.flag")
+    for fp in candidates:
+        if not fp.is_file():
+            continue
+        try:
+            st = fp.stat()
+            raw = fp.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        ts_val = float(st.st_mtime)
+        if raw.startswith("RELOAD_WORKER:"):
+            parts = raw.split(":")
+            if len(parts) >= 2:
+                with contextlib.suppress(TypeError, ValueError):
+                    ts_val = float(parts[1])
+        else:
+            with contextlib.suppress(TypeError, ValueError):
+                ts_val = float(raw)
+        return (f"file:{fp.name}:{raw}:{int(st.st_mtime_ns)}", ts_val)
+
+    stop_fp = daemon_stop_flag_path(st_root, eff)
+    if stop_fp.is_file():
+        try:
+            st_s = stop_fp.stat()
+            raw_s = stop_fp.read_text(encoding="utf-8", errors="replace").strip()
+            if raw_s.startswith("RELOAD_WORKER:"):
+                ts_s = float(st_s.st_mtime)
+                parts_s = raw_s.split(":")
+                if len(parts_s) >= 2:
+                    with contextlib.suppress(TypeError, ValueError):
+                        ts_s = float(parts_s[1])
+                return (f"stopflag:{raw_s}:{int(st_s.st_mtime_ns)}", ts_s)
+        except OSError:
+            pass
+    return ("", 0.0)
+
+
 def service_cfg_path(state_root: Path, prefix: str = "pc") -> Path:
     eff = _norm_prefix(prefix)
     return Path(state_root) / "config" / (f"service_{eff}.json" if eff != "pc" else "service.json")
@@ -900,6 +961,8 @@ def detect_running_instance(state_root: Path, prefix: str = "pc") -> Dict[str, A
         "any_gateway_ready",
         "enabled_gateway_ids",
         "ready_gateway_ids",
+        "server_build_rev",
+        "last_worker_reload_ts",
     ):
         if extra_k in d_doc:
             out_info[extra_k] = d_doc[extra_k]
@@ -1257,6 +1320,7 @@ class StandaloneSupervisorLoop:
         self._workers_retry_not_before: float = 0.0
 
         self._vps_wss_supervisor: Optional[Any] = None
+        self._vps_supervisor: Optional[Any] = None
         self._active_vps_wss_sig: str = ""
         self._vps_wss_retry_not_before: float = 0.0
 
@@ -1313,7 +1377,30 @@ class StandaloneSupervisorLoop:
         self._local_healthz_interval_sec: float = 10.0
         self._local_healthz_timeout_sec: float = 3.5
         self._local_healthz_max_failures: int = 6
+        init_reload_tok, _ = _read_worker_reload_signal(self.state_root, self.prefix)
+        self._last_worker_reload_token: str = init_reload_tok
+        self._last_worker_reload_ts: float = 0.0
+        self._server_build_rev: str = self._compute_current_server_build_rev()
         self._sup_logger, self._sup_log_handler = self._init_supervisor_logger()
+
+    def _compute_current_server_build_rev(self) -> str:
+        app_cosmos = self.state_root / "app_src" / "cosmos_mcp"
+        if (app_cosmos / "__init__.py").is_file():
+            digest = compute_source_tree_hash(app_cosmos)
+            if digest:
+                return digest[:12]
+        repo_src = find_repo_src_dir()
+        if repo_src is not None and (repo_src / "cosmos_mcp" / "__init__.py").is_file():
+            digest = compute_source_tree_hash(repo_src / "cosmos_mcp")
+            if digest:
+                return digest[:12]
+        return ""
+
+    def _check_pending_worker_reload(self) -> Optional[Tuple[str, float]]:
+        tok, ts_val = _read_worker_reload_signal(self.state_root, self.prefix)
+        if tok and tok != self._last_worker_reload_token:
+            return (tok, ts_val)
+        return None
 
     def _should_enforce_singleton(self) -> bool:
         if self._enforce_singleton is not None:
@@ -1698,6 +1785,8 @@ class StandaloneSupervisorLoop:
             "srvus_fixed_active": bool(self._srvus_fixed_active),
             "consecutive_crashes": self.consecutive_crashes,
             "total_restarts": self.total_restarts,
+            "server_build_rev": self._server_build_rev,
+            "last_worker_reload_ts": round(self._last_worker_reload_ts, 3) if self._last_worker_reload_ts > 0 else None,
             "keep_awake": bool(self.inhibitor.status().get("enabled")),
             "updated_at": round(time.time(), 3),
         }
@@ -3638,6 +3727,9 @@ class StandaloneSupervisorLoop:
                 self._server_proc.terminate()
                 self._server_proc.wait(timeout=3.0)
             except Exception:
+                with contextlib.suppress(Exception):
+                    self._server_proc.kill()
+                    self._server_proc.wait(timeout=1.0)
                 terminate_verified_pid_tree(self._server_proc.pid, expected_create_token=None)
         if self._server_job is not None:
             self._server_job.close()
@@ -3730,16 +3822,19 @@ class StandaloneSupervisorLoop:
         self._sync_tray_from_cfg(state_label="starting", cfg_doc=cfg_init)
         try:
             initial_tunnel_synced = False
+            pending_hot_reload_ts: Optional[float] = None
             while not self._should_stop():
+                hot_reload_requested = False
                 try:
                     cfg_cur = self._read_cfg_doc()
                     self._sync_keep_awake_from_cfg(cfg_cur)
                     started_mono = time.monotonic()
+                    self._server_build_rev = self._compute_current_server_build_rev()
                     self._server_proc = self._spawn_server_child()
                     local_hz_failures = 0
                     next_local_hz_mono = started_mono + max(0.0, float(self._local_healthz_grace_sec))
                     deadlock_restarted = False
-                    self._write_daemon_status(state_label="running")
+                    self._write_daemon_status(state_label="running", force=(pending_hot_reload_ts is not None))
                     if not initial_tunnel_synced:
                         self._sync_all_gateways_from_cfg(initial=True)
                         self._ensure_vps_ssh_alive()
@@ -3748,6 +3843,26 @@ class StandaloneSupervisorLoop:
                     else:
                         self._sync_all_gateways_from_cfg(initial=False)
                         self._ensure_vps_ssh_alive()
+                    if pending_hot_reload_ts is not None:
+                        hz_wait_deadline = time.monotonic() + 8.0
+                        hz_ready = None
+                        while time.monotonic() < hz_wait_deadline and not self._should_stop():
+                            if self._server_proc is None or self._server_proc.poll() is not None:
+                                break
+                            hz_ready = probe_local_healthz(self.port, timeout_sec=1.5)
+                            if hz_ready is not None:
+                                break
+                            time.sleep(0.15)
+                        if hz_ready is not None:
+                            self.consecutive_crashes = 0
+                            self._last_worker_reload_ts = round(max(pending_hot_reload_ts, time.time()), 3)
+                            self._server_build_rev = self._compute_current_server_build_rev()
+                            self._write_daemon_status(
+                                state_label="running",
+                                last_error=self._last_tunnel_error,
+                                force=True,
+                            )
+                        pending_hot_reload_ts = None
                     self._sync_tray_from_cfg(state_label="running")
                 except Exception as spawn_exc:
                     self._log("error preparing server child in supervisor loop (retrying): %r", spawn_exc, error=True)
@@ -3756,6 +3871,21 @@ class StandaloneSupervisorLoop:
 
                 while not self._should_stop():
                     try:
+                        reload_sig = self._check_pending_worker_reload()
+                        if reload_sig is not None:
+                            new_tok, req_ts = reload_sig
+                            self._last_worker_reload_token = new_tok
+                            self._log("graceful worker hot-reload requested; preserving active public tunnels")
+                            self._terminate_current_server_child()
+                            self.consecutive_crashes = 0
+                            self._write_daemon_status(
+                                state_label="reloading_worker",
+                                last_error=self._last_tunnel_error,
+                                force=True,
+                            )
+                            hot_reload_requested = True
+                            pending_hot_reload_ts = req_ts if req_ts > 0 else time.time()
+                            break
                         ret = self._server_proc.poll()
                         if ret is not None:
                             break
@@ -3805,10 +3935,19 @@ class StandaloneSupervisorLoop:
                         self._log("transient exception in supervisor inner loop (continuing): %r", loop_exc, error=True)
                         time.sleep(1.0)
                         continue
-                    time.sleep(0.8)
+                    for _tick_idx in range(4):
+                        if self._should_stop() or self._check_pending_worker_reload() is not None:
+                            break
+                        time.sleep(0.2)
 
                 if self._should_stop():
                     break
+
+                if hot_reload_requested:
+                    self.consecutive_crashes = 0
+                    self.total_restarts += 1
+                    time.sleep(0.1)
+                    continue
 
                 try:
                     self.consecutive_crashes += 1
@@ -3826,11 +3965,21 @@ class StandaloneSupervisorLoop:
                     self._write_daemon_status(
                         state_label="restarting_backoff",
                         last_error=err_msg,
+                        force=True,
                     )
                     self._sync_tray_from_cfg(state_label="restarting_backoff")
                     end_sleep = time.monotonic() + wait_s
                     while time.monotonic() < end_sleep and not self._should_stop():
-                        time.sleep(0.5)
+                        reload_in_backoff = self._check_pending_worker_reload()
+                        if reload_in_backoff is not None:
+                            b_tok, b_ts = reload_in_backoff
+                            self._last_worker_reload_token = b_tok
+                            self._log("graceful worker hot-reload requested; preserving active public tunnels")
+                            self.consecutive_crashes = 0
+                            pending_hot_reload_ts = b_ts if b_ts > 0 else time.time()
+                            time.sleep(0.1)
+                            break
+                        time.sleep(0.2)
                 except Exception as backoff_exc:
                     self._log("transient exception during restart backoff: %r", backoff_exc, error=True)
                     time.sleep(1.0)
@@ -3847,6 +3996,12 @@ class StandaloneSupervisorLoop:
             self._stop_pg_workers_supervisor()
             self._stop_workers_supervisor()
             self._stop_vps_wss_supervisor()
+            if self._vps_supervisor is not None:
+                with contextlib.suppress(Exception):
+                    stop_fn = getattr(self._vps_supervisor, "stop", None)
+                    if callable(stop_fn):
+                        stop_fn()
+                self._vps_supervisor = None
             self._stop_ssh_tunnel()
             self._terminate_current_server_child()
             self.inhibitor.disable()
