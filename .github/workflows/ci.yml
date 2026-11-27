@@ -47,8 +47,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[docs,dev]"
 
-      - name: Run core & packaging regression suites
-        run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py tests/test_s9_conn_v12.py tests/test_multigw_oauth_protocol.py tests/test_release_security_gates.py
+        run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py tests/test_s9_conn_v12.py tests/test_multigw_oauth_protocol.py tests/test_release_security_gates.py tests/test_cloudflare_reliability_fixes.py
+>>>>>>> 26f9dc2 (fix(cloudflare): resolve 6 relay/tunnel reliability, timeout, and probe defects)
 
       - name: Run v1.1/v1.2 incremental feature suite (Windows)
         if: runner.os == 'Windows'

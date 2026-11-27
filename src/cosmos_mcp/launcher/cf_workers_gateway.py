@@ -101,6 +101,7 @@ const REQ_CHUNK_BYTES = 131072; // 128 KiB
 const RECONNECT_HOLD_MS = 9000; // 9s hotspot-switch grace window
 const MAX_REPLAY_BYTES = 2097152; // 2 MiB replay buffer for pre-response frames
 const REQUEST_TIMEOUT_MS = 95000;
+const STREAM_IDLE_TIMEOUT_MS = 60000;
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
@@ -357,7 +358,10 @@ export class CosmosRelayDO extends DurableObject {
 
   _failAllPendingOffline() {
     for (const [reqIdHex, entry] of this.pendingMap.entries()) {
-      clearTimeout(entry.timer);
+      if (entry.timer !== null) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
       if (!entry.headResolved) {
         entry.headResolved = true;
         entry.resolveHead(offlineHealthzResponse());
@@ -382,9 +386,15 @@ export class CosmosRelayDO extends DurableObject {
         w(newWs);
       } catch (_) {}
     }
-    // Replay buffered pre-response request frames held during the <=9s hotspot switch window
+    // Replay buffered pre-response request frames held during the <=9s switch/zombie-replacement window
     for (const [reqIdHex, entry] of this.pendingMap.entries()) {
-      if (!entry.headResolved && entry.needsReplay && entry.reqEnded && entry.replayFrames) {
+      if (
+        !entry.headResolved &&
+        entry.needsReplay &&
+        !entry.replayOverflow &&
+        entry.replayFrames &&
+        entry.replayFrames.length > 0
+      ) {
         try {
           for (const frame of entry.replayFrames) {
             newWs.send(frame);
@@ -410,6 +420,11 @@ export class CosmosRelayDO extends DurableObject {
         try {
           oldWs.close(1012, "superseded_by_new_device_connection");
         } catch (_) {}
+      }
+      for (const entry of this.pendingMap.values()) {
+        if (!entry.headResolved && !entry.replayOverflow && entry.replayFrames) {
+          entry.needsReplay = true;
+        }
       }
       this.ctx.acceptWebSocket(server, ["device"]);
       server.serializeAttachment({ role: "device", connectedAt: Date.now() });
@@ -454,9 +469,43 @@ export class CosmosRelayDO extends DurableObject {
       needsReplay: false,
       reqEnded: false,
       timer: null,
+      clearTimer: null,
+      armStreamIdleTimer: null,
     };
 
+    const clearEntryTimer = () => {
+      if (entry.timer !== null) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+    };
+
+    const armStreamIdleTimer = () => {
+      clearEntryTimer();
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        if (this.pendingMap.has(reqIdHex)) {
+          this.pendingMap.delete(reqIdHex);
+          if (entry.controller) {
+            try {
+              entry.controller.close();
+            } catch (_) {}
+          }
+          const activeWs = this._getDeviceSocket();
+          if (activeWs) {
+            try {
+              activeWs.send(packFrame(FRAME_REQ_CANCEL, reqIdBytes, null));
+            } catch (_) {}
+          }
+        }
+      }, STREAM_IDLE_TIMEOUT_MS);
+    };
+
+    entry.clearTimer = clearEntryTimer;
+    entry.armStreamIdleTimer = armStreamIdleTimer;
+
     entry.timer = setTimeout(() => {
+      entry.timer = null;
       if (this.pendingMap.has(reqIdHex)) {
         this.pendingMap.delete(reqIdHex);
         if (!entry.headResolved) {
@@ -481,7 +530,7 @@ export class CosmosRelayDO extends DurableObject {
 
     const sendCancelToDevice = () => {
       if (!this.pendingMap.has(reqIdHex)) return;
-      clearTimeout(entry.timer);
+      clearEntryTimer();
       this.pendingMap.delete(reqIdHex);
       const activeWs = this._getDeviceSocket();
       if (activeWs) {
@@ -553,7 +602,7 @@ export class CosmosRelayDO extends DurableObject {
           entry.reqEnded = true;
           const sentOk = sendOrHoldFrame(packFrame(FRAME_REQ_END, reqIdBytes, null));
           if (!sentOk && isHealthz) {
-            clearTimeout(entry.timer);
+            clearEntryTimer();
             this.pendingMap.delete(reqIdHex);
             if (!entry.headResolved) {
               entry.headResolved = true;
@@ -563,7 +612,7 @@ export class CosmosRelayDO extends DurableObject {
         }
       } catch (_) {
         if (this.pendingMap.has(reqIdHex) && !entry.headResolved) {
-          clearTimeout(entry.timer);
+          clearEntryTimer();
           this.pendingMap.delete(reqIdHex);
           entry.headResolved = true;
           entry.resolveHead(
@@ -603,7 +652,12 @@ export class CosmosRelayDO extends DurableObject {
       try {
         meta = JSON.parse(TEXT_DECODER.decode(payload));
       } catch (_) {
-        clearTimeout(entry.timer);
+        if (typeof entry.clearTimer === "function") {
+          entry.clearTimer();
+        } else if (entry.timer !== null) {
+          clearTimeout(entry.timer);
+          entry.timer = null;
+        }
         this.pendingMap.delete(reqIdHex);
         entry.headResolved = true;
         entry.resolveHead(new Response("Bad Gateway", { status: 502 }));
@@ -630,12 +684,21 @@ export class CosmosRelayDO extends DurableObject {
         }
       }
 
+      // Clear first-byte 95s timer once response headers arrive
+      if (typeof entry.clearTimer === "function") {
+        entry.clearTimer();
+      } else if (entry.timer !== null) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+
       entry.replayFrames = null;
       entry.needsReplay = false;
       entry.headResolved = true;
 
       const isNullBody = status === 101 || status === 204 || status === 205 || status === 304;
       if (isNullBody) {
+        this.pendingMap.delete(reqIdHex);
         entry.resolveHead(new Response(null, { status, headers: respHeaders }));
         return;
       }
@@ -648,7 +711,12 @@ export class CosmosRelayDO extends DurableObject {
         },
         cancel() {
           if (pendingMap.has(reqIdHex)) {
-            clearTimeout(entry.timer);
+            if (typeof entry.clearTimer === "function") {
+              entry.clearTimer();
+            } else if (entry.timer !== null) {
+              clearTimeout(entry.timer);
+              entry.timer = null;
+            }
             pendingMap.delete(reqIdHex);
             const activeWs = selfDo._getDeviceSocket();
             if (activeWs) {
@@ -659,11 +727,17 @@ export class CosmosRelayDO extends DurableObject {
           }
         },
       });
+      if (typeof entry.armStreamIdleTimer === "function") {
+        entry.armStreamIdleTimer();
+      }
       entry.resolveHead(new Response(stream, { status, headers: respHeaders }));
       return;
     }
 
     if (frameType === FRAME_RES_BODY) {
+      if (entry.headResolved && typeof entry.armStreamIdleTimer === "function") {
+        entry.armStreamIdleTimer();
+      }
       if (entry.controller && payload.byteLength > 0) {
         try {
           entry.controller.enqueue(payload.slice());
@@ -673,7 +747,12 @@ export class CosmosRelayDO extends DurableObject {
     }
 
     if (frameType === FRAME_RES_END) {
-      clearTimeout(entry.timer);
+      if (typeof entry.clearTimer === "function") {
+        entry.clearTimer();
+      } else if (entry.timer !== null) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
       const pendingMap = this.pendingMap;
       pendingMap.delete(reqIdHex);
       if (!entry.headResolved) {
@@ -2213,6 +2292,11 @@ def save_workers_custom_domain_local(
 # Outbound `443 WSS` Multiplexing Supervisor (`WorkersDevRelaySupervisor`)
 # ---------------------------------------------------------------------------
 
+def _is_workers_dev_host(host: str) -> bool:
+    clean = (host or "").strip().lower().rstrip(".")
+    return clean == "workers.dev" or clean.endswith(".workers.dev")
+
+
 def _create_threadsafe_ws_client(
     ws_url: str,
     *,
@@ -2220,9 +2304,12 @@ def _create_threadsafe_ws_client(
     idle_timeout_sec: float,
     extra_headers: Dict[str, str],
     ssl_context: Optional[ssl.SSLContext] = None,
+    write_timeout_sec: float = 5.0,
 ) -> Any:
     """Instantiate `core.net_power.StdlibWebSocketClient` wrapped with a reentrant `_send_lock` and RX clock."""
     from cosmos_mcp.core.net_power import StdlibWebSocketClient
+
+    eff_write_timeout = max(0.2, min(float(write_timeout_sec), float(timeout)) if float(timeout) > 0 else float(write_timeout_sec))
 
     class _CompatLockedWebSocketClient(StdlibWebSocketClient):
         def __init__(self) -> None:
@@ -2242,6 +2329,7 @@ def _create_threadsafe_ws_client(
                 self._write_lock = rlock
             self._abort_evt = threading.Event()
             self.idle_timeout_sec = float(idle_timeout_sec)
+            self.write_timeout_sec = eff_write_timeout
             self.last_rx_mono = time.monotonic()
 
         def connect(self, proxy_url: str = "") -> None:
@@ -2249,11 +2337,14 @@ def _create_threadsafe_ws_client(
             self.last_rx_mono = time.monotonic()
             if self.sock is not None:
                 with contextlib.suppress(OSError):
-                    self.sock.settimeout(max(5.0, float(timeout)))
+                    self.sock.settimeout(self.write_timeout_sec)
 
-        def send_frame(self, payload: bytes, opcode: int = 0x1) -> None:
+        def send_frame(self, payload: bytes, opcode: int = 0x1, *, fin: bool = True) -> None:
             with self._send_lock:
-                super().send_frame(payload, opcode=opcode)
+                if self.sock is not None:
+                    with contextlib.suppress(OSError):
+                        self.sock.settimeout(self.write_timeout_sec)
+                super().send_frame(payload, opcode=opcode, fin=fin)
 
         def _recv_exact(self, n: int) -> bytes:
             if n == 0:
@@ -2427,8 +2518,9 @@ class WorkersDevRelaySupervisor:
         tunnel_endpoint_path: str = "/_cosmos_tunnel",
         extra_ws_headers: Optional[Dict[str, str]] = None,
         proxy_url: Optional[str] = None,
-        ping_interval_sec: float = 25.0,
-        idle_timeout_sec: float = 45.0,
+        ping_interval_sec: float = 12.0,
+        idle_timeout_sec: float = 22.0,
+        write_timeout_sec: float = 5.0,
         backoff_schedule: Sequence[float] = (1.0, 2.0, 5.0, 15.0),
         max_workers: int = 16,
         local_timeout_sec: float = 95.0,
@@ -2475,6 +2567,7 @@ class WorkersDevRelaySupervisor:
         self.proxy_url: Optional[str] = proxy_url
         self.ping_interval_sec = max(0.1, float(ping_interval_sec))
         self.idle_timeout_sec = max(0.3, float(idle_timeout_sec))
+        self.write_timeout_sec = max(0.2, float(write_timeout_sec))
         self.backoff_schedule = tuple(float(x) for x in backoff_schedule) or (1.0, 2.0, 5.0, 15.0)
         self.max_workers = max(2, int(max_workers))
         self.local_timeout_sec = max(5.0, float(local_timeout_sec))
@@ -2493,6 +2586,7 @@ class WorkersDevRelaySupervisor:
         self._executor: Optional[ThreadPoolExecutor] = None
         self._inflight: Dict[bytes, _MultiplexedLocalRequest] = {}
         self._completed_req_ids: Dict[bytes, float] = {}
+        self._completed_res_cache: Dict[bytes, Tuple[float, List[bytes]]] = {}
         self._tx_hold_frames: List[Tuple[float, bytes]] = []
         self._last_error: str = ""
         self.last_reconnect_reason: str = ""
@@ -2587,18 +2681,19 @@ class WorkersDevRelaySupervisor:
             headers["X-Cosmos-Public-Prefix"] = self.public_prefix
         headers.update(self.extra_ws_headers)
 
+        is_workers_dev = _is_workers_dev_host(self._ws_host)
         candidates: List[str] = [""]
         configured_proxy = ""
         if self.proxy_url is not None:
             explicit_p = self.proxy_url.strip()
             if explicit_p and explicit_p.lower().startswith(("http://", "https://", "socks5://", "socks5h://")):
                 configured_proxy = explicit_p
-                candidates = [explicit_p, ""]
+                candidates = [explicit_p, explicit_p] if is_workers_dev else [explicit_p, ""]
         elif self._ws_host not in ("127.0.0.1", "::1", "localhost"):
             proxy = _detect_system_proxy("https", target_host=self._ws_host)
             if proxy and proxy.lower().startswith(("http://", "https://", "socks5://", "socks5h://")):
                 configured_proxy = proxy
-                candidates = [proxy, ""]
+                candidates = [proxy, proxy] if is_workers_dev else [proxy, ""]
         else:
             # Allow explicit proxy testing on loopback only when HTTPS_PROXY/WSS_PROXY is explicitly set
             explicit_env_proxy = (
@@ -2616,11 +2711,20 @@ class WorkersDevRelaySupervisor:
         self._last_proxy_exc = None
 
         last_err: Optional[Exception] = None
-        for p_url in candidates:
+        for idx_cand, p_url in enumerate(candidates):
+            if idx_cand > 0 and p_url and is_workers_dev:
+                if self._stop_event.wait(0.25):
+                    break
+                if self.proxy_url is None:
+                    refreshed_p = _detect_system_proxy("https", target_host=self._ws_host)
+                    if refreshed_p and refreshed_p.lower().startswith(("http://", "https://", "socks5://", "socks5h://")):
+                        p_url = refreshed_p
+                        self._last_configured_proxy = refreshed_p
             ws = _create_threadsafe_ws_client(
                 self.ws_url,
-                timeout=15.0,
+                timeout=10.0 if (p_url and is_workers_dev) else 15.0,
                 idle_timeout_sec=self.idle_timeout_sec,
+                write_timeout_sec=self.write_timeout_sec,
                 extra_headers=headers,
                 ssl_context=self.ssl_context,
             )
@@ -2672,7 +2776,7 @@ class WorkersDevRelaySupervisor:
 
     def _heartbeat_and_route_watcher(self, ws: Any, conn_stop: threading.Event) -> None:
         """
-        1) Sends RFC 6455 Ping (`0x9`) every `25.0s` and aborts if `>45.0s` without RX/Pong activity.
+        1) Sends RFC 6455 Ping (`0x9`) every `12.0s` and aborts if `>22.0s` without RX/Pong activity.
         2) Polls every `1.0s` for monotonic/wall clock jumps (`>3.0s` OS sleep wake), system proxy toggles
            (Clash on/off `<2s` switchover), and UDP egress IP changes (Wi-Fi <-> mobile hotspot switch),
            forcing immediate reconnect.
@@ -2895,8 +2999,12 @@ class WorkersDevRelaySupervisor:
         req_id = req_state.req_id
         conn = http.client.HTTPConnection("127.0.0.1", self.local_port, timeout=self.local_timeout_sec)
         head_sent = False
+        cached_res_frames: Optional[List[bytes]] = []
+        cached_res_bytes = 0
+        max_cacheable_res_bytes = 262144
         try:
             if not req_state.attach_conn(conn):
+                cached_res_frames = None
                 return
 
             target_path_qs = self._strip_tenant_prefix_if_present(req_state.path_qs)
@@ -2911,6 +3019,7 @@ class WorkersDevRelaySupervisor:
 
             resp = conn.getresponse()
             if req_state.cancelled:
+                cached_res_frames = None
                 return
 
             resp_headers: List[List[str]] = []
@@ -2925,7 +3034,12 @@ class WorkersDevRelaySupervisor:
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
-            if not self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_HEAD, req_id, head_json)):
+            head_frame = pack_tunnel_frame(FRAME_RES_HEAD, req_id, head_json)
+            if cached_res_frames is not None:
+                cached_res_frames.append(head_frame)
+                cached_res_bytes += len(head_frame)
+            if not self._send_binary_tunnel_frame(head_frame):
+                cached_res_frames = None
                 return
             head_sent = True
 
@@ -2937,12 +3051,26 @@ class WorkersDevRelaySupervisor:
                         break
                     for off in range(0, len(chunk), RES_BODY_CHUNK_BYTES):
                         sub = chunk[off : off + RES_BODY_CHUNK_BYTES]
-                        if not self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_BODY, req_id, sub)):
+                        body_frame = pack_tunnel_frame(FRAME_RES_BODY, req_id, sub)
+                        if cached_res_frames is not None:
+                            if cached_res_bytes + len(body_frame) <= max_cacheable_res_bytes:
+                                cached_res_frames.append(body_frame)
+                                cached_res_bytes += len(body_frame)
+                            else:
+                                cached_res_frames = None
+                        if not self._send_binary_tunnel_frame(body_frame):
+                            cached_res_frames = None
                             return
 
             if not req_state.cancelled:
-                self._send_binary_tunnel_frame(pack_tunnel_frame(FRAME_RES_END, req_id, b""))
+                end_frame = pack_tunnel_frame(FRAME_RES_END, req_id, b"")
+                if cached_res_frames is not None:
+                    cached_res_frames.append(end_frame)
+                self._send_binary_tunnel_frame(end_frame)
+            else:
+                cached_res_frames = None
         except Exception as exc:
+            cached_res_frames = None
             if not req_state.cancelled and not self._stop_event.is_set():
                 if not head_sent:
                     err_body = json.dumps(
@@ -2964,13 +3092,27 @@ class WorkersDevRelaySupervisor:
                 self._inflight.pop(req_id, None)
                 now = time.monotonic()
                 self._completed_req_ids[req_id] = now
+                if cached_res_frames:
+                    self._completed_res_cache[req_id] = (now, cached_res_frames)
                 if len(self._completed_req_ids) > 512:
                     cutoff = now - 30.0
                     self._completed_req_ids = {
                         k: ts for k, ts in self._completed_req_ids.items() if ts >= cutoff
                     }
+                if len(self._completed_res_cache) > 64:
+                    cutoff_c = now - 30.0
+                    self._completed_res_cache = {
+                        k: pair for k, pair in self._completed_res_cache.items() if pair[0] >= cutoff_c
+                    }
             with contextlib.suppress(Exception):
                 conn.close()
+
+    def _replay_cached_completed_response(self, frames: List[bytes]) -> None:
+        for frm in frames:
+            if self._stop_event.is_set():
+                return
+            if not self._send_binary_tunnel_frame(frm):
+                return
 
     def _handle_inbound_frame(self, raw_msg: bytes) -> None:
         if len(raw_msg) < FRAME_HEADER_LEN:
@@ -3014,9 +3156,17 @@ class WorkersDevRelaySupervisor:
             return
 
         if ftype == FRAME_REQ_END:
+            cached_frames_to_replay: Optional[List[bytes]] = None
             with self._lock:
                 req_state = self._inflight.get(req_id)
                 ex = self._executor
+                if req_state is None:
+                    cached_entry = self._completed_res_cache.get(req_id)
+                    if cached_entry is not None and (time.monotonic() - cached_entry[0]) <= 30.0 and ex is not None:
+                        cached_frames_to_replay = list(cached_entry[1])
+                if cached_frames_to_replay is not None and ex is not None:
+                    ex.submit(self._replay_cached_completed_response, cached_frames_to_replay)
+                    return
                 if req_state is None or req_state.cancelled or req_state.dispatched or ex is None:
                     return
                 req_state.dispatched = True

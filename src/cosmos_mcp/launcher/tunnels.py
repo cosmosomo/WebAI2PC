@@ -12,6 +12,7 @@ Enforces:
 from __future__ import annotations
 
 import base64
+from collections import deque
 import contextlib
 import hashlib
 import hmac
@@ -615,6 +616,8 @@ def wait_tunnel_dns_and_https_ready(
     dns_ok = False
     dns_provider = ""
     last_err = ""
+    last_status_code = 0
+    last_cf_error_code = 0
     while time.monotonic() < deadline:
         if not dns_ok and host:
             dns_ok, dns_provider = probe_doh_hostname_resolved(host, doh_endpoints=doh_endpoints, timeout_sec=3.0)
@@ -629,14 +632,21 @@ def wait_tunnel_dns_and_https_ready(
                     "status_code": probe.get("status_code", 200),
                 }
             last_err = str(probe.get("error") or "")
+            last_status_code = int(probe.get("status_code") or 0)
+            last_cf_error_code = int(probe.get("cf_error_code") or 0)
         time.sleep(1.0)
-    return {
+    out_fail: Dict[str, Any] = {
         "ok": False,
         "public_url": clean,
         "dns_resolved": dns_ok,
         "dns_provider": dns_provider,
         "error": last_err or "timeout_waiting_for_tunnel_ready",
     }
+    if last_status_code:
+        out_fail["status_code"] = last_status_code
+    if last_cf_error_code:
+        out_fail["cf_error_code"] = last_cf_error_code
+    return out_fail
 
 
 def _rewrite_conn_info_urls(info_path: Path, new_public_url: str) -> None:
@@ -784,6 +794,70 @@ def hot_refresh_public_url(
     }
 
 
+_LOOPBACK_NO_PROXY_ITEMS: Tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
+_EPHEMERAL_AGENT_PROXY_MARKERS: Tuple[str, ...] = (
+    "SPARK_ACTIVE_SUBPROCESS_PROXY",
+    "SPARK_SUBPROCESS_PROXY",
+    "COSMOS_ACTIVE_SUBPROCESS_PROXY",
+)
+_PROXY_ENV_VAR_NAMES: Tuple[str, ...] = (
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "WSS_PROXY",
+    "wss_proxy",
+    "SOCKS_PROXY",
+    "socks_proxy",
+)
+
+
+def _merge_loopback_no_proxy(existing: str = "") -> str:
+    tokens: List[str] = []
+    seen_low: set[str] = set()
+    for req_item in _LOOPBACK_NO_PROXY_ITEMS:
+        tokens.append(req_item)
+        seen_low.add(req_item.lower())
+    for raw_part in (existing or "").split(","):
+        part = raw_part.strip()
+        if part and part.lower() not in seen_low:
+            tokens.append(part)
+            seen_low.add(part.lower())
+    return ",".join(tokens)
+
+
+def _strip_ephemeral_agent_proxy_vars(env_map: Dict[str, str]) -> Dict[str, str]:
+    cleaned = dict(env_map)
+    ephemeral_hostports: set[str] = set()
+    for key in list(cleaned.keys()):
+        if key.upper() in _EPHEMERAL_AGENT_PROXY_MARKERS or key.upper().startswith("COSMOS_WMI_"):
+            raw_v = str(cleaned.pop(key, "") or "").strip()
+            if raw_v:
+                cand = raw_v if "://" in raw_v else f"http://{raw_v}"
+                parsed = urlsplit(cand)
+                if parsed.hostname and parsed.port:
+                    ephemeral_hostports.add(f"{parsed.hostname.lower()}:{parsed.port}")
+                elif parsed.netloc:
+                    ephemeral_hostports.add(parsed.netloc.lower())
+    if ephemeral_hostports:
+        for pk in list(cleaned.keys()):
+            if pk in _PROXY_ENV_VAR_NAMES or pk.upper() in _PROXY_ENV_VAR_NAMES:
+                pv = str(cleaned.get(pk) or "").strip()
+                if pv:
+                    p_cand = pv if "://" in pv else f"http://{pv}"
+                    p_parsed = urlsplit(p_cand)
+                    hp = (
+                        f"{p_parsed.hostname.lower()}:{p_parsed.port}"
+                        if (p_parsed.hostname and p_parsed.port)
+                        else p_parsed.netloc.lower()
+                    )
+                    if hp and hp in ephemeral_hostports:
+                        cleaned.pop(pk, None)
+    return cleaned
+
+
 class CloudflaredTunnelSupervisor:
     """Supervises `cloudflared` Quick Tunnel or Named Tunnel (`--token`) with `--protocol http2` and zero server downtime."""
 
@@ -799,6 +873,7 @@ class CloudflaredTunnelSupervisor:
         fixed_public_url: str = "",
         persist_tunnel_mode: str = "",
         gateway_id: str = "",
+        proxy_url: Optional[str] = None,
         on_url_change: Optional[Callable[[str], None]] = None,
         popen_factory: Optional[Callable[..., Any]] = None,
     ) -> None:
@@ -811,6 +886,7 @@ class CloudflaredTunnelSupervisor:
         self.fixed_public_url = (fixed_public_url or "").strip().rstrip("/")
         self.persist_tunnel_mode = (persist_tunnel_mode or "").strip().lower()
         self.gateway_id = (gateway_id or ("self_hosted" if self.tunnel_token else "instant")).strip().lower()
+        self.proxy_url: Optional[str] = proxy_url
         self.on_url_change = on_url_change
         self._popen_factory = popen_factory or subprocess.Popen
         self._stop_event = threading.Event()
@@ -821,6 +897,58 @@ class CloudflaredTunnelSupervisor:
         self._thread: Optional[threading.Thread] = None
         self.current_url: str = self.fixed_public_url
         self.reconnect_count: int = 0
+        self._last_error: str = ""
+        self._user_stopped: bool = False
+
+    @property
+    def last_error(self) -> str:
+        with self._lock:
+            return self._last_error
+
+    @last_error.setter
+    def last_error(self, value: str) -> None:
+        with self._lock:
+            self._last_error = str(value or "")
+
+    def _build_subprocess_env(self, *, bypass_auto_proxy: bool = False) -> Dict[str, str]:
+        child_env = _strip_ephemeral_agent_proxy_vars(dict(os.environ))
+        eff_http_proxy = ""
+        if self.proxy_url is not None:
+            explicit_p = self.proxy_url.strip()
+            if explicit_p.lower().startswith(("http://", "https://")):
+                eff_http_proxy = explicit_p
+            elif explicit_p == "":
+                for pk in _PROXY_ENV_VAR_NAMES:
+                    child_env.pop(pk, None)
+        elif bypass_auto_proxy:
+            for pk in _PROXY_ENV_VAR_NAMES:
+                child_env.pop(pk, None)
+        else:
+            detected = detect_configured_proxy("https", target_host="api.trycloudflare.com")
+            if detected and detected.lower().startswith(("http://", "https://")):
+                eff_http_proxy = detected
+
+        if eff_http_proxy:
+            child_env["HTTP_PROXY"] = eff_http_proxy
+            child_env["HTTPS_PROXY"] = eff_http_proxy
+            child_env["http_proxy"] = eff_http_proxy
+            child_env["https_proxy"] = eff_http_proxy
+
+        merged_np = _merge_loopback_no_proxy(
+            str(child_env.get("NO_PROXY") or child_env.get("no_proxy") or "")
+        )
+        child_env["NO_PROXY"] = merged_np
+        child_env["no_proxy"] = merged_np
+        return child_env
+
+    def _popen_accepts_env(self) -> bool:
+        if self._popen_factory is subprocess.Popen:
+            return True
+        try:
+            params = inspect.signature(self._popen_factory).parameters
+            return "env" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        except (TypeError, ValueError):
+            return True
 
     @property
     def is_named_tunnel(self) -> bool:
@@ -887,20 +1015,30 @@ class CloudflaredTunnelSupervisor:
                 gateway_id=self.gateway_id or "self_hosted",
             )
 
+        attempt_idx = 0
         while not self._stop_event.is_set():
             cmd = self.build_command()
             started_at = time.monotonic()
+            tail_lines: deque[str] = deque(maxlen=6)
+            reg_succeeded = False
+            saw_url_in_run = False
+            bypass_proxy = (self.proxy_url is None) and (attempt_idx % 2 == 1)
+            attempt_idx += 1
+            child_env = self._build_subprocess_env(bypass_auto_proxy=bypass_proxy)
+            popen_kw: Dict[str, Any] = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.STDOUT,
+                "stdin": subprocess.DEVNULL,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "creationflags": _popen_flags(),
+            }
+            if self._popen_accepts_env():
+                popen_kw["env"] = child_env
+            proc: Optional[Any] = None
             try:
-                proc = self._popen_factory(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    stdin=subprocess.DEVNULL,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=_popen_flags(),
-                )
+                proc = self._popen_factory(cmd, **popen_kw)
                 cf_pid = getattr(proc, "pid", None)
                 job_h = (
                     OwnedJobHandle(assign_win32_job_kill_on_close(int(cf_pid), max_mem_mb=0))
@@ -916,12 +1054,19 @@ class CloudflaredTunnelSupervisor:
                     _rotate_tunnel_log_if_needed(log_file)
                     with log_file.open("a", encoding="utf-8", errors="replace") as lf:
                         for line in proc.stdout:
-                            lf.write(self._scrub_log_line(line))
+                            scrubbed = self._scrub_log_line(line)
+                            lf.write(scrubbed)
                             lf.flush()
+                            clean_tail = _ANSI_ESCAPE_RE.sub("", scrubbed).strip()
+                            if clean_tail:
+                                tail_lines.append(clean_tail)
                             low_ln = line.lower()
                             is_edge_reg = "registered tunnel connection" in low_ln or ("connection " in low_ln and " registered" in low_ln)
                             if self.is_named_tunnel:
                                 if is_edge_reg:
+                                    reg_succeeded = True
+                                    saw_url_in_run = True
+                                    self.last_error = ""
                                     if self.fixed_public_url:
                                         self._handle_discovered_url(self.fixed_public_url, mark_ready=True)
                                     else:
@@ -929,28 +1074,49 @@ class CloudflaredTunnelSupervisor:
                             else:
                                 m = TRYCLOUDFLARE_URL_RE.search(line)
                                 if m:
+                                    saw_url_in_run = True
+                                    if self._popen_factory is not subprocess.Popen:
+                                        reg_succeeded = True
+                                        self.last_error = ""
                                     # Persist URL immediately; wait for edge registration (or custom popen mock EOF) before marking ready
                                     self._handle_discovered_url(m.group(0), mark_ready=(self._popen_factory is not subprocess.Popen))
                                 elif is_edge_reg and self.current_url:
+                                    reg_succeeded = True
+                                    self.last_error = ""
                                     self._url_ready_event.set()
                             if self._stop_event.is_set():
                                 break
-                    if self.current_url and self._popen_factory is not subprocess.Popen:
+                    if saw_url_in_run and self.current_url and self._popen_factory is not subprocess.Popen:
+                        reg_succeeded = True
+                        self.last_error = ""
                         self._url_ready_event.set()
                 proc.wait(timeout=5.0)
-            except Exception:
-                pass
+                rc_val = proc.poll() if callable(getattr(proc, "poll", None)) else None
+                if not self._user_stopped and (not self._stop_event.is_set() or rc_val not in (None, 0)):
+                    tail_summary = " | ".join(list(tail_lines)[-4:])[:360]
+                    if tail_summary:
+                        self.last_error = f"cloudflared exited (rc={rc_val}): {tail_summary}"
+                    else:
+                        self.last_error = f"cloudflared exited (rc={rc_val})"
+            except Exception as exc:
+                tail_summary = " | ".join(list(tail_lines)[-4:])[:300]
+                if tail_summary:
+                    self.last_error = f"cloudflared error ({exc}): {tail_summary}"
+                else:
+                    self.last_error = f"cloudflared error: {exc}"
 
             if self._stop_event.is_set():
                 break
-            if (time.monotonic() - started_at) >= 45.0:
+            if reg_succeeded or (time.monotonic() - started_at) >= 45.0:
                 backoff = 2.0
+                attempt_idx = 0
             self._stop_event.wait(backoff)
-            backoff = min(45.0, backoff * 1.8)
+            backoff = min(30.0, backoff * 1.8)
 
     def start(self, wait_url_timeout_sec: float = 25.0) -> str:
         if self._thread is not None and self._thread.is_alive():
             return self.current_url
+        self._user_stopped = False
         self._stop_event.clear()
         self._url_ready_event.clear()
         th = threading.Thread(target=self._run_loop, name=f"cf-tunnel-{self.prefix}", daemon=True)
@@ -980,6 +1146,7 @@ class CloudflaredTunnelSupervisor:
             return True
 
     def stop(self, timeout_sec: float = 5.0) -> None:
+        self._user_stopped = True
         self._stop_event.set()
         with self._lock:
             proc = self._proc
@@ -1905,14 +2072,17 @@ def probe_public_healthz_end_to_end(
                     )
             openers_to_try.append(urllib.request.build_opener(urllib.request.ProxyHandler({}), https_handler))
             last_ue: Optional[Exception] = None
+            proxy_gateway_http_err: Optional[HTTPError] = None
             code = 0
             raw = b""
+            has_proxy_opener = len(openers_to_try) > 1
             per_try_timeout = (
                 max(1.5, min(float(timeout_sec), 3.0))
-                if len(openers_to_try) > 1
+                if has_proxy_opener
                 else max(1.0, float(timeout_sec))
             )
             for idx_o, op_cand in enumerate(openers_to_try):
+                is_proxy_cand = has_proxy_opener and idx_o == 0
                 fresh_req = urllib.request.Request(
                     target_url,
                     headers={"Accept": "application/json", "User-Agent": "Cosmos-MCP-Probe/1.0"},
@@ -1922,38 +2092,80 @@ def probe_public_healthz_end_to_end(
                         code = int(getattr(resp, "status", 200))
                         raw = resp.read()
                     last_ue = None
+                    proxy_gateway_http_err = None
                     break
-                except HTTPError:
+                except HTTPError as he_cand:
+                    if is_proxy_cand and int(he_cand.code) in (407, 502, 503, 504) and (idx_o + 1) < len(openers_to_try):
+                        proxy_gateway_http_err = he_cand
+                        last_ue = he_cand
+                        continue
                     raise
                 except Exception as ue_cand:
                     last_ue = ue_cand
                     if idx_o + 1 >= len(openers_to_try):
+                        if proxy_gateway_http_err is not None:
+                            raise proxy_gateway_http_err
                         raise
             if last_ue is not None:
+                if proxy_gateway_http_err is not None:
+                    raise proxy_gateway_http_err
                 raise last_ue
         body_txt = raw.decode("utf-8", errors="replace")
         if 200 <= code < 300:
             return {"ok": True, "url": target_url, "status_code": code, "body": body_txt[:400]}
-        return {
+        is_cf_1027_code = code == 1027 or "1027" in body_txt
+        status_err_tag = (
+            f"cf_error_1027_http_{code}"
+            if (is_cf_1027_code and code != 1027)
+            else ("cf_error_1027" if is_cf_1027_code else f"http_status_{code}")
+        )
+        non_2xx_out: Dict[str, Any] = {
             "ok": False,
             "url": target_url,
             "status_code": code,
-            "error": f"http_status_{code}",
+            "error": status_err_tag,
+            "body": body_txt[:400],
             "hints": [
-                f"公网地址返回 HTTP {code}，请确认 Cloudflare Tunnel 或自有服务器 Caddy/Nginx 已转发至本机监听端口。",
+                (
+                    "Cloudflare Workers 免费层每日 100,000 次请求配额已耗尽 (Error 1027)。"
+                    if is_cf_1027_code
+                    else f"公网地址返回 HTTP {code}，请确认 Cloudflare Tunnel 或自有服务器 Caddy/Nginx 已转发至本机监听端口。"
+                ),
                 "若使用自有服务器，可运行 `cosmos-mcp vps-caddy-snippet --domain <域名> --remote-port <远端端口>` 获取标准配置。",
             ],
         }
+        if is_cf_1027_code:
+            non_2xx_out["cf_error_code"] = 1027
+        return non_2xx_out
     except HTTPError as he:
-        return {
+        err_raw = b""
+        with contextlib.suppress(Exception):
+            err_raw = he.read(4096)
+        err_body = err_raw.decode("utf-8", errors="replace") if err_raw else ""
+        h_code = int(he.code)
+        is_cf_1027 = h_code == 1027 or "1027" in err_body
+        err_tag = (
+            f"cf_error_1027_http_{h_code}"
+            if (is_cf_1027 and h_code != 1027)
+            else ("cf_error_1027" if is_cf_1027 else f"http_error_{h_code}")
+        )
+        out_he: Dict[str, Any] = {
             "ok": False,
             "url": target_url,
-            "status_code": int(he.code),
-            "error": f"http_error_{he.code}",
+            "status_code": h_code,
+            "error": err_tag,
+            "body": err_body[:400],
             "hints": [
-                f"公网网关返回 HTTP {he.code}（若为 502/530，请检查本机服务是否在线及隧道目标端口是否一致）。",
+                (
+                    "Cloudflare Workers 免费层每日 100,000 次请求配额已耗尽 (Error 1027)。"
+                    if is_cf_1027
+                    else f"公网网关返回 HTTP {h_code}（若为 502/530，请检查本机服务是否在线及隧道目标端口是否一致）。"
+                ),
             ],
         }
+        if is_cf_1027:
+            out_he["cf_error_code"] = 1027
+        return out_he
     except Exception as exc:
         return {
             "ok": False,

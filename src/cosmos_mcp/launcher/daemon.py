@@ -59,6 +59,7 @@ from cosmos_mcp.launcher.tunnels import (
     hot_refresh_public_url,
     load_tunnel_token,
     normalize_tunnel_token,
+    probe_public_healthz_end_to_end,
     save_tunnel_token,
     srvus_ssh_key_paths,
     vps_node_secret_path,
@@ -77,6 +78,61 @@ WorkersDevRelaySupervisor: Optional[Any] = None
 SrvUsSshTunnelSupervisor: Optional[Any] = None
 load_or_create_workers_tunnel_secret: Optional[Callable[..., str]] = None
 probe_public_gateway_online: Optional[Callable[..., Dict[str, Any]]] = None
+
+
+_EPHEMERAL_SUBPROCESS_PROXY_MARKERS: Tuple[str, ...] = (
+    "SPARK_ACTIVE_SUBPROCESS_PROXY",
+    "SPARK_SUBPROCESS_PROXY",
+    "COSMOS_ACTIVE_SUBPROCESS_PROXY",
+)
+_STANDARD_PROXY_ENV_KEYS: Tuple[str, ...] = (
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "WSS_PROXY",
+    "wss_proxy",
+    "SOCKS_PROXY",
+    "socks_proxy",
+)
+
+
+def _extract_proxy_netloc_token(raw_val: str) -> str:
+    clean = (raw_val or "").strip()
+    if not clean:
+        return ""
+    candidate = clean if "://" in clean else f"http://{clean}"
+    parsed = urlsplit(candidate)
+    host = (parsed.hostname or "").strip().lower()
+    port = parsed.port
+    if host and port:
+        return f"{host}:{port}"
+    return (parsed.netloc or clean).strip().lower()
+
+
+def sanitize_daemon_inherited_env(target_env: Optional[Any] = None) -> Dict[str, str]:
+    """Strip transient inherited agent subprocess proxy variables (`SPARK_ACTIVE_SUBPROCESS_PROXY`, etc.)."""
+    work: Any = target_env if target_env is not None else dict(os.environ)
+    ephemeral_endpoints: set[str] = set()
+    keys_to_pop: List[str] = []
+    for k in list(work.keys()):
+        k_up = str(k).upper()
+        if k_up in _EPHEMERAL_SUBPROCESS_PROXY_MARKERS or k_up.startswith("COSMOS_WMI_"):
+            ep_tok = _extract_proxy_netloc_token(str(work.get(k) or ""))
+            if ep_tok:
+                ephemeral_endpoints.add(ep_tok)
+            keys_to_pop.append(k)
+    for k in keys_to_pop:
+        work.pop(k, None)
+    if ephemeral_endpoints:
+        for pk in list(work.keys()):
+            if str(pk) in _STANDARD_PROXY_ENV_KEYS or str(pk).upper() in _STANDARD_PROXY_ENV_KEYS:
+                p_tok = _extract_proxy_netloc_token(str(work.get(pk) or ""))
+                if p_tok and p_tok in ephemeral_endpoints:
+                    work.pop(pk, None)
+    return dict(work)
 
 
 @dataclass
@@ -100,6 +156,8 @@ class GatewaySlotRuntime:
     retry_not_before: float = 0.0
     active_sig: str = ""
     pid: Optional[int] = None
+    e2e_verified_url: str = ""
+    e2e_probe_error: str = ""
 
     def reset_disabled(self, submode: str = "") -> None:
         self.enabled = False
@@ -119,6 +177,8 @@ class GatewaySlotRuntime:
         self.retry_not_before = 0.0
         self.active_sig = ""
         self.pid = None
+        self.e2e_verified_url = ""
+        self.e2e_probe_error = ""
 
     def to_status_dict(self) -> Dict[str, Any]:
         eff_pub = self.public_url if self.enabled else ""
@@ -152,7 +212,7 @@ class GatewaySlotRuntime:
                 self.last_disconnect_reason_zh[:240] if (self.enabled and self.last_disconnect_reason_zh) else ""
             ),
         }
-        if self.enabled and self.probe_note and not self.ready:
+        if self.enabled and self.probe_note:
             out["probe_note"] = self.probe_note[:240]
         return out
 
@@ -937,7 +997,7 @@ def spawn_detached_daemon(
     if vps_identity_file:
         argv.extend(["--vps-identity-file", vps_identity_file])
 
-    env = dict(os.environ)
+    env = sanitize_daemon_inherited_env(dict(os.environ))
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONUTF8"] = "1"
     env["COSMOS_MCP_STATE_DIR"] = str(st_root)
@@ -1132,6 +1192,7 @@ class StandaloneSupervisorLoop:
         vps_identity_file: str = "",
         enforce_singleton: Optional[bool] = None,
     ) -> None:
+        sanitize_daemon_inherited_env(os.environ)
         self.state_root = Path(state_root).expanduser().resolve()
         self.runtime_python = str(runtime_python)
         self.port = int(port)
@@ -1208,10 +1269,12 @@ class StandaloneSupervisorLoop:
 
         self._public_gateway_online: Optional[bool] = None
         self._instant_fallback_active: bool = False
+        self._last_prefer_quick: bool = bool(cfg_doc.get("prefer_quick_tunnel"))
         self._effective_tunnel_mode: str = self.mode
         self._pg_last_base: str = "__unprobed__"
         self._pg_next_probe_mono: float = 0.0
         self._pg_probe_interval_sec: float = 15.0
+        self._workers_e2e_reprobe_interval_sec: float = 180.0
         self._consecutive_relay_failures: int = 0
         self._last_disconnect_reason_zh: str = ""
         self._last_balloon_alert_mono: Optional[float] = None
@@ -1827,6 +1890,32 @@ class StandaloneSupervisorLoop:
             return bool(slot.public_url.startswith("https://"))
         return False
 
+    def _is_slot_subproc_healthy(self, slot_id: str) -> bool:
+        slot = self._gateway_slots[slot_id]
+        if not slot.enabled:
+            return False
+        if slot_id == "instant":
+            if slot.submode == "public_gateway":
+                if self._srvus_fixed_active and self._srvus_supervisor is not None:
+                    return self._is_relay_obj_alive(self._srvus_supervisor)
+                if self._instant_fallback_active and self._cf_quick_supervisor is not None:
+                    alive_fn = getattr(self._cf_quick_supervisor, "is_process_alive", None)
+                    return bool(alive_fn()) if callable(alive_fn) else (self._cf_quick_supervisor.pid is not None)
+                return False
+            if self._cf_quick_supervisor is None:
+                return False
+            alive_fn = getattr(self._cf_quick_supervisor, "is_process_alive", None)
+            return bool(alive_fn()) if callable(alive_fn) else (self._cf_quick_supervisor.pid is not None)
+        if slot_id == "self_hosted":
+            if slot.submode == "cloudflare_token":
+                if self._cf_named_supervisor is None:
+                    return False
+                alive_fn = getattr(self._cf_named_supervisor, "is_process_alive", None)
+                return bool(alive_fn()) if callable(alive_fn) else (self._cf_named_supervisor.pid is not None)
+            if slot.submode == "vps" and self._vps_wss_supervisor is None:
+                return self._ssh_proc is not None and self._ssh_proc.poll() is None
+        return False
+
     def _is_tunnel_proc_alive(self) -> bool:
         return any(self._is_slot_proc_alive(gid) for gid in GATEWAY_IDS if self._gateway_slots[gid].enabled)
 
@@ -1878,10 +1967,9 @@ class StandaloneSupervisorLoop:
                     slot.last_disconnect_reason_zh = ""
                     slot.consecutive_failures = 0
                     slot.next_reprobe_mono = time.monotonic() + 45.0
-                    if not was_already_ready:
-                        self._recompute_aggregated_gateway_state()
-                        self._push_tray_failure_if_all_gateways_down()
-                        self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
+                    self._recompute_aggregated_gateway_state()
+                    self._push_tray_failure_if_all_gateways_down()
+                    self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
                 if not was_already_ready:
                     self._log(
                         "public tunnel DNS+HTTPS verified ready [%s]: %s (dns=%s)",
@@ -1890,16 +1978,37 @@ class StandaloneSupervisorLoop:
                         res.get("dns_provider") or "https_direct",
                     )
             else:
+                err_note = str(res.get("error") or "waiting_for_public_https")[:240]
+                res_status = int(res.get("status_code") or 0)
+                res_cf_code = int(res.get("cf_error_code") or 0)
+                is_hard_edge_err = (
+                    res_status in (502, 530, 1027)
+                    or res_cf_code == 1027
+                    or any(tok in err_note for tok in ("http_error_530", "http_error_502", "cf_error_1027"))
+                )
                 with self._status_io_lock:
                     slot.consecutive_failures = int(getattr(slot, "consecutive_failures", 0) or 0) + 1
-                    if recheck_existing and slot.ready and slot.consecutive_failures < 2:
+                    if (
+                        recheck_existing
+                        and slot.ready
+                        and slot.ready_url == clean_u
+                        and self._is_slot_subproc_healthy(slot_id)
+                        and not is_hard_edge_err
+                    ):
+                        slot.probe_note = err_note
+                        slot.next_reprobe_mono = time.monotonic() + 30.0
+                        self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
+                        return
+                    if recheck_existing and slot.ready and slot.consecutive_failures < 2 and not is_hard_edge_err:
+                        slot.probe_note = err_note
                         slot.next_reprobe_mono = time.monotonic() + 12.0
+                        self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
                         return
                     slot.ready = False
                     slot.ready_url = ""
                     if slot.state != "error":
                         slot.state = "connecting"
-                    slot.probe_note = str(res.get("error") or "waiting_for_public_https")[:240]
+                    slot.probe_note = err_note
                     slot.next_reprobe_mono = time.monotonic() + max(0.05, float(self._tunnel_reprobe_interval_sec))
                     self._recompute_aggregated_gateway_state()
                     self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
@@ -1907,6 +2016,127 @@ class StandaloneSupervisorLoop:
 
         threading.Thread(
             target=_probe_worker,
+            name=f"cosmos-tunnel-probe-{self.prefix}-{slot_id}",
+            daemon=True,
+        ).start()
+
+    def _verify_workers_public_healthz_async(
+        self,
+        slot: GatewaySlotRuntime,
+        target_url: str,
+        *,
+        timeout_sec: float = 8.0,
+        recheck_existing: bool = False,
+    ) -> None:
+        clean_u = (target_url or "").strip().rstrip("/")
+        if not clean_u.startswith("https://") or not slot.enabled:
+            return
+        if ((slot.e2e_verified_url == clean_u) and not recheck_existing) or slot.probing_url == clean_u:
+            return
+        slot.probing_url = clean_u
+        slot_id = slot.slot_id
+
+        def _workers_probe_worker() -> None:
+            try:
+                res = probe_public_healthz_end_to_end(clean_u, timeout_sec=timeout_sec)
+            except Exception as exc:
+                res = {"ok": False, "error": str(exc)}
+            finally:
+                if slot.probing_url == clean_u:
+                    slot.probing_url = ""
+            if self._should_stop() or not slot.enabled or (slot.public_url or "").strip().rstrip("/") != clean_u:
+                return
+            exp_cur, _ = self._read_relay_explicit_ready(self._workers_supervisor)
+            if exp_cur is False:
+                return
+
+            status_code = int(res.get("status_code") or 0)
+            if bool(res.get("ok")) and (status_code == 200 or status_code == 0):
+                was_already_ready = bool(slot.ready and slot.ready_url == clean_u)
+                if not was_already_ready:
+                    hot_refresh_public_url(
+                        self.state_root,
+                        clean_u,
+                        port=self.port,
+                        prefix=self.prefix,
+                        tunnel_mode="workers_dev",
+                        gateway_id=slot_id,
+                    )
+                with self._status_io_lock:
+                    slot.e2e_verified_url = clean_u
+                    slot.e2e_probe_error = ""
+                    slot.ready = True
+                    slot.ready_url = clean_u
+                    slot.state = "ready"
+                    slot.probe_note = ""
+                    slot.last_error = ""
+                    slot.last_disconnect_reason_zh = ""
+                    slot.consecutive_failures = 0
+                    slot.next_reprobe_mono = time.monotonic() + float(self._workers_e2e_reprobe_interval_sec)
+                    self._recompute_aggregated_gateway_state()
+                    self._push_tray_failure_if_all_gateways_down()
+                    self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
+                if not was_already_ready:
+                    self._log("workers_dev public /healthz verified 200 OK: %s", clean_u)
+                return
+
+            body_txt = str(res.get("body") or "")
+            raw_err = str(res.get("error") or "workers_public_healthz_failed")
+            cf_code = int(res.get("cf_error_code") or 0)
+            is_1027 = (
+                status_code == 1027
+                or cf_code == 1027
+                or "1027" in raw_err
+                or "1027" in body_txt
+            )
+            if is_1027:
+                note = raw_err if "1027" in raw_err else f"cf_error_1027_http_{status_code or 1027}"
+                err_msg = (
+                    f"workers_dev tunnel error: Cloudflare Workers 免费层日请求配额已耗尽 "
+                    f"(Error 1027, {note})，公网 /healthz 校验未通过。"
+                )
+            elif status_code > 0:
+                note = raw_err if str(status_code) in raw_err else f"http_error_{status_code}"
+                err_msg = (
+                    f"workers_dev tunnel error: 公网 /healthz 端到端校验返回 HTTP {status_code} "
+                    f"({note})，请检查网关或自定义域名配置。"
+                )
+            else:
+                note = raw_err
+                err_msg = (
+                    f"workers_dev tunnel error: 出站连接已建立，但公网 /healthz 端到端校验失败 "
+                    f"({note})；若在境内使用 *.workers.dev，请确认代理已放行该域名或绑定自定义域名。"
+                )
+
+            with self._status_io_lock:
+                slot.consecutive_failures = int(getattr(slot, "consecutive_failures", 0) or 0) + 1
+                if (
+                    recheck_existing
+                    and slot.ready
+                    and slot.e2e_verified_url == clean_u
+                    and status_code == 0
+                    and not is_1027
+                    and slot.consecutive_failures < 2
+                ):
+                    slot.probe_note = note[:240]
+                    slot.next_reprobe_mono = time.monotonic() + 30.0
+                    self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
+                    return
+                slot.e2e_verified_url = ""
+                slot.e2e_probe_error = err_msg
+                slot.ready = False
+                slot.ready_url = ""
+                slot.state = "error"
+                slot.probe_note = note[:240]
+                slot.last_error = err_msg
+                slot.next_reprobe_mono = time.monotonic() + max(0.05, float(self._tunnel_reprobe_interval_sec))
+                self._recompute_aggregated_gateway_state()
+                self._push_tray_failure_if_all_gateways_down()
+                self._write_daemon_status_locked(state_label="running", last_error=self._last_tunnel_error)
+            self._log("workers_dev public /healthz check failed for %s: %s", clean_u, note, error=True)
+
+        threading.Thread(
+            target=_workers_probe_worker,
             name=f"cosmos-tunnel-probe-{self.prefix}-{slot_id}",
             daemon=True,
         ).start()
@@ -1932,6 +2162,8 @@ class StandaloneSupervisorLoop:
             was_ready = slot.ready
             slot.ready = False
             slot.ready_url = ""
+            slot.e2e_verified_url = ""
+            slot.e2e_probe_error = ""
             slot.probe_note = stopped_note
             if consec >= 3 or reason_zh:
                 slot.last_disconnect_reason_zh = reason_zh or "远程加密通道连续重连失败，正在后台持续重试。"
@@ -1943,12 +2175,32 @@ class StandaloneSupervisorLoop:
 
         exp_ready, w_err = self._read_relay_explicit_ready(relay_obj)
         if exp_ready is True:
+            if slot.slot_id == "workers_dev" and slot.e2e_verified_url != clean_u:
+                slot.last_disconnect_reason_zh = ""
+                slot.consecutive_failures = 0
+                if slot.e2e_probe_error:
+                    changed = slot.ready or (slot.last_error != slot.e2e_probe_error) or (slot.state != "error")
+                    slot.ready = False
+                    slot.ready_url = ""
+                    slot.last_error = slot.e2e_probe_error
+                    slot.state = "error"
+                    return changed
+                changed = slot.ready or bool(slot.last_error) or (slot.state != "connecting")
+                slot.ready = False
+                slot.ready_url = ""
+                slot.last_error = ""
+                slot.state = "connecting"
+                if not slot.probe_note or slot.probe_note == "waiting_for_workers_ws":
+                    slot.probe_note = "verifying_workers_public_healthz"
+                return changed
+
             changed = (not slot.ready) or (slot.ready_url != clean_u) or bool(slot.last_error)
             slot.ready = True
             slot.ready_url = clean_u
             slot.state = "ready"
             slot.probe_note = ""
             slot.last_error = ""
+            slot.e2e_probe_error = ""
             slot.last_disconnect_reason_zh = ""
             slot.consecutive_failures = 0
             if changed:
@@ -1962,6 +2214,8 @@ class StandaloneSupervisorLoop:
                 )
             return changed
         if exp_ready is False:
+            slot.e2e_verified_url = ""
+            slot.e2e_probe_error = ""
             eff_err_txt = reason_zh or w_err
             if consec >= 3 and not eff_err_txt:
                 eff_err_txt = "远程加密通道连续重连失败，正在后台持续重试。"
@@ -1998,6 +2252,27 @@ class StandaloneSupervisorLoop:
                 ):
                     any_changed = True
                 exp_r, _ = self._read_relay_explicit_ready(self._workers_supervisor)
+                if exp_r is True:
+                    clean_w = (slot.public_url or "").strip().rstrip("/")
+                    if clean_w.startswith("https://") and slot.probing_url != clean_w:
+                        if slot.e2e_verified_url != clean_w:
+                            if now_mono >= slot.next_reprobe_mono:
+                                slot.next_reprobe_mono = now_mono + max(0.05, float(self._tunnel_reprobe_interval_sec))
+                                self._verify_workers_public_healthz_async(
+                                    slot,
+                                    clean_w,
+                                    recheck_existing=False,
+                                )
+                        else:
+                            if slot.next_reprobe_mono <= 0.0:
+                                slot.next_reprobe_mono = now_mono + float(self._workers_e2e_reprobe_interval_sec)
+                            elif now_mono >= slot.next_reprobe_mono:
+                                slot.next_reprobe_mono = now_mono + float(self._workers_e2e_reprobe_interval_sec)
+                                self._verify_workers_public_healthz_async(
+                                    slot,
+                                    clean_w,
+                                    recheck_existing=True,
+                                )
                 if exp_r is not None:
                     continue
 
@@ -2390,7 +2665,7 @@ class StandaloneSupervisorLoop:
                 )
                 self._active_cf_quick_sig = want_sig
                 self._cf_quick_retry_not_before = 0.0
-                found_url = str(self._cf_quick_supervisor.start(wait_url_timeout_sec=12.0 if initial else 6.0) or "").strip()
+                found_url = str(self._cf_quick_supervisor.start(wait_url_timeout_sec=15.0) or "").strip()
                 if found_url:
                     slot.public_url = found_url
                     slot.last_error = ""
@@ -2407,10 +2682,12 @@ class StandaloneSupervisorLoop:
                     self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
                     self._verify_slot_public_ready_async(slot, found_url, tunnel_mode=eff_tm)
                 else:
+                    cf_tail_err = str(getattr(self._cf_quick_supervisor, "last_error", "") or "").strip()
+                    tail_sfx = f"（子进程摘要: {cf_tail_err}）" if cf_tail_err else ""
                     slot.state = "error"
                     slot.last_error = (
                         "cloudflare tunnel error: 暂未连上 Cloudflare 边缘节点分配公网 HTTPS 地址"
-                        "（正在后台持续重试，请检查网络连接或切换其他通道）"
+                        f"（正在后台持续重试，请检查网络连接或切换其他通道）{tail_sfx}"
                     )
             except Exception as exc:
                 self._cf_quick_retry_not_before = time.monotonic() + 15.0
@@ -2434,6 +2711,7 @@ class StandaloneSupervisorLoop:
             self._public_gateway_online = None
             self._instant_fallback_active = False
             self._srvus_fixed_active = False
+            self._last_prefer_quick = bool(doc.get("prefer_quick_tunnel"))
             slot.reset_disabled(submode=submode)
             return
 
@@ -2450,6 +2728,7 @@ class StandaloneSupervisorLoop:
             self._public_gateway_online = None
             self._instant_fallback_active = False
             self._srvus_fixed_active = False
+            self._last_prefer_quick = bool(doc.get("prefer_quick_tunnel"))
             slot.effective_mode = "cloudflare"
             if (not was_enabled or prev_sub != "cloudflare") and not initial and "trycloudflare.com" not in slot.public_url.lower():
                 slot.public_url = ""
@@ -2460,11 +2739,25 @@ class StandaloneSupervisorLoop:
 
         # `submode == "public_gateway"`
         sup_cls, sec_fn, seed_fn = _resolve_workers_gateway_components()
+        prefer_quick = bool(doc.get("prefer_quick_tunnel"))
+        prev_prefer_quick = self._last_prefer_quick
+        self._last_prefer_quick = prefer_quick
         retry_req_ts = float(doc.get("srvus_retry_requested_at") or 0.0)
+        user_requested_srvus = False
         if retry_req_ts > self._last_srvus_retry_req_ts:
             self._last_srvus_retry_req_ts = retry_req_ts
             self._srvus_retry_not_before = 0.0
             self._pg_next_probe_mono = 0.0
+            user_requested_srvus = True
+        if (not initial) and (
+            (not was_enabled)
+            or (prev_sub != "public_gateway")
+            or (prev_prefer_quick and not prefer_quick)
+        ):
+            self._srvus_retry_not_before = 0.0
+            user_requested_srvus = True
+        if self._compute_srvus_key_sig() != self._last_seen_srvus_key_sig:
+            user_requested_srvus = True
 
         pg_base = str(
             os.environ.get("COSMOS_PUBLIC_GATEWAY_BASE")
@@ -2501,11 +2794,23 @@ class StandaloneSupervisorLoop:
         if not pg_online:
             self._stop_pg_workers_supervisor()
             self._pg_workers_retry_not_before = 0.0
-            prefer_quick = bool(doc.get("prefer_quick_tunnel"))
+            quick_sup = self._cf_quick_supervisor
+            quick_alive = False
+            if quick_sup is not None and self._active_cf_quick_sig == "quick_fb":
+                alive_fn = getattr(quick_sup, "is_process_alive", None)
+                quick_alive = bool(alive_fn()) if callable(alive_fn) else (getattr(quick_sup, "pid", None) is not None)
+            cur_quick_u = (slot.public_url or str(getattr(quick_sup, "current_url", "") or "")).strip().lower()
+            keep_live_quick_fallback = (
+                self._instant_fallback_active
+                and quick_alive
+                and ".trycloudflare.com" in cur_quick_u
+                and slot.state != "error"
+                and not user_requested_srvus
+            )
             if prefer_quick:
                 self._stop_srvus_supervisor()
                 self._srvus_retry_not_before = 0.0
-            elif self._start_or_maintain_srvus_tunnel(slot, initial=initial):
+            elif not keep_live_quick_fallback and self._start_or_maintain_srvus_tunnel(slot, initial=initial):
                 return
 
             self._srvus_fixed_active = False
@@ -2734,6 +3039,8 @@ class StandaloneSupervisorLoop:
             if gw_url != slot.public_url:
                 slot.ready = False
                 slot.ready_url = ""
+                slot.e2e_verified_url = ""
+                slot.e2e_probe_error = ""
                 slot.probing_url = ""
                 slot.next_reprobe_mono = 0.0
             slot.public_url = gw_url
@@ -2756,6 +3063,9 @@ class StandaloneSupervisorLoop:
                             tunnel_mode="workers_dev",
                             stopped_note="workers_relay_stopped",
                         )
+                        exp_cb, _ = self._read_relay_explicit_ready(self._workers_supervisor)
+                        if exp_cb is True and slot.e2e_verified_url != gw_url:
+                            self._verify_workers_public_healthz_async(slot, gw_url, recheck_existing=False)
                         self._recompute_aggregated_gateway_state()
                         self._push_tray_failure_if_all_gateways_down()
                         self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
@@ -2781,7 +3091,9 @@ class StandaloneSupervisorLoop:
                     stopped_note="workers_relay_stopped",
                 )
                 exp_w, _ = self._read_relay_explicit_ready(w_inst)
-                if exp_w is None:
+                if exp_w is True:
+                    self._verify_workers_public_healthz_async(slot, gw_url, recheck_existing=False)
+                elif exp_w is None:
                     self._verify_slot_public_ready_async(slot, gw_url, tunnel_mode="workers_dev")
             except Exception as exc:
                 self._stop_workers_supervisor()
@@ -2893,7 +3205,7 @@ class StandaloneSupervisorLoop:
                     )
                     self._active_cf_named_sig = want_sig
                     self._cf_named_retry_not_before = 0.0
-                    found_url = str(self._cf_named_supervisor.start(wait_url_timeout_sec=12.0 if initial else 3.0) or "").strip()
+                    found_url = str(self._cf_named_supervisor.start(wait_url_timeout_sec=15.0) or "").strip()
                     if found_url:
                         slot.public_url = found_url
                         slot.last_error = ""
@@ -2907,6 +3219,11 @@ class StandaloneSupervisorLoop:
                             gateway_id="self_hosted",
                         )
                         self._verify_slot_public_ready_async(slot, found_url, tunnel_mode="cloudflare_token")
+                    else:
+                        named_tail_err = str(getattr(self._cf_named_supervisor, "last_error", "") or "").strip()
+                        if named_tail_err:
+                            slot.state = "error"
+                            slot.last_error = f"cloudflare named tunnel error: {named_tail_err}"
                 except Exception as exc:
                     self._cf_named_retry_not_before = time.monotonic() + 15.0
                     slot.ready = False
@@ -3334,7 +3651,7 @@ class StandaloneSupervisorLoop:
         logs_dir = self.state_root / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         srv_log = logs_dir / (f"server_{self.prefix}.log" if self.prefix != "pc" else "server.log")
-        env = dict(os.environ)
+        env = sanitize_daemon_inherited_env(dict(os.environ))
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         env["PYTHONUTF8"] = "1"
         env["COSMOS_MCP_STATE_DIR"] = str(self.state_root)
@@ -3659,6 +3976,7 @@ def _cli_entry() -> int:
     parser.add_argument("--pythonpath", default="")
     args = parser.parse_args()
 
+    sanitize_daemon_inherited_env(os.environ)
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     os.environ["PYTHONUTF8"] = "1"
     if args.pythonpath:
