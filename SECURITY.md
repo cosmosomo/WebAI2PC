@@ -36,7 +36,7 @@
 ## 三、按需降级、外设边界与 `sandbox/` 容器隔离
 
 ### 1. 在线按需降级与进程生命周期管理
-- 支持通过 `Cosmos Studio` 顶部会话栏「一键切换只读保护」按钮（或「工具中心与安全开关」页的「切为只读浏览」、系统托盘菜单「切换为只读浏览模式」）及 `cosmos-mcp permissions --tier L1`（或 `L2`）实时收紧权限；降级或执行 `--revoke-all` 时，`KillSignalWatchdog` 在 0.1 秒内终止全部在途前台/后台子进程树并关闭外设会话。
+- 支持通过本地控制台主控首页左栏「当前权限设置」4 档切换条点选「只读」（或「设置 -> 工具与扩展」页、系统托盘右键菜单「切换为只读安全模式」）及 `cosmos-mcp permissions --tier L1`（或 `L2`）实时收紧权限；降级或执行 `--revoke-all` 时，`KillSignalWatchdog` 在 0.1 秒内终止全部在途前台/后台子进程树并关闭外设会话。
 - Windows 后台守护进程通过 `JobObject`（`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`）管理 `uvicorn`、`cloudflared` 与 `ssh` 子进程，守护进程退出时同步回收子进程，避免残留孤儿进程占用端口。
 
 ### 2. 外设扩展包与系统级沙盒（`sandbox/`）

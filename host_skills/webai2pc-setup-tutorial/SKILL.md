@@ -27,9 +27,10 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 打开主控首页（`open_page="studio"`）后，界面分为顶栏、顶部宿主连接卡与下方左右双栏：
 
 - **顶栏右侧快捷按钮**：
-  - `当前权限设置 → 只读`（或系统托盘右键）：免口令立即切入只读保护模式；切入后顶栏会出现 `恢复开发` 按钮，点击即可回到原开发档位。
   - `实战教程`：进入本地交互式图文教程页（`/tutorials`），自动带入当前就绪的 `/mcp` 与 `/mcp/readonly` 地址。
+  - 语言切换与深浅色切换按钮。
   - `设置`（快捷键 `Ctrl+,`）：进入左侧五分类设置中心（`连接与网关`、`环境与系统`、`工具与扩展`、`技能管理`、`外观与图标`），点击左上或顶栏 `← 返回主控台` 回到首页。
+  - 需要免口令快速切入只读或切回工作区开发时，直接在下方左栏 `当前权限设置` 4 档切换条或系统托盘右键菜单点击即可（`0.1` 秒内生效）。
 - **左栏「开放工作目录」与只读分层**：
   - 添加目录：点击 `选文件夹` 调起操作系统原生文件夹选择框，或在输入框粘贴路径点击 `添加`（也可点 `浏览目录树` 或 `常用目录快选 ▸`）。
   - 父只读子读写分层：打开输入框下方的 `以只读参考目录添加` 开关再添加目录，即可将其设为只读参考目录（`readonly_workspace_roots`）。支持将外层总目录设为只读参考、将内部当前开发的子项目设为可读写目录（`workspace_roots`），系统按最长路径前缀自动匹配读写权限。
@@ -46,8 +47,8 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 点击顶栏 `设置`（或顶部连接卡右上角 `配置连接通道 ▸`）进入 `连接与网关`（可调用 `pc_get_status(guide="cloudflare", open_page="gateways")` 直接打开）。3 张网关卡片右上角均带独立开关，**支持多路网关同时开启在线**，测试新网关时不会断开当前已连会话。
 
 ### （1）第 1 类 · 默认免配置：`一键上手免登录直连`
-- **默认 `*.srv.us` 通道**：仅依赖操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制、零注册），跨关机重启网址保持不变，中国大陆家庭宽带通常可**免代理直连**。
-- **回退 `*.trycloudflare.com` 快速通道（`--mode cloudflare`）**：当所在校园网/企业网拦截 `22` 端口时在 `4` 秒内自动切换（也可在卡片展开区点 `改用临时快速通道`）。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时需开系统代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求且受边缘 `125` 秒读超时约束，跨境高丢包建议开系统 HTTP 代理。
+- **首选 `*.srv.us` 免登录固定通道（10 秒启动等待预算）**：仅依赖操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制、零注册，启动等待预算 `10` 秒），跨关机重启网址保持不变，中国大陆家庭宽带通常可**免代理直连**。
+- **备用 `*.trycloudflare.com` 临时通道（独立开关并存 / `--mode cloudflare`）**：在卡片展开区配有独立开关 `开启备用（可与 srv.us 同时在线）`，既可与 `srv.us` 同时在线热备，也可在校园网/企业网拦截 `22` 端口或 `srv.us` 超过 `10` 秒未连通时启用。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时需开系统代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求且受边缘 `125` 秒读超时约束，跨境高丢包建议开系统 HTTP 代理。
 
 ### （2）第 2 类 · 无服务器固定网址：`Cloudflare 专属固定网关`（`workers_dev`）
 本通道采用纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`），受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘默认反代读取超时 `125` 秒约束。引导用户点击第 2 张卡片右侧 `配置 ▾` 展开面板，按三步完成部署：
@@ -73,10 +74,10 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 - **网页版 Gemini（任务模式与手机端同步）**：
   - **明确提醒用户**：`https://<域名>/mcp` **不是从浏览器地址栏直接打开的网址**，而是要粘贴进 Gemini 连接器配置栏里的 MCP 服务器地址。
 - 引导用户直接打开 `https://gemini.google.com/customize/connectors`（或从 Gemini 首页左下角菜单点 `Personal Intelligence -> Connected Apps`），点击右上角 `+ Custom`，在 `Connect to an MCP server` 弹窗把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏（`Additional settings` 保持默认折叠），点击 **`Next`**。
-- 跳转授权页后，同机浏览器直接点 `本机一键允许连接`；完成后回到 `https://gemini.google.com/customize/connectors` 点开连接器，将 `App actions` 总开关设为 `Always allow`。新建对话首句输入 `@Cosmos ...` 点选连接器标签即可唤醒，同账号手机端 Gemini App 自动同步。
-- **网页版 ChatGPT（本机插件页直绑最快 · 装好后日常用 `Chat` 模式省额度）**：
-  - **首次添加与排障边界**：本地控制台在公网网关就绪后开放主按钮 `复制地址并打开 ChatGPT 插件页` 与旁侧 `复制给 ChatGPT 接入 / 排障`（严禁包含配对码、口令、令牌与本机路径）。首选引导用户点击 `复制地址并打开 ChatGPT 插件页`，在已登录本机浏览器打开 `https://chatgpt.com/plugins` -> `＋ -> 添加自定义 MCP 服务器`（`Add custom MCP server`），名称填 `WebAI2PC`，粘贴地址（Team / Business / Enterprise / Edu 工作区填 `/mcp` 全功能，个人 Plus / Pro 受平台限制写工具时填 `/mcp/readonly` 只读），认证选 `OAuth`，跳转 `/consent` 命中 `127.0.0.1` 回环直接点 `本机一键允许连接`，最后点击 `Install` 完成安装（无需搭 `ChatGPT Sites` 中转，请勿默认新开未登录云端浏览器重登 Google，也不要让 `@Plugin Creator` 用 ZIP 上传外部 MCP 私有插件以免报 `403`；若网页端无入口或报 `403`，请联系工作区管理员开启 `Create plugins with MCPs` 权限；若在网页版 `Work` 云端受控浏览器内点 `Take over` 打开 `/consent` 则需输入主控首页 `6` 位动态配对码）。
-  - **日常调用分工与守则存放**：插件安装后全账号共享 `@WebAI2PC`，以调用 `pc_get_status`（`get_status`）实际成功作为接通标准。日常查改本地代码、修 Office 与跑无窗口测试推荐切回 `Chat` 模式输入 `@WebAI2PC`（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做长程交付或设置 `Scheduled Tasks` 定时任务时切 `Work` 模式输入 `@WebAI2PC`（消耗 `Work / Codex` 智能体额度）。操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可放入 `Project Instructions` 或自定义指令。
+- 跳转授权页后，同机浏览器直接点 `本机一键允许连接`；完成后回到 `https://gemini.google.com/customize/connectors` 点开连接器，将 `App actions` 总开关设为 `Always allow`。新建对话首句输入 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`）点选连接器标签即可唤醒，同账号手机端 Gemini App 自动同步。
+- **网页版 ChatGPT（`Work` 模式 `@Plugin Creator` 一键配置 · 装好后日常用 `Chat` 模式省额度）**：
+  - **首次一键配置与授权**：本地控制台在公网网关就绪后开放主按钮 `复制一键配置提示词（发给 Work）`（个人 Plus / Pro 只读账号点击 `复制只读配置提示词（发给 Work）`，或点 `仅复制地址` 手动填写）。引导用户将复制出的提示词粘贴发送给网页版 ChatGPT 的 `Work` 模式，由 `@Plugin Creator` 按标准 OAuth 2.1 自动接入 `/mcp`（Team / Business / Enterprise / Edu 工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 受平台限制写工具时只读），无需手动填写 Client ID / Secret 或额外部署中转服务；弹出 `/consent` 授权页时，同机浏览器命中 `127.0.0.1` 回环直接点 `本机一键允许连接`（若在网页版 `Work` 云端受控浏览器内点 `Take over` 打开 `/consent` 则输入主控首页 `6` 位动态配对码）。
+  - **日常调用分工与守则存放**：连接器安装后全账号共享（唤醒时输入 `@你在连接器里填写的名称`，默认 `@WebAI2PC`），以调用 `pc_get_status`（`get_status`）实际成功作为接通标准。日常查改本地代码、修 Office 与跑无窗口测试推荐切回 `Chat` 模式调用（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做长程交付或设置 `Scheduled Tasks` 定时任务时切 `Work` 模式调用（消耗 `Work / Codex` 智能体额度）。操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可放入 `Project Instructions` 或自定义指令。
 - **开启可选扩展包与多机前缀（`#settings/tools`，传 `open_page="tools"`）**：
   - `受管浏览器包`（`browser` -> `pc_browser_use`）：在独立 `browser_profile` 目录运行隔离浏览器查阅网页与截图，不触碰用户个人浏览器窗口。
   - `桌面窗口操控包`（`desktop` -> `pc_cua_window`，仅 Windows）：基于离屏截图与后台消息辅助操作桌面窗口，检测到键鼠活跃时自动礼让。
@@ -88,6 +89,6 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 ## 6. 常见排障核对清单
 
 - **国内 `*.workers.dev` 无法连通或自定义域名报 `403`**：核对本机 HTTP/HTTPS 代理是否常开且规则覆盖 `*.workers.dev`（`NO_PROXY` 保留 `127.0.0.1,localhost,::1` 且不含 `*.workers.dev`）；使用 Cloudflare 自定义域名或 `Named Tunnel` 报 `403`/无法拉取 OAuth 元数据时，引导用户在 Cloudflare 后台 `Security -> Bots` 关闭 `Bot Fight Mode` 并为 `/mcp*` 及 OAuth 路径配置 WAF `Skip` 跳过托管质询。
-- **缺少写入或执行工具**：核对主控首页左栏 `当前权限设置` 是否处于 `只读` 或 `仅改文件`，以及顶栏右侧是否显示 `恢复开发`；个人版 ChatGPT 绑定 `/mcp/readonly` 时仅暴露只读工具属于平台规则限制。
+- **缺少写入或执行工具**：核对主控首页左栏 `当前权限设置` 4 档切换条是否处于 `只读` 或 `仅改文件`（需要恢复时直接在 `当前权限设置` 点回 `工作区开发` 或通过系统托盘右键菜单切换）；个人版 ChatGPT 绑定 `/mcp/readonly` 时仅暴露只读工具属于平台规则限制。
 - **同机授权页未自动通过回环验证**：若在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页，或同机浏览器开启严格隐私隔离插件拦截了本地 `127.0.0.1` 回环跳转，引导用户在主控首页展开 `配对与已连会话`，复制 6 位动态配对码或 20 位固定备用口令填入授权页即可。
 - **Gemini 频繁弹出单次工具确认框**：提醒用户打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开连接器开启 `Always allow` 总开关，不要在聊天流单张确认卡上点单次允许；需要查公开网页时使用本连接器的 `pc_web_research`，避免混调宿主内置搜索触发权限降级。

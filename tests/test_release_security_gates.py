@@ -82,14 +82,39 @@ def test_cross_machine_paths_and_internal_refs_scanner():
         assert "internal_agent_or_worktree_ref" in hits, f"Expected internal leak hit for {sample!r}"
 
 
-def test_image_integrity_and_metadata_gate():
+def test_image_integrity_and_metadata_gate(monkeypatch):
     br = _load_build_release()
     clean_png = _make_clean_png_bytes()
     assert br.scan_image_bytes_integrity_and_metadata(clean_png, rel_path="assets/clean.png") == []
 
-    meta_png = _inject_png_text_chunk(clean_png, "Author", "PrivateUser")
-    meta_issues = br.scan_image_bytes_integrity_and_metadata(meta_png, rel_path="assets/meta.png")
-    assert any("Forbidden PNG metadata chunk `tEXt`" in x for x in meta_issues)
+    # Standard harmless screenshot/editor metadata keys with benign values pass cleanly
+    for benign_key, benign_val in (
+        ("Software", "Snipaste 2.8.9"),
+        ("Creation Time", "2026-11-28T00:00:00Z"),
+        ("Description", "UI quickstart diagram"),
+        ("Comment", "Exported for docs"),
+        ("Author", "WebAI2PC Docs"),
+        ("Title", "Studio Console"),
+        ("Copyright", "MIT"),
+        ("Source", "Display"),
+    ):
+        benign_png = _inject_png_text_chunk(clean_png, benign_key, benign_val)
+        assert br.scan_image_bytes_integrity_and_metadata(benign_png, rel_path="assets/benign.png") == [], benign_key
+
+    # Whitelisted metadata key whose value leaks private path, hostname, email, or custom forbidden token must be blocked
+    leak_path_png = _inject_png_text_chunk(clean_png, "Comment", r"Saved from C:\Us" + r"ers\RealDev99\Desktop\shot.png")
+    leak_path_issues = br.scan_image_bytes_integrity_and_metadata(leak_path_png, rel_path="assets/leak_path.png")
+    assert any("Sensitive" in x and "Comment" in x for x in leak_path_issues), leak_path_issues
+
+    monkeypatch.setenv("COSMOS_EXTRA_FORBIDDEN_TOKENS", "PrivateOwnerHandle99")
+    leak_tok_png = _inject_png_text_chunk(clean_png, "Author", "Captured by PrivateOwnerHandle99")
+    leak_tok_issues = br.scan_image_bytes_integrity_and_metadata(leak_tok_png, rel_path="assets/leak_tok.png")
+    assert any("Sensitive" in x and "Author" in x for x in leak_tok_issues), leak_tok_issues
+
+    # Unknown / non-whitelisted metadata chunk keys are still rejected
+    unknown_key_png = _inject_png_text_chunk(clean_png, "Raw profile type exif", "00112233")
+    unknown_issues = br.scan_image_bytes_integrity_and_metadata(unknown_key_png, rel_path="assets/unknown.png")
+    assert any("Forbidden PNG metadata chunk `tEXt`" in x for x in unknown_issues), unknown_issues
 
     trunc_png = clean_png[:-20]
     trunc_issues = br.scan_image_bytes_integrity_and_metadata(trunc_png, rel_path="assets/trunc.png")

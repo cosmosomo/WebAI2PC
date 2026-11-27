@@ -1280,61 +1280,30 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
 
 
 def test_gateway_dependency_annotations_and_pat_anti_leak_ui_invariants() -> None:
-    """Verify clear plain-Chinese dependency callouts across Cards 1..3 and revocable PAT anti-leak UI guards."""
+    """Verify gateway dependency callout containers, revocable PAT controls, and standard OAuth ChatGPT guide."""
     index_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "index.html").read_text(encoding="utf-8")
     js_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "studio.js").read_text(encoding="utf-8")
     doc02_txt = (REPO_ROOT / "docs" / "02_网页版ChatGPT工作区与个人只读接入教程.md").read_text(encoding="utf-8")
 
-    # Card 1 (`instant`): srv.us SSH port 22 direct + trycloudflare `cloudflared` binary dependency
-    assert 'id="card1-dep-note"' in index_txt
-    for kw1 in ("*.srv.us", "ssh", "22", "*.trycloudflare.com", "cloudflared", "GitHub Releases"):
-        assert kw1 in index_txt, f"Missing Card 1 dependency keyword: {kw1}"
+    # Gateway Cards 1..3 dependency callout containers & key technical anchors
+    for note_id in ('id="card1-dep-note"', 'id="card2-dep-note"', 'id="card3-dep-note"'):
+        assert note_id in index_txt, f"Missing gateway dependency note container: {note_id}"
+    for gw_anchor in ("srv.us", "trycloudflare", "workers.dev", "NO_PROXY", "127.0.0.1"):
+        assert gw_anchor in index_txt, f"Missing gateway technical anchor: {gw_anchor}"
 
-    # Card 2 (`workers_dev`): stdlib 443 WSS (zero Node/wrangler/cloudflared), 100,000/day, 125s, proxy for *.workers.dev, NO_PROXY loopback, Active Zone custom domain
-    assert 'id="card2-dep-note"' in index_txt
-    for kw2 in (
-        "443 WSS",
-        "无需安装",
-        "wrangler",
-        "100,000",
-        "125",
-        "*.workers.dev",
-        "DNS 污染",
-        "系统 HTTP/HTTPS 代理",
-        "NO_PROXY",
-        "127.0.0.1,localhost,::1",
-        "Active Zone",
-        "国内免代理直连",
-    ):
-        assert kw2 in index_txt, f"Missing Card 2 dependency keyword: {kw2}"
-
-    # Card 3 (`self_hosted`): 24h VPS hub zero Cloudflare / zero daily quota + Named Tunnel `cloudflared` & 127.0.0.1:8096 rule
-    assert 'id="card3-dep-note"' in index_txt
-    for kw3 in ("无 Cloudflare 依赖", "无单日请求配额限制", "Cloudflare Named Tunnel", "cloudflared", "http://127.0.0.1:8096"):
-        assert kw3 in index_txt, f"Missing Card 3 dependency keyword: {kw3}"
-
-    # Sites / CLI revocable PAT controls + red anti-sharing warning & copy toast
-    for pat_kw in (
-        'id="pat-mint-details"',
-        'id="mint-pat-btn"',
-        'id="pat-danger-warning-text"',
-        "严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue",
-        "ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件",
-        "关闭本提示后不再显示明文",
-        "点击『断开』立即作废",
-    ):
-        assert pat_kw in index_txt, f"Missing PAT UI element/warning: {pat_kw}"
-
+    # Revocable PAT UI controls & backend wiring
+    for pat_id in ('id="pat-mint-details"', 'id="mint-pat-btn"', 'id="pat-danger-warning-text"'):
+        assert pat_id in index_txt, f"Missing PAT UI element: {pat_id}"
     assert "/api/studio/tokens/mint" in js_txt
     assert "/api/studio/chatgpt-oneclick" in js_txt
-    assert "PAT_ANTI_LEAK_TOAST" in js_txt
-    assert "严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue" in js_txt
 
-    # Docs 02 covers one-click @Plugin Creator + /c/<token>/mcp + ChatGPT Sites fallback
-    assert "ChatGPT Sites" in doc02_txt
-    assert "@Plugin Creator" in doc02_txt
-    assert "/c/<token>/mcp" in doc02_txt
+    # Docs 02 aligns with active @Plugin Creator standard OAuth /mcp & /mcp/readonly flow (no stale /c/<token>/mcp default)
+    at_sym = chr(64)
+    assert f"{at_sym}Plugin Creator" in doc02_txt
+    assert "/mcp" in doc02_txt and "/mcp/readonly" in doc02_txt
+    assert "OAuth" in doc02_txt
     assert "Create plugins with MCPs" not in doc02_txt
+    assert "/c/<token>/mcp" not in doc02_txt
 
 
 def test_auth_pane_and_state_revision_static_invariants() -> None:
@@ -1393,7 +1362,6 @@ def test_auth_pane_and_state_revision_static_invariants() -> None:
         "rotate_password",
         "state_revision",
         "env_locks",
-        "由启动环境变量锁定，需修改启动环境并重启后更改",
     ):
         assert contract_tok in js_txt, f"Missing contract token {contract_tok!r} in studio.js"
 

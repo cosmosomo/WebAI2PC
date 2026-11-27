@@ -18,14 +18,14 @@ The local console includes an operating-rules template aligned with your active 
    - **Storing Rules**: In Workspace, desktop, or plugin environments you can save them to native `Skills`; in both web `Chat` mode and `Work` mode you can paste them into `Project Instructions` or Custom Instructions for reuse.
    - **Choosing the Right Mode for `@WebAI2PC`**: For daily local code lookup/edits, format-preserving Word/Excel edits, and running tests, type `@WebAI2PC` in **`Chat` mode** first (fast response, uses regular chat limits, consumes zero `Work / Codex` agent quota). Switch to **`Work` mode** with `@WebAI2PC` when combining the managed browser, multi-step deliverables across email/Slack/Drive, or `Scheduled Tasks`.
 
-### 2. First-Message `@Cosmos` Wake-Up & External Search Isolation
+### 2. First-Message Connector Wake-Up & External Search Isolation
 
-- **Web Gemini First-Message Wake-Up**: Start every new Task Mode chat with `@Cosmos` and select the popped-up `Cosmos` connector chip (or click "Copy First-Message Wake-Up Prompt" in the console banner or the Windows tray menu). Example:
+- **Web Gemini First-Message Wake-Up**: Start every new Task Mode chat with `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`) and select the popped-up connector chip (or click "Copy First-Message Wake-Up Prompt" in the console banner or the Windows tray menu). Example:
   ```text
-  @Cosmos first call pc_get_status to check the open workspace directories and workspace skills, then outline the module structure of D:\Work\my-project.
+  @WebAI2PC first call pc_get_status to check the open workspace directories and workspace skills, then outline the module structure of D:\Work\my-project.
   ```
-  When a long conversation triggers automatic context compaction, or a brief follow-up omits `@Cosmos` and tools are not expanded, the operating rules guide the model to re-expand the required `pc_*` tools before continuing.
-- **Route Public Web & GitHub Lookups Through the Local Tool**: When researching external docs, error discussions, or open-source code inside a session with `@Cosmos` attached, ask the AI to call the local read-only tool `pc_web_research(action="search"|"github_search"|"fetch")` rather than mixing in the host's built-in web search, which can downgrade connector auto-approval state.
+  When a long conversation triggers automatic context compaction, or a brief follow-up omits the `@<connector-name>` tag and tools are not expanded, the operating rules guide the model to re-expand the required `pc_*` tools before continuing.
+- **Route Public Web & GitHub Lookups Through the Local Tool**: When researching external docs, error discussions, or open-source code inside a session with this connector attached, ask the AI to call the local read-only tool `pc_web_research(action="search"|"github_search"|"fetch")` rather than mixing in the host's built-in web search, which can downgrade connector auto-approval state.
 
 ## 2. Splitting Parallel Subtasks by Directory in Web Gemini Task Mode (`invoke_subagent`)
 
@@ -39,7 +39,7 @@ When working on medium-to-large codebases or comparing multiple documents, readi
 
 ### 2. Dispatch Conventions & Avoiding Concurrent Write Conflicts
 
-1. **Batch Size & Connector Forwarding**: Keep each parallel batch to `2`–`4` subtasks (within the platform's `5`-per-batch concurrency cap; never nest subtasks inside subtasks). Start each subtask prompt with `@Cosmos` and assign a distinct `caller` label (such as `caller="sub-api-check"` or `caller="sub-db-check"`) so each worker is distinguishable in the console audit log.
+1. **Batch Size & Connector Forwarding**: Keep each parallel batch to `2`–`4` subtasks (within the platform's `5`-per-batch concurrency cap; never nest subtasks inside subtasks). Start each subtask prompt with `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`) and assign a distinct `caller` label (such as `caller="sub-api-check"` or `caller="sub-db-check"`) so each worker is distinguishable in the console audit log.
 2. **Avoid Concurrent Writes to the Same File**: Although `pc_edit_file` and `pc_write_file` support `expected_sha256` optimistic locking, two subtasks editing the same file concurrently will trigger hash-mismatch retries or rollbacks. Follow two practical boundaries:
    - **Parallel Read-Only Research + Main-Chat Unified Edits (Recommended Default)**: Subtasks only call `pc_find_files`, `pc_search_code`, `pc_code_intel`, `pc_read_file`, or `pc_batch_probe` to locate exact line numbers and draft fixes; once all subtasks finish, the main chat applies edits in order with `pc_edit_file` and runs tests.
    - **Strictly Disjoint Exclusive Write Shards**: When generating independent unit-test files or separate document chapters in parallel, list each subtask's exclusive target file paths in its dispatch prompt and forbid touching files outside its list.
@@ -111,8 +111,8 @@ By default, only the `16` core file and terminal tools are exposed. When you wan
   cosmos-mcp permissions --disable-pack browser,cua
   ```
 - **Refreshing the Connector Schema After Toggling**: Both Web Gemini and Web ChatGPT cache the tool schema snapshot when a conversation starts. After hot-enabling or disabling `browser` or `cua`, if an existing chat says `pc_browser_use` or `pc_cua_window` is not found:
-  1. Refresh the connector in the web host (in Web ChatGPT, open `Plugins -> WebAI2PC` and click `Refresh`; in Web Gemini, start a new chat—if still missing, toggle the connector once under `Personal Intelligence -> Connected Apps -> Cosmos` (or directly at https://gemini.google.com/customize/connectors));
-  2. **Open a new chat** and start with `@Cosmos` (or `@WebAI2PC` in ChatGPT `Chat`/`Work` mode).
+  1. Refresh the connector in the web host (in Web ChatGPT, open the connector details and click `Refresh`; in Web Gemini, start a new chat, or toggle the connector once at https://gemini.google.com/customize/connectors);
+  2. **Open a new chat** and start with `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`).
 
 ### 2. Zero-Focus-Stealing Background Runtime Boundaries
 

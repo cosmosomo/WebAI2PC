@@ -68,7 +68,6 @@
 
 - [项目架构与维护规范（AGENTS.md）](../AGENTS.md)
 - [宿主操作守则模板（host_skills/SKILL.md）](../host_skills/SKILL.md)
-- [界面设计系统（.interface-design/system.md）](../.interface-design/system.md)
 - [隐私政策与零遥测声明（PRIVACY.md）](../PRIVACY.md)
 - [安全架构与漏洞反馈（SECURITY.md）](../SECURITY.md)
 - [版本变更记录（CHANGELOG.md）](../CHANGELOG.md)

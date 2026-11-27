@@ -39,8 +39,8 @@
 1. **下载并完整解压**：前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，其余环境选标准 `zip`），完整解压到普通文件夹。
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`（首次双击若弹出 Windows SmartScreen 蓝屏保护提示，点击「更多信息 -> 仍要运行」即可）。
 3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开；控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue**）：
-   - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
-   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 按标准 OAuth 自动接入并验证 `WebAI2PC`（若工作区管理员关闭了外部 MCP 插件权限，则需由管理员放开或使用个人账号）。装好后同账号互通：日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证。
+   - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`）唤醒；同账号手机端 Gemini App 自动同步可用。
+   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 按标准 OAuth 2.1 自动接入并验证 `WebAI2PC`（若工作区管理员关闭了外部 MCP 插件权限，则需由管理员放开或使用个人账号）。装好后同账号互通：日常在普通 `Chat` 模式输入 `@你在连接器里填写的名称`（默认 `@WebAI2PC`）零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式调用，首次调用 `pc_get_status` 验证。
 
 ### 懒得自己装？复制一句话发给你的 AI / Agent 帮你配好
 
@@ -58,8 +58,8 @@
 
 | 连接通道 | 本机环境与组件依赖 | 云端账号、配额与超时边界 | 网络与代理要求（含中国大陆实测边界） |
 | :- | :- | :- | :- |
-| **通道 1 默认：`*.srv.us`**<br>（免登录固定直连） | 仅依赖系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口，零额外二进制 | 零注册，跨关机重启网址固定不变 | 国内家庭宽带通常**免代理直连**；封禁 `22` 端口的校园网/企业网会在 `4` 秒内自动回退至 `*.trycloudflare.com` |
-| **通道 1 回退：`*.trycloudflare.com`**<br>（Quick Tunnel / `--mode cloudflare`） | 依赖官方 `cloudflared` 二进制；`PATH` 未预装时首次自动从 [GitHub Releases](https://github.com/cloudflare/cloudflared/releases/latest) 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像校验下载至状态目录 `bin/` | 零注册，**每次重启必换域名**；[官方无在线率 SLA](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)，单控制流（`ha-connections:1`）重连有 `4–21s` 空窗（返 `530`/`1033`），限 `200` 并发在途请求与 `125s` 边缘读超时 | 国内无代理拉取 GitHub 较慢时，需开系统代理、配置 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`；跨境高丢包环境建议开启系统 HTTP 代理降低断流率 |
+| **通道 1 首选：`*.srv.us`**<br>（免登录固定直连） | 仅依赖系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口，零额外二进制 | 零注册，启动等待预算 `10s`，跨关机重启网址固定不变 | 国内家庭宽带通常**免代理直连**；卡片内置独立开关可与备用 `*.trycloudflare.com` 同时在线（出站 `22` 端口受阻时亦可直接开启备用通道） |
+| **通道 1 备用：`*.trycloudflare.com`**<br>（独立开关 / `--mode cloudflare`） | 依赖官方 `cloudflared` 二进制；`PATH` 未预装时首次自动从 [GitHub Releases](https://github.com/cloudflare/cloudflared/releases/latest) 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像校验下载至状态目录 `bin/` | 零注册，**每次重启必换域名**；[官方无在线率 SLA](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)，单控制流（`ha-connections:1`）重连有 `4–21s` 空窗（返 `530`/`1033`），限 `200` 并发在途请求与 `125s` 边缘读超时 | 国内无代理拉取 GitHub 较慢时，需开系统代理、配置 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`；跨境高丢包环境建议开启系统 HTTP 代理降低断流率 |
 | **通道 2：`Cloudflare 专属固定网关`**<br>（`workers_dev`） | 纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`） | 免费 Cloudflare 账号 + 一次性最小权限 API Token（部署后本机立即清零销毁）；受 [Workers Free](https://developers.cloudflare.com/workers/platform/limits/) 每日 `100,000` 次请求上限（超限返 `1027`）及 [边缘默认 `125s` 反代读超时](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-524/) 约束 | **中国大陆默认 `*.workers.dev` 遭全量 DNS 污染（裸连 `100%` 超时），未绑自定义域名时本机运行期间须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且规则覆盖 `*.workers.dev`**（首次 `/consent` 授权时浏览器亦需走代理；若设 `NO_PROXY` 须保留 `127.0.0.1,localhost,::1`）。**国内免代理方案**：在通道 2 绑定同账号下自定义域名（Active Zone）即可免代理直连 |
 | **通道 3 主推：自有云服务器 24h 主站**<br>（`vps_hub` / `vps`） | 本机 `ssh` 客户端 + 一台开放 `80`/`443` 端口的 Linux 服务器 | 复用自有服务器，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，电脑关机主站仍在线 | 国内（配已备案域名）或港新等海外服务器**全程免代理直连** |
 | **通道 3 子项：`Cloudflare Named Tunnel`**<br>（`--mode cloudflare_token`） | 依赖官方 `cloudflared` 二进制（同上支持首次自动下载或 `COSMOS_CLOUDFLARED_MIRROR` 镜像） | 依赖 Cloudflare Zero Trust 账号、已激活托管域名（Active Zone）及后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发；受边缘 `125s` 读超时约束 | 自定义域名免受 `workers.dev` 污染；须在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询，避免拦截 Google / OpenAI 云端请求 |
@@ -70,7 +70,7 @@
 
 <p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC 一句话生成本地离线 3D 案例墙" width="100%" /></p>
 
-连好后无需外部图片、第三方库或 CDN，网页版 Gemini 开头加 `@Cosmos `、网页版 ChatGPT 普通 `Chat` 模式开头加 `@WebAI2PC `（`$0` 额外 API 费，零消耗 `Work / Codex` 额度），即可在本地工作目录直接生成文件并 60fps 运行（本地控制台首页与 `/tutorials` 第 4 章均支持一键复制）：
+连好后无需外部图片、第三方库或 CDN，在网页版 Gemini 或网页版 ChatGPT 普通 `Chat` 模式开头输入 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`；`$0` 额外 API 费，零消耗 `Work / Codex` 额度），即可在本地工作目录直接生成文件并 60fps 运行（本地控制台首页与 `/tutorials` 第 4 章均支持一键复制）：
 
 | 案例 | 本地生成产物 | 实机运行内容 |
 | :- | :- | :- |

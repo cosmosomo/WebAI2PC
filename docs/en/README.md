@@ -66,7 +66,6 @@ The default tool prefix is `pc_` (for multi-device setups, you can hot-change it
 
 - [Project Architecture & Maintenance Specification (`AGENTS.md`)](../../AGENTS.md)
 - [Host Operational Rules Template (`host_skills/SKILL.md`)](../../host_skills/SKILL.md)
-- [Interface Design System (`.interface-design/system.md`)](../../.interface-design/system.md)
 - [Privacy Policy & Zero-Telemetry Statement (`PRIVACY_EN.md`)](../../PRIVACY_EN.md)
 - [Security Architecture & Vulnerability Reporting (`SECURITY_EN.md`)](../../SECURITY_EN.md)
 - [Changelog (`CHANGELOG.md`)](../../CHANGELOG.md)

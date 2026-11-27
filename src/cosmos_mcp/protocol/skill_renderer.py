@@ -50,14 +50,14 @@ def render_minimal_public_skill_markdown(prefix: str = "pc", *, lang: str = "bil
     p = f"{eff_p}_" if eff_p else ""
     zh_block = (
         "## 中文操作守则\n"
-        "- **宿主唤醒与免审批总开关**：网页版 Gemini 完成 OAuth 连接后，请直接打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开对应连接器，将 `App actions` 总开关设为 `Always allow` 统一开启免审批，**切勿在对话气泡的单张工具确认卡片上单独点击允许**（以免冲掉同连接器下其他工具的免审批权限）；网页版 ChatGPT 在左侧 `Plugins` 创建并 `Install` 安装 `WebAI2PC` 后，普通 `Chat` 模式（日常开发不扣 `Work / Codex` 额度）与 `Work` 模式（长程交付与定时任务）均通过 `@WebAI2PC` 调用。\n"
+        "- **宿主唤醒与免审批总开关**：网页版 Gemini 完成 OAuth 连接后，请直接打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开对应连接器，将 `App actions` 总开关设为 `Always allow` 统一开启免审批，**切勿在对话气泡的单张工具确认卡片上单独点击允许**（以免冲掉同连接器下其他工具的免审批权限）；网页版 ChatGPT 在本地控制台复制一键配置提示词发给 `Work` 模式由 `@Plugin Creator` 按标准 OAuth 2.1 接入 `/mcp`（个人 Plus/Pro 用 `/mcp/readonly` 只读端点）后，普通 `Chat` 模式（日常开发不扣 `Work / Codex` 额度）与 `Work` 模式（长程交付与定时任务）均通过 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`）调用。\n"
         f"- **外部资料检索**：在挂载本连接器的主会话中优先调用 `{p}web_research`，避免混调宿主内置联网搜索导致免审批状态被重置。\n"
         f"- **只读定位与查看**：使用 `{p}get_status`、`{p}find_files`、`{p}search_code`、`{p}code_intel`、`{p}read_file`、`{p}batch_probe`、`{p}skill_hub`。\n"
         f"- **安全修改与执行**：使用 `{p}edit_file`、`{p}write_file`、`{p}manage_files`（禁止执行永久物理删除命令）、`{p}run_command`、`{p}run_python`、`{p}bg_command`、`{p}workspace_memory`、`{p}skill_manage`。"
     )
     en_block = (
         "## English Operational Guide\n"
-        "- **Host Activation & Master Always-Allow Toggle**: In Web Gemini, open `https://gemini.google.com/customize/connectors` (or bottom-left menu `Personal Intelligence -> Connected Apps`), select your connector, and set `App actions` to `Always allow` and **do NOT click allow on individual in-chat tool confirmation cards** (single-card overrides reset sibling tool permissions); in Web ChatGPT, once `WebAI2PC` is created and installed under `Plugins`, both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@WebAI2PC`.\n"
+        "- **Host Activation & Master Always-Allow Toggle**: In Web Gemini, open `https://gemini.google.com/customize/connectors` (or bottom-left menu `Personal Intelligence -> Connected Apps`), select your connector, and set `App actions` to `Always allow` and **do NOT click allow on individual in-chat tool confirmation cards** (single-card overrides reset sibling tool permissions); in Web ChatGPT, once connected via `@Plugin Creator` in `Work` mode over standard OAuth 2.1 (`/mcp` for Workspace, `/mcp/readonly` for Personal Plus/Pro), both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`).\n"
         f"- **External Lookup**: Prefer `{p}web_research` over host built-in web search in active connector sessions.\n"
         f"- **Navigation & Inspection**: Use `{p}get_status`, `{p}find_files`, `{p}search_code`, `{p}code_intel`, `{p}read_file`, `{p}batch_probe`, and `{p}skill_hub`.\n"
         f"- **Safe Edits & Execution**: Use `{p}edit_file`, `{p}write_file`, `{p}manage_files` (recoverable undo/trash vault), `{p}run_command`, `{p}run_python`, `{p}bg_command`, `{p}workspace_memory`, and `{p}skill_manage`."
@@ -67,9 +67,9 @@ def render_minimal_public_skill_markdown(prefix: str = "pc", *, lang: str = "bil
     return (
         "---\n"
         f"name: cosmos-{eff_p}-connector\n"
-        "description: Cosmos MCP Connector Operational & Approval Guide\n"
+        "description: WebAI2PC (Cosmos MCP) Connector Operational & Approval Guide\n"
         "---\n\n"
-        f"# Cosmos MCP Operational Guide (`v{PRODUCT_VERSION}`)\n\n"
+        f"# WebAI2PC (Cosmos MCP) Operational Guide (`v{PRODUCT_VERSION}`)\n\n"
         f"{body}\n"
     )
 
@@ -169,7 +169,7 @@ def build_server_instructions(
 
     ws_display = ", ".join(str(r) for r in pol.workspace_roots)
     header = (
-        f"Cosmos MCP v{PRODUCT_VERSION} [{pol.device_label} · profile={pol.toolset_profile} · "
+        f"WebAI2PC (Cosmos MCP) v{PRODUCT_VERSION} [{pol.device_label} · profile={pol.toolset_profile} · "
         f"tier={pol.tier_key}{'(readonly-endpoint)' if readonly_only else ''} · roots={ws_display}]."
     )
     if pol.prompt_profile == "minimal":
@@ -263,8 +263,8 @@ def render_skill_markdown(
         "- **同步说明**：本守则随当前工作区权限档位、工具配置与外设包开关状态实时生成（不含任何敏感令牌或本地路径）。",
         "",
         "### 1. 宿主唤醒与免审批总开关规范（勿点单张对话确认卡）",
-        f"- 网页版 Gemini 首次绑定 `@{clean_conn}` 后，请打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开 `{clean_conn}`，将 `App actions` 总开关设为 `Always allow` 一次性开启免审批；**切勿在聊天流弹出的单张工具确认卡片上单独点击允许**，否则宿主会按单工具粒度覆写权限，冲掉同一连接器下其他工具已生效的 `Always allow` 免审批状态。",
-        "- 网页版 ChatGPT 在左侧 `Plugins` 创建并点 `Install` 安装 `WebAI2PC` 后（首次自动代填仅限具备受控浏览器的 `Work` 模式），普通 `Chat` 模式（日常改代码修文档不扣 `Work / Codex` 额度）与 `Work` 模式（跨应用长程交付与定时任务）均通过 `@WebAI2PC` 调用；本守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 均可粘贴到 `Project Instructions` 或自定义指令。",
+        f"- 网页版 Gemini 首次绑定连接器后，请打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开对应连接器（如 `{clean_conn}`），将 `App actions` 总开关设为 `Always allow` 一次性开启免审批；**切勿在聊天流弹出的单张工具确认卡片上单独点击允许**，否则宿主会按单工具粒度覆写权限，冲掉同一连接器下其他工具已生效的 `Always allow` 免审批状态。新对话首句输入 `@你在连接器里填写的名称`（例如 `@{clean_conn}`、`@WebAI2PC` 或 `@Cosmos`）即可唤醒。",
+        "- 网页版 ChatGPT 在本地控制台点击「复制一键配置提示词（发给 Work）」（个人 Plus/Pro 点击「复制只读配置提示词（发给 Work）」）发送给 `Work` 模式，由 `@Plugin Creator` 按标准 OAuth 2.1 接入 `/mcp`（或 `/mcp/readonly`）并验证后，普通 `Chat` 模式（日常改代码修文档不扣 `Work / Codex` 额度）与 `Work` 模式（跨应用长程交付与定时任务）均通过 `@你在连接器里填写的名称`（默认如 `@WebAI2PC`）调用；本守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 均可粘贴到 `Project Instructions` 或自定义指令。",
     ]
 
     if "web_research" in by_name:
@@ -304,7 +304,7 @@ def render_skill_markdown(
                 f"- 内置教程与打开本地设置页：用户询问如何配置 Cloudflare 固定网址、切换权限或调整本地控制台时，调用 `{p}get_status(guide='cloudflare'|'permissions'|'all', open_page='gateways'|'studio'|'tutorials')` 读取步骤并在本机浏览器打开对应页面。"
             )
     zh_sections.append(
-        f"- 多步骤跨文件任务可先通过 `retriever:expand_tools` 展开所需 `{p}*` 工具，并在派发 `invoke_subagent` 时于描述开头写明 `@{clean_conn}` 与独立 `caller` 标识。"
+        f"- 多步骤跨文件任务可先通过 `retriever:expand_tools` 展开所需 `{p}*` 工具，并在派发 `invoke_subagent` 时于描述开头写明 `@你在连接器里填写的名称`（如 `@{clean_conn}`）与独立 `caller` 标识。"
     )
 
     if write_specs or exec_specs:
@@ -350,8 +350,8 @@ def render_skill_markdown(
         f"- **Permission Tier**: `{pol.tier_key}` (`readonly_endpoint={readonly_only}`)",
         "",
         "### 1. Connector Master Toggle `Always allow` & Host Activation",
-        f"- In Web Gemini, open `https://gemini.google.com/customize/connectors` (or bottom-left menu `Personal Intelligence -> Connected Apps`), select `{clean_conn}`, and set `App actions` to `Always allow`, and **do NOT click allow on individual in-chat tool confirmation cards** (single-card clicks overwrite connector-wide settings and strip `Always allow` from sibling tools).",
-        "- In Web ChatGPT, once `WebAI2PC` is created and installed under `Plugins` (`Work` mode for browser-assisted setup), both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@WebAI2PC`.",
+        f"- In Web Gemini, open `https://gemini.google.com/customize/connectors` (or bottom-left menu `Personal Intelligence -> Connected Apps`), select your connector (e.g., `{clean_conn}`), and set `App actions` to `Always allow`, and **do NOT click allow on individual in-chat tool confirmation cards** (single-card clicks overwrite connector-wide settings and strip `Always allow` from sibling tools). Start a chat with `@<your-connector-name>` (e.g., `@{clean_conn}`, `@WebAI2PC`, or `@Cosmos`).",
+        "- In Web ChatGPT, once connected via `@Plugin Creator` in `Work` mode over standard OAuth 2.1 (`/mcp` for Workspace, `/mcp/readonly` for Personal Plus/Pro), both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@<your-connector-name>` (default `@WebAI2PC`).",
     ]
 
     if "web_research" in by_name:
@@ -410,14 +410,14 @@ def render_skill_markdown(
         body_md = "\n".join(zh_sections) + "\n\n" + "\n".join(en_sections)
 
     if not include_frontmatter:
-        zh_title = f"# Cosmos MCP 连接与操作说明（{tier_short_zh} · 预设：{preset_zh}）\n\n"
+        zh_title = f"# WebAI2PC (Cosmos MCP) 连接与操作说明（{tier_short_zh} · 预设：{preset_zh}）\n\n"
         return (zh_title if low_lang == "zh" else "") + body_md + "\n"
 
     header_md = (
         "---\n"
         f"name: cosmos-{eff_p or 'mcp'}-guide\n"
-        f"description: Cosmos MCP operational guide (profile={pol.toolset_profile}, tier={pol.tier_key}, tools={cnt}).\n"
+        f"description: WebAI2PC (Cosmos MCP) operational guide (profile={pol.toolset_profile}, tier={pol.tier_key}, tools={cnt}).\n"
         "---\n\n"
-        f"# Cosmos MCP 操作守则 / Operational Guide (`{pol.toolset_profile}` · {cnt} Tools)\n\n"
+        f"# WebAI2PC (Cosmos MCP) 操作守则 / Operational Guide (`{pol.toolset_profile}` · {cnt} Tools)\n\n"
     )
     return header_md + body_md + "\n"
