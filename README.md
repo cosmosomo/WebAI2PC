@@ -52,6 +52,20 @@
 
 > 就算只把仓库链接 `https://github.com/cosmosomo/WebAI2PC` 直接发给上述 Agent 说“帮我装这个”，它们打开首页第一屏也能直接定位到 [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)。注意：启动后生成的连接地址与接入指令仅限填入你本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue。
 
+## 连接通道前置依赖与代理说明
+
+本地控制台内置 3 类连接卡片（支持独立开关同时在线），下载或切换通道前可按下表核对本机依赖与代理要求：
+
+| 连接通道 | 本机环境与组件依赖 | 云端账号、配额与超时边界 | 网络与代理要求（含中国大陆实测边界） |
+| :- | :- | :- | :- |
+| **通道 1 默认：`*.srv.us`**<br>（免登录固定直连） | 仅依赖系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口，零额外二进制 | 零注册，跨关机重启网址固定不变 | 国内家庭宽带通常**免代理直连**；封禁 `22` 端口的校园网/企业网会在 `4` 秒内自动回退至 `*.trycloudflare.com` |
+| **通道 1 回退：`*.trycloudflare.com`**<br>（Quick Tunnel / `--mode cloudflare`） | 依赖官方 `cloudflared` 二进制；`PATH` 未预装时首次自动从 [GitHub Releases](https://github.com/cloudflare/cloudflared/releases/latest) 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像校验下载至状态目录 `bin/` | 零注册，**每次重启必换域名**；[官方无在线率 SLA](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)，单控制流（`ha-connections:1`）重连有 `4–21s` 空窗（返 `530`/`1033`），限 `200` 并发在途请求与 `125s` 边缘读超时 | 国内无代理拉取 GitHub 较慢时，需开系统代理、配置 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`；跨境高丢包环境建议开启系统 HTTP 代理降低断流率 |
+| **通道 2：`Cloudflare 专属固定网关`**<br>（`workers_dev`） | 纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`） | 免费 Cloudflare 账号 + 一次性最小权限 API Token（部署后本机立即清零销毁）；受 [Workers Free](https://developers.cloudflare.com/workers/platform/limits/) 每日 `100,000` 次请求上限（超限返 `1027`）及 [边缘默认 `125s` 反代读超时](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-524/) 约束 | **中国大陆默认 `*.workers.dev` 遭全量 DNS 污染（裸连 `100%` 超时），未绑自定义域名时本机运行期间须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且规则覆盖 `*.workers.dev`**（首次 `/consent` 授权时浏览器亦需走代理；若设 `NO_PROXY` 须保留 `127.0.0.1,localhost,::1`）。**国内免代理方案**：在通道 2 绑定同账号下自定义域名（Active Zone）即可免代理直连 |
+| **通道 3 主推：自有云服务器 24h 主站**<br>（`vps_hub` / `vps`） | 本机 `ssh` 客户端 + 一台开放 `80`/`443` 端口的 Linux 服务器 | 复用自有服务器，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，电脑关机主站仍在线 | 国内（配已备案域名）或港新等海外服务器**全程免代理直连** |
+| **通道 3 子项：`Cloudflare Named Tunnel`**<br>（`--mode cloudflare_token`） | 依赖官方 `cloudflared` 二进制（同上支持首次自动下载或 `COSMOS_CLOUDFLARED_MIRROR` 镜像） | 依赖 Cloudflare Zero Trust 账号、已激活托管域名（Active Zone）及后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发；受边缘 `125s` 读超时约束 | 自定义域名免受 `workers.dev` 污染；须在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询，避免拦截 Google / OpenAI 云端请求 |
+
+> 完整分步配置与排障细节请参阅 **[docs/04_三大连接通道选型与网络排障手册.md](docs/04_三大连接通道选型与网络排障手册.md)**。
+
 ## 一句话实机效果 · 复制提示词即刻复现
 
 <p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC 一句话生成本地离线 3D 案例墙" width="100%" /></p>

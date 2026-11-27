@@ -186,36 +186,37 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
         },
         "cloudflare": {
             "topic": "cloudflare",
-            "title": "配置第 2 类 Cloudflare 免费终身固定网址",
+            "title": "配置第 2 类 Cloudflare 免费终身固定网址与代理依赖说明",
             "aliases": ("cloudflare", "workers", "workers_dev", "cf"),
             "recommended_page": "cloudflare",
             "markdown": (
-                "### 配置第 2 类：Cloudflare 专属固定网关（免费终身固定网址）\n\n"
+                "### 配置第 2 类：Cloudflare 专属固定网关（免费终身固定网址与依赖边界）\n\n"
                 f"1. **打开连接与网关设置页**：在本地浏览器打开 `{base}/#settings/gateways`（或在主控首页点击右上 `设置` -> `连接与网关`，或点击连接卡右上 `配置连接通道 ▸`），找到第 2 类卡片 **「Cloudflare 专属固定网关」**，点击卡片右侧 `配置 ▾` 展开详情。\n"
-                "2. **生成 Cloudflare API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`（跳转到 `https://dash.cloudflare.com/profile/api-tokens`），登录 Cloudflare 账号（免费计划即可，无需绑信用卡），按页面预填的 Workers 脚本与账号读取权限点击继续并生成 API Token，复制生成的令牌字符串。\n"
-                "3. **一键部署固定网关（约 3 秒）**：回到本地控制台，将令牌粘贴到 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框（若账号下有多个账户，在弹出的下拉框选择目标账户），点击 `一键部署并开启（约 3 秒）`。\n"
-                "   - 程序会自动认领子域并部署专属休眠网关，生成形如 `https://cosmos-mcp-xxxx.<子域>.workers.dev/mcp` 的固定地址。\n"
-                "   - 部署完成后，本机立即清零销毁所填 API Token，不留存明文令牌；后续日常使用无需重填令牌，只需拨动卡片右上角开关即可启停，且可与第 1 类通道同时在线。\n"
-                "4. **可选绑定自定义域名（国内免切代理）**：若你已有托管在当前 Cloudflare 账号下（Active Zone）的域名（如自有域名或免费申请并接入 Cloudflare 的 `*.dpdns.org`），可在 `选填：自定义域名（Active Zone，国内免切代理）` 填入如 `mcp.yourdomain.dpdns.org` 后保存部署，双域名可同时生效。\n"
-                "5. **国内规则代理首次绑定提示**：若使用未绑自定义域名的默认 `*.workers.dev` 地址，且本机代理软件处于规则分流模式导致首次网页打开授权页超时，只需将代理软件临时切换为「全局代理」约 10 秒完成一次 OAuth 授权绑定，绑定完成后即可切回规则模式日常使用。"
+                "2. **生成 Cloudflare API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`（跳转到 `https://dash.cloudflare.com/profile/api-tokens`），登录免费 Cloudflare 账号（无需绑信用卡），按页面预填的 Workers 脚本与账号读取权限生成并复制一次性 API Token。\n"
+                "3. **一键部署固定网关（约 3 秒 · 零外部二进制依赖）**：回到本地控制台，将令牌粘贴到 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框（多账户时在下拉框选择目标账户），点击 `一键部署并开启（约 3 秒）`。\n"
+                "   - **本机环境与配额依赖**：采用纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`），自动生成形如 `https://cosmos-mcp-xxxx.<子域>.workers.dev/mcp` 的终身固定地址；受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）及边缘默认反代读取超时 `125` 秒约束。\n"
+                "   - **令牌即刻清零销毁**：部署完成后本机立即清零销毁所填 API Token，不留存明文令牌；后续只需拨动卡片右上角开关即可启停，且可与第 1 类或第 3 类通道同时在线。\n"
+                "4. **中国大陆默认 `*.workers.dev` 常驻代理要求（重点）**：`*.workers.dev` 在国内运营商与公共 DNS 下存在全量 DNS 污染（无代理裸连 `100%` 超时）。若未绑定自定义域名，**本机运行期间必须保持系统 HTTP/HTTPS 代理（如 Clash / Mihomo / v2rayN，或环境变量 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**，以维持本机后台到边缘的 `443 WSS` 隧道；首次在浏览器打开 `/consent` 授权页时同样需走代理访问 `*.workers.dev`（若分流规则漏掉 `*.workers.dev` 可临时切全局完成首次授权，但切回规则模式后日常后台运行仍须保持代理规则覆盖 `*.workers.dev`）；若设置了 `NO_PROXY`，必须保留 `127.0.0.1,localhost,::1`。\n"
+                "5. **国内免代理方案（绑定 Active Zone 自定义域名）**：在 `选填：自定义域名（Active Zone，国内免切代理）` 填入同一 Cloudflare 账号下已激活托管的域名（如 `mcp.yourdomain.dpdns.org`）保存部署，即可走未受 `workers.dev` 污染的边缘节点实现免代理直连（自定义域名请在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询；或直接改用第 1 类默认 `*.srv.us` / 第 3 类自有云服务器）。"
             ),
         },
         "gateways": {
             "topic": "gateways",
-            "title": "3 类连接通道对比、独立开关并存与自有云服务器 24h 主站",
+            "title": "3 类连接通道依赖对比、独立开关并存与自有云服务器 24h 主站",
             "aliases": ("gateways", "vps", "vps_hub", "srv_us"),
             "recommended_page": "gateways",
             "markdown": (
-                "### 3 类连接通道对比与多网关并存说明\n\n"
+                "### 3 类连接通道前置依赖对比与多网关并存说明\n\n"
                 f"打开 `{base}/#settings/gateways` 可管理全部 3 类连接通道；每张卡片右上角均有独立开关，支持多条通道同时在线，主控首页顶部可一键切换当前复制的网关地址：\n\n"
                 "1. **第 1 类 · 默认免配置「一键上手免登录直连」**：\n"
-                "   - 零注册、零输入，启动即可复制地址使用。\n"
-                "   - 支持基于本机持久 SSH 密钥锁定的免登录固定网址（`*.srv.us`，关机重启地址不变）以及免登录临时快速通道（`*.trycloudflare.com`，重启会变）；在卡片内可点击 `使用一键上手模式` 或 `改用临时快速通道` 切换，并可通过 `导出身份恢复卡 PNG` / `导入恢复卡 PNG` 备份迁移本机固定节点身份。\n"
-                "2. **第 2 类 · 无服务器固定网址「Cloudflare 专属固定网关」**：\n"
-                "   - 适合没有云服务器但希望长期固定免重配的用户，粘贴一次 Cloudflare API 令牌即可约 3 秒生成专属 `*.workers.dev` 终身固定地址，支持选填 Cloudflare Active Zone 自定义域名。\n"
+                "   - **默认 `*.srv.us` 通道**：仅依赖操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制、零注册），跨关机重启网址固定不变，国内家庭宽带通常可**免代理直连**；支持通过 `导出身份恢复卡 PNG` / `导入恢复卡 PNG` 备份迁移本机固定节点身份。\n"
+                "   - **回退 `*.trycloudflare.com` 快速通道（`--mode cloudflare`）**：当校园网/企业网封禁出站 `22` 端口时在 `4` 秒内自动切换（也可点 `改用临时快速通道` 手动切换）。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 `https://github.com/cloudflare/cloudflared/releases/latest` 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像校验下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时可开代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道每次重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求与 `125` 秒边缘读超时，跨境高丢包环境建议开启系统 HTTP 代理。\n"
+                "2. **第 2 类 · 无服务器固定网址「Cloudflare 专属固定网关」（`workers_dev`）**：\n"
+                "   - 纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需 `Node.js`、`wrangler` 或 `cloudflared`）；依赖免费 Cloudflare 账号与一次性 API Token（部署后即刻清零销毁），受 Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘 `125` 秒读超时约束。\n"
+                "   - **国内代理边界**：默认 `*.workers.dev` 在中国大陆遭全量 DNS 污染，未绑自定义域名时运行期间须保持系统 HTTP/HTTPS 代理常开且规则覆盖 `*.workers.dev`；绑定同账号 Active Zone 自定义域名后可国内免代理直连。\n"
                 "3. **第 3 类 · 自有资产合一「自有云服务器 24h 主站 或 自有固定域名」**：\n"
-                "   - **子页签 A `自有服务器建 24h 主站`**：填写 `服务器公网 IP（必填）` 与 `SSH 密码（已配密钥可留空，不落盘）`（或勾选 `使用本机默认 SSH 密钥免密登录`，在高级项可填端口、用户名与选填域名），点击 `一键部署 24h 主站并开启`。程序会自动配置 HTTPS 证书（无域名海外机自动签发公网 IP 证书）与常驻主站；本机 PC 通过加密出站连接挂载到主站，工具调用支持 `target=\"auto\"` 跨机自动路由，本地电脑关机时云服务器主站仍保持 24 小时在线。\n"
-                "   - **子页签 B `自有固定域名 / 通用 HTTPS 反代`**：若已有反向代理域名（Caddy / Nginx / FRP）或 Cloudflare Named Tunnel 令牌，填写 `固定公网 HTTPS 域名` 与可选令牌后点击 `保存并开启此网关`。"
+                "   - **子页签 A `自有服务器建 24h 主站`（`vps_hub` / `vps`）**：依赖一台开放 `80`/`443` 端口的 Linux 服务器与本机 `ssh` 客户端，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，国内（配已备案域名）或港新服务器全程免代理直连；填写 `服务器公网 IP（必填）` 与 SSH 密码或密钥点击 `一键部署 24h 主站并开启`，工具调用支持 `target=\"auto\"` 跨机路由，本地电脑关机时云服务器主站仍保持 24 小时在线。\n"
+                "   - **子页签 B `自有固定域名 / 通用 HTTPS 反代`**：支持通用反向代理（Caddy / Nginx / FRP）或 `Cloudflare Named Tunnel`（`--mode cloudflare_token`）。其中 `cloudflare_token` 依赖官方 `cloudflared` 二进制（同第 1 类支持首次自动下载或 `COSMOS_CLOUDFLARED_MIRROR`）、Cloudflare Zero Trust 账号、Active Zone 域名及后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发，且须在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询。"
             ),
         },
         "permissions": {
@@ -285,19 +286,21 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
         },
         "troubleshooting": {
             "topic": "troubleshooting",
-            "title": "常见连接与运行问题排查速查",
+            "title": "常见连接、代理依赖与运行问题排查速查",
             "aliases": ("troubleshooting",),
             "recommended_page": "runtime",
             "markdown": (
                 "### 常见问题排查速查\n\n"
                 "1. **双击启动脚本提示缺少文件或无法自举**：\n"
                 "   - 下载 `.zip` 压缩包后，请先 **右键「全部解压缩」到普通文件夹**（如 `D:\\WebAI2PC`），再进入解压后的文件夹双击 `一键启动_Cosmos_MCP.bat`，不要在压缩软件预览窗口内直接双击运行。\n"
-                "2. **国内开启代理软件时首次绑定 `*.workers.dev` 加载慢或报错**：\n"
-                "   - 原因通常是规则分流（Rule 模式）对回环校验或 `*.workers.dev` 分流不一致。解决方法二选一：① 将代理软件临时切到「全局模式」10 秒完成首次 OAuth 授权，绑好后即可切回规则模式；② 在 `#settings/gateways` 第 2 类卡片填写托管在 Cloudflare 的自定义域名。\n"
-                "3. **授权页上的「4 位核对码」与「6 位动态配对码」有什么区别**：\n"
+                "2. **中国大陆使用 `*.workers.dev` 授权页打不开、后台隧道超时重连或 `NO_PROXY` 冲突**：\n"
+                "   - `*.workers.dev` 在国内存在全量 DNS 污染（裸连 `100%` 超时）。未绑自定义域名时，**本机运行期间须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**（首次 `/consent` 授权若规则漏掉 `*.workers.dev` 可临时切全局完成授权，但切回规则模式后日常仍须确保 `*.workers.dev` 走代理；若配置了 `NO_PROXY` 必须保留 `127.0.0.1,localhost,::1` 且勿写入 `*` 或 `*.workers.dev`）。国内免代理方案：在 `#settings/gateways` 第 2 类卡片绑定同账号下 Cloudflare Active Zone 自定义域名（并关闭该域名 `Bot Fight Mode`、跳过 `/mcp*` 与 OAuth 托管质询），或改用第 1 类 `*.srv.us` / 第 3 类自有云服务器。\n"
+                "3. **首次启用 `*.trycloudflare.com` 或 `cloudflare_token` 下载 `cloudflared` 缓慢**：\n"
+                "   - 两条隧道均需官方 `cloudflared` 二进制（首次自动从 GitHub Releases 下载至状态目录 `bin/`）；国内无代理环境可开启系统代理、配置环境变量 `COSMOS_CLOUDFLARED_MIRROR` 指向 HTTPS 镜像前缀，或预先将 `cloudflared` 装入系统 `PATH`（通道 2 `workers_dev` 与通道 1 `*.srv.us` 均无需 `cloudflared`）。\n"
+                "4. **授权页上的「4 位核对码」与「6 位动态配对码」有什么区别**：\n"
                 "   - **4 位核对码**：防钓鱼核对标识，同机浏览器自动回环验证时用于肉眼确认当前授权页确实连向你自己的电脑，无需手输密码。\n"
                 "   - **6 位动态配对码**：当你在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页、在手机浏览器或异地电脑绑定，或使用开启严格隐私拦截的浏览器（如 Brave / Safari）无法走本机 `127.0.0.1` 回环时，展开主控首页 `配对与已连会话` 复制当前的 **6 位码** 填入授权页即可通过验证（若均受阻也可填下方的 20 位固定备用口令）。\n"
-                "4. **配置开机自启、防休眠与默认 Python 环境**：\n"
+                "5. **配置开机自启、防休眠与默认 Python 环境**：\n"
                 f"   - 打开 `{base}/#settings/runtime`（设置 -> `环境与系统`），可开启 **「开机自动启动」**、**「插电防自动休眠」**（注意笔记本物理合盖仍会触发硬件休眠断网，合盖使用需在系统电源设置将合盖动作改为「不采取任何操作」）与 **「显示系统托盘状态图标」**，也可在此指定项目默认 Python / Conda 解释器路径。"
             ),
         },

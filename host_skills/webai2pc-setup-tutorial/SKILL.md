@@ -46,21 +46,21 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 点击顶栏 `设置`（或顶部连接卡右上角 `配置连接通道 ▸`）进入 `连接与网关`（可调用 `pc_get_status(guide="cloudflare", open_page="gateways")` 直接打开）。3 张网关卡片右上角均带独立开关，**支持多路网关同时开启在线**，测试新网关时不会断开当前已连会话。
 
 ### （1）第 1 类 · 默认免配置：`一键上手免登录直连`
-- 零注册零输入，默认通过本机持久 SSH 密钥连接免登录固定网址 `https://*.srv.us/mcp`（关机重启网址保持不变）。
-- 若当前网络拦截 22 端口，4 秒内自动切换至内置临时快速通道 `https://*.trycloudflare.com/mcp`（电脑重启后域名会更新，可在卡片展开区内点 `使用一键上手模式` 或 `改用临时快速通道`）。
+- **默认 `*.srv.us` 通道**：仅依赖操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制、零注册），跨关机重启网址保持不变，中国大陆家庭宽带通常可**免代理直连**。
+- **回退 `*.trycloudflare.com` 快速通道（`--mode cloudflare`）**：当所在校园网/企业网拦截 `22` 端口时在 `4` 秒内自动切换（也可在卡片展开区点 `改用临时快速通道`）。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时需开系统代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求且受边缘 `125` 秒读超时约束，跨境高丢包建议开系统 HTTP 代理。
 
-### （2）第 2 类 · 无服务器固定网址：`Cloudflare 专属固定网关`（免费终身固定推荐）
-引导用户点击第 2 张卡片右侧 `配置 ▾` 展开面板，按三步完成部署：
-1. **获取一次性 API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`。在打开的 Cloudflare 页面登录账号（权限模板已自动预填），滑到页面底部点击 `Continue to summary` -> `Create Token`，复制生成的 API 令牌。
-2. **粘贴令牌与选填域名**：回到本地控制台，将令牌粘贴进 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框。若用户在 Cloudflare 已有激活域名（Active Zone），可在右侧 `选填：自定义域名（Active Zone，国内免切代理）` 填入子域名（如 `mcp.yourdomain.dpdns.org`）；若检测到多个 Cloudflare 账号，在下拉框选择目标账号。
-3. **3 秒一键部署与自动销毁令牌**：点击 `一键部署并开启（约 3 秒）`。系统自动认领 `*.workers.dev` 子域并部署免费 Cloudflare Workers + SQLite Durable Object 休眠网关，生成终身固定的 `https://*.workers.dev/mcp`（及 `/mcp/readonly`）。
-   - **安全与后续启停**：API 令牌在部署完成瞬间自动从内存与磁盘清零粉碎；后续开关连接只需拨动第 2 张卡片右上角开关，无需重填令牌。
-   - **规则代理分流提示**：部分网络环境下浏览器直连 `*.workers.dev` 较慢；若首次在网页端跳转授权页加载缓慢，可将本机代理软件临时切为全局模式 10 秒完成首次授权绑定，或在卡片内填写自定义域名。
+### （2）第 2 类 · 无服务器固定网址：`Cloudflare 专属固定网关`（`workers_dev`）
+本通道采用纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`），受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘默认反代读取超时 `125` 秒约束。引导用户点击第 2 张卡片右侧 `配置 ▾` 展开面板，按三步完成部署：
+1. **获取一次性 API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`。在打开的 Cloudflare 页面登录免费账号（权限模板已自动预填），滑到页面底部点击 `Continue to summary` -> `Create Token`，复制生成的 API 令牌。
+2. **粘贴令牌与选填域名**：回到本地控制台，将令牌粘贴进 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框。若用户在同 Cloudflare 账号下已有激活域名（Active Zone），可在右侧 `选填：自定义域名（Active Zone，国内免切代理）` 填入子域名（如 `mcp.yourdomain.dpdns.org`）；若检测到多个账号，在下拉框选择目标账号。
+3. **3 秒一键部署与自动销毁令牌**：点击 `一键部署并开启（约 3 秒）`，自动生成终身固定的 `https://*.workers.dev/mcp`（及 `/mcp/readonly`）。
+   - **安全与后续启停**：API 令牌在部署完成瞬间自动从内存与磁盘清零销毁；后续开关连接只需拨动第 2 张卡片右上角开关，无需重填令牌。
+   - **中国大陆代理依赖边界（重点提示用户）**：`*.workers.dev` 在国内运营商与公共 DNS 下存在全量 DNS 污染（无代理裸连 `100%` 超时）。若未绑定自定义域名，**本机运行期间必须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**（首次打开 `/consent` 授权页时浏览器亦需走代理，若分流漏掉 `*.workers.dev` 可临时切全局完成授权，但切回规则模式后日常仍须确保规则代理 `*.workers.dev`；若设 `NO_PROXY` 须保留 `127.0.0.1,localhost,::1`）。**国内免代理方案**：绑定同账号 Active Zone 自定义域名即可免代理直连（或改用第 1 类 `*.srv.us` / 第 3 类自有云服务器）。
 
 ### （3）第 3 类 · 自有资产合一：`自有云服务器 24h 主站 或 自有固定域名`
 点击第 3 张卡片右侧 `配置 ▾`，按两个子标签选型：
-- **`自有服务器建 24h 主站`**：填入 `服务器公网 IP（必填）`，输入 `SSH 密码（已配密钥可留空，不落盘）` 或勾选 `使用本机默认 SSH 密钥免密登录`（展开高级项可填私钥路径、端口、用户名、选填绑定域名），点击 `一键部署 24h 主站并开启`。部署后单个连接器可通过 `target="auto"` 自动按路径操作 Linux 云服务器或本地电脑；本地电脑关机时云服务器仍 24 小时独立在线处理服务器任务并续期 OAuth。
-- **`自有固定域名 / 通用 HTTPS 反代`**：填写 `固定公网 HTTPS 域名`，选填 `Cloudflare Named Tunnel 令牌` 或已有 SSH 反向隧道参数，点击 `保存并开启此网关`。
+- **`自有服务器建 24h 主站`（`vps_hub` / `vps`）**：依赖开放 `80`/`443` 端口的 Linux 服务器与本机 `ssh` 客户端，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，国内（配已备案域名）或港新服务器全程免代理直连。填入 `服务器公网 IP（必填）` 与 SSH 密码或密钥点击 `一键部署 24h 主站并开启`，单个连接器可通过 `target="auto"` 自动按路径操作云服务器或本地电脑；电脑关机时云服务器仍 24 小时在线。
+- **`自有固定域名 / 通用 HTTPS 反代`**：填写 `固定公网 HTTPS 域名`，选填 `Cloudflare Named Tunnel 令牌`（`--mode cloudflare_token`，依赖 `cloudflared` 二进制及 `COSMOS_CLOUDFLARED_MIRROR` 下载支持、Cloudflare Zero Trust 账号、Active Zone 域名与后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发，且自定义域名须关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询）或已有 SSH 反向隧道参数，点击 `保存并开启此网关`。
 
 ## 4. 换机免重绑：身份恢复卡 PNG 导出与导入
 
@@ -87,6 +87,7 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 
 ## 6. 常见排障核对清单
 
+- **国内 `*.workers.dev` 无法连通或自定义域名报 `403`**：核对本机 HTTP/HTTPS 代理是否常开且规则覆盖 `*.workers.dev`（`NO_PROXY` 保留 `127.0.0.1,localhost,::1` 且不含 `*.workers.dev`）；使用 Cloudflare 自定义域名或 `Named Tunnel` 报 `403`/无法拉取 OAuth 元数据时，引导用户在 Cloudflare 后台 `Security -> Bots` 关闭 `Bot Fight Mode` 并为 `/mcp*` 及 OAuth 路径配置 WAF `Skip` 跳过托管质询。
 - **缺少写入或执行工具**：核对主控首页左栏 `当前权限设置` 是否处于 `只读` 或 `仅改文件`，以及顶栏右侧是否显示 `恢复开发`；个人版 ChatGPT 绑定 `/mcp/readonly` 时仅暴露只读工具属于平台规则限制。
 - **同机授权页未自动通过回环验证**：若在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页，或同机浏览器开启严格隐私隔离插件拦截了本地 `127.0.0.1` 回环跳转，引导用户在主控首页展开 `配对与已连会话`，复制 6 位动态配对码或 20 位固定备用口令填入授权页即可。
 - **Gemini 频繁弹出单次工具确认框**：提醒用户打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开连接器开启 `Always allow` 总开关，不要在聊天流单张确认卡上点单次允许；需要查公开网页时使用本连接器的 `pc_web_research`，避免混调宿主内置搜索触发权限降级。

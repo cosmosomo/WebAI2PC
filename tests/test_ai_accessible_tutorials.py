@@ -626,3 +626,95 @@ def test_tutorial_zero_divergence_and_overwrite_guard() -> None:
         assert "docs/AI_SETUP_GUIDE.md" in top30, (
             f"{entry_doc} missing docs/AI_SETUP_GUIDE.md entry within first 30 lines"
         )
+def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify Cloudflare channel dependencies, Mainland China proxy boundaries, and non-CF contrasts across catalog & docs."""
+    monkeypatch.setenv("COSMOS_DISABLE_BROWSER_OPEN", "1")
+    app, _, _, _ = _build_standalone_harness(tmp_path, port=18695)
+    dispatcher = app.state.dispatcher
+
+    res_cf, err_cf = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "cloudflare"}))
+    assert not err_cf and res_cf["ok"] is True
+    md_cf = res_cf["tutorial_markdown"]
+    for req_cf in (
+        "零外部二进制依赖",
+        "100,000",
+        "1027",
+        "125",
+        "DNS 污染",
+        "HTTPS_PROXY",
+        "WSS_PROXY",
+        "127.0.0.1,localhost,::1",
+        "Active Zone",
+        "Bot Fight Mode",
+    ):
+        assert req_cf in md_cf, f"cloudflare guide missing `{req_cf}`"
+
+    res_gw, err_gw = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "gateways"}))
+    assert not err_gw and res_gw["ok"] is True
+    md_gw = res_gw["tutorial_markdown"]
+    for req_gw in (
+        "OpenSSH",
+        "COSMOS_CLOUDFLARED_MIRROR",
+        "ha-connections:1",
+        "530",
+        "1033",
+        "200",
+        "http://127.0.0.1:8096",
+        "cloudflare_token",
+        "Bot Fight Mode",
+    ):
+        assert req_gw in md_gw, f"gateways guide missing `{req_gw}`"
+
+    res_ts, err_ts = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "troubleshooting"}))
+    assert not err_ts and res_ts["ok"] is True
+    md_ts = res_ts["tutorial_markdown"]
+    for req_ts in ("DNS 污染", "127.0.0.1,localhost,::1", "COSMOS_CLOUDFLARED_MIRROR", "Bot Fight Mode"):
+        assert req_ts in md_ts, f"troubleshooting guide missing `{req_ts}`"
+
+    # Guard against re-introducing the misleading "switch back to rule mode without workers.dev proxy" phrasing
+    stale_misleading_phrases = (
+        "绑好后即可切回规则模式",
+        "绑定完成后即可切回规则模式日常使用",
+        "点完 `本机一键允许连接` 后即可切回原规则模式",
+        "日常无需开全局",
+    )
+    doc04_zh = REPO_ROOT / "docs/04_三大连接通道选型与网络排障手册.md"
+    doc04_en = REPO_ROOT / "docs/en/04_gateways_and_troubleshooting.md"
+    aligned_files = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "README_EN.md",
+        doc04_zh,
+        doc04_en,
+        REPO_ROOT / "docs/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "docs/en/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/tutorials.html",
+        REPO_ROOT / "src/cosmos_mcp/core/tutorials_catalog.py",
+        REPO_ROOT / "host_skills/webai2pc-setup-tutorial/SKILL.md",
+    ]
+    for fp in aligned_files:
+        txt = fp.read_text(encoding="utf-8")
+        rel = fp.relative_to(REPO_ROOT).as_posix()
+        for bad in stale_misleading_phrases:
+            assert bad not in txt, f"{rel} still contains misleading proxy guidance: {bad!r}"
+        for common_tok in ("COSMOS_CLOUDFLARED_MIRROR", "100,000", "125", "workers.dev", "srv.us"):
+            assert common_tok in txt, f"{rel} missing required channel dependency token `{common_tok}`"
+
+    # Verify doc04 official Cloudflare reference links
+    for doc04_p in (doc04_zh, doc04_en):
+        d_txt = doc04_p.read_text(encoding="utf-8")
+        for official_url in (
+            "https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/",
+            "https://developers.cloudflare.com/workers/platform/limits/",
+            "https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-524/",
+            "https://github.com/cloudflare/cloudflared/releases/latest",
+        ):
+            assert official_url in d_txt, f"{doc04_p.name} missing official reference link {official_url}"
+
+    # Verify build_release.render_quickstart_txt includes channel dependency & proxy summary
+    from scripts.build_release import render_quickstart_txt
+
+    qs_txt = render_quickstart_txt("1.2.1").decode("utf-8")
+    for qs_tok in ("COSMOS_CLOUDFLARED_MIRROR", "100,000", "workers.dev", "127.0.0.1,localhost,::1", "srv.us"):
+        assert qs_tok in qs_txt, f"render_quickstart_txt missing `{qs_tok}`"

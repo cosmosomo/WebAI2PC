@@ -72,10 +72,10 @@
    - **① 打开预填权限页生成令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`。在打开的 Cloudflare 网页登录账号（所需 Workers 权限已自动勾选），滚动到底部点击 `Continue to summary` -> `Create Token`，复制生成的 API 令牌。
    - **② 粘贴令牌（可选填自有域名）**：回到本地控制台，把令牌粘贴进 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框。若用户在 Cloudflare 名下有已激活的域名（Active Zone），可在右侧 `选填：自定义域名（Active Zone，国内免切代理）` 填入子域名（例如 `mcp.yourdomain.dpdns.org`）；若账号下有多个 Cloudflare 账户，在下拉框选定目标账户。
    - **③ 点击部署并替换网址**：点击蓝色按钮 `一键部署并开启（约 3 秒）`。系统会自动认领子域并部署免费 Cloudflare Workers + SQLite Durable Object 休眠网关，生成终身固定的 `https://*.workers.dev/mcp`（及 `/mcp/readonly`）。
-3. **部署后的令牌安全与日常使用**：
-   - 部署完成瞬间，刚才粘贴的 Cloudflare API 令牌会自动从内存与磁盘清零销毁。
-   - 点击卡片上的 `复制此卡地址`（个人版 ChatGPT 点 `复制 Plus/Pro 只读`），到网页端连接器更新一次 URL 后即可永久固定使用；后续只需拨动第 2 张卡片右上角开关即可随时启停，无需再次填写令牌。
-   - *附：自有云服务器用户* 可展开第 3 张卡片 `自有云服务器 24h 主站 或 自有固定域名`，填写 Linux 服务器公网 IP 与 SSH 密码（或勾选 `使用本机默认 SSH 密钥免密登录`），点击 `一键部署 24h 主站并开启`，即可通过单连接器 `target="auto"` 同时管理云服务器与本地电脑。
+3. **部署后的令牌安全、通道依赖与国内代理边界**：
+   - 部署完成瞬间，刚才粘贴的 Cloudflare API 令牌会自动从内存与磁盘清零销毁；点击 `复制此卡地址`（个人版 ChatGPT 点 `复制 Plus/Pro 只读`）更新一次网页端连接器 URL 后即可长期使用，后续拨动卡片右上角开关即可启停。
+   - **通道 2（`workers_dev`）依赖与代理要求**：本机采用纯 Python 标准库 `443 WSS` 客户端（**零外部二进制依赖**，免装 `Node.js`、`wrangler` 或 `cloudflared`），受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘默认 `125` 秒反代读超时约束。**中国大陆网络特别注意**：`*.workers.dev` 在国内存在全量 DNS 污染（裸连 `100%` 超时），若未绑定自定义域名，**本机运行期间必须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**（若设 `NO_PROXY` 须保留 `127.0.0.1,localhost,::1`）；绑定同账号下自定义域名（Active Zone）后可实现国内免代理直连。
+   - **与通道 1 / 通道 3 的依赖对照**：通道 1 默认 `*.srv.us` 仅依赖系统自带 `ssh` 与出站 TCP `22` 端口（国内家庭宽带通常免代理直连，`22` 受阻时 `4` 秒回退的 `*.trycloudflare.com` 及通道 3 子项 `--mode cloudflare_token` 均依赖 `cloudflared` 二进制，未装时首次从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` 自动下载至 `bin/`；其中 `*.trycloudflare.com` 重启必换域名、无 SLA、单控制流重连有 `4–21s` 空窗返 `530`/`1033` 且限 `200` 并发，`cloudflare_token` 额外需 Zero Trust 指向 `http://127.0.0.1:8096` 的转发并关闭自定义域 `Bot Fight Mode`）；通道 3 `自有云服务器 24h 主站`（`vps_hub` / `vps`）仅依赖开放 `80`/`443` 的 Linux 服务器与本机 `ssh`，零 Cloudflare 依赖、零日请求上限与 `125s` 超时限制，国内或港新机房全程免代理直连。
 
 ## 五、4 档安全权限与父目录只读分层
 
@@ -106,8 +106,8 @@
 
 1. **Windows 双击启动脚本没反应或提示找不到文件**：
    - 90% 是因为直接在 WinRAR / 7-Zip / 系统压缩包预览窗口里双击了脚本。请先把整个 `.zip` 完整解压到桌面文件夹后再双击 `一键启动_Cosmos_MCP.bat`；未装 Python 的电脑请下载 `win64-full.zip`。
-2. **首次绑定 `*.workers.dev` 地址时浏览器打开授权页很慢或超时**：
-   - 部分网络下规则代理未将 `*.workers.dev` 纳入代理。将本机代理软件临时切换为「全局模式」约 10 秒，点完 `本机一键允许连接` 后即可切回原规则模式；或者在第 2 张卡片选填已托管在 Cloudflare 的自定义域名。
+2. **中国大陆使用 `*.workers.dev` 时授权页打不开或后台隧道反复超时重连**：
+   - `*.workers.dev` 在中国大陆运营商与公共 DNS 下存在全量 DNS 污染（无代理裸连 `100%` 超时）。若未绑定自定义域名，**本机后台运行期间必须保持系统 HTTP/HTTPS 代理常开且规则允许代理访问 `*.workers.dev`**（首次打开 `/consent` 授权页若规则漏掉 `*.workers.dev` 可临时切全局完成授权，但切回规则模式后日常仍须让规则覆盖 `*.workers.dev`，关闭代理或直连会导致 `443 WSS` 断连；若设了 `NO_PROXY` 务必保留 `127.0.0.1,localhost,::1`）。若需国内免代理直连，请在第 2 张卡片绑定同 Cloudflare 账号下的自定义域名（Active Zone，并关闭该域 `Bot Fight Mode`），或使用第 1 张卡片 `*.srv.us` / 第 3 张卡片自有云服务器。
 3. **点击授权页时未出现一键允许，或提示需要输入口令**：
    - 当在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页、在手机异地绑定，或同机浏览器隐私插件拦截了 `127.0.0.1` 回环跳转时，回到本地控制台主控首页展开 `配对与已连会话`，复制 6 位动态配对码（或点开复制 20 位固定备用口令）填入授权页即可通过。
 4. **ChatGPT 个人 Plus / Pro 订阅测试 `/mcp` 时写操作受限**：
