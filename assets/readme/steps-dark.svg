@@ -28,7 +28,7 @@
 <rect x="1188" y="110" width="56" height="26" rx="13" fill="#064E3B"/>
 <text x="1216" y="128" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="800" fill="#34D399">STEP 03</text>
 <text x="1188" y="163" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="23" font-weight="700" fill="#F0F6FC">电脑与同号手机 · 同步可用</text>
-<text x="1112" y="210" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="18" fill="#94A3B8">聊天框直接 @Cosmos 读写本地文件</text>
+<text x="1112" y="210" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="18" fill="#94A3B8">聊天框直接 @WebAI2PC 读写本地文件</text>
 <text x="1112" y="242" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif" font-size="18" fill="#94A3B8">同账号手机 App 零配置即刻同步可用</text>
 <rect x="1108" y="264" width="420" height="38" rx="9" fill="#0D1117"/>
 <text x="1124" y="289" font-family="PingFang SC, Microsoft YaHei, Consolas, sans-serif" font-size="15" font-weight="600" fill="#34D399">出门在外也能让家中电脑跑脚本、改文档</text>

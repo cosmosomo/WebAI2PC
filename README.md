@@ -1,10 +1,42 @@
-# Cosmos MCP
+<div align="center">
 
-**Your AI. Your Computer. Your Capabilities.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/webai2pc-logo-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/webai2pc-logo-light.svg" />
+  <img alt="WebAI2PC" src="assets/brand/webai2pc-logo-light.svg" width="380" />
+</picture>
 
-Cosmos MCP（WebAI2PC 本地控制台）是运行在个人电脑或自有云服务器上的本地 MCP（Model Context Protocol）服务端与可视化控制台，专门面向 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（对话模式）** 两个远程连接场景。它将授权工作目录内的文件读写、Word 与 Excel 文档修订、代码符号检索、无窗口终端命令、Python 执行、跨会话协作记录，以及可选的受管浏览器和桌面窗口操控工具，通过标准 HTTPS OAuth 2.1 连接器提供给网页端 AI 调用。
+<p><strong>把已买的网页版 Gemini / ChatGPT 会员，变成你的本地电脑助手 · $0 额外 API 账单</strong></p>
 
-## 一、连接网页版 Gemini 与网页版 ChatGPT 的主要功能
+<p>
+  <a href="https://github.com/cosmosomo/WebAI2PC/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/cosmosomo/WebAI2PC?color=10B981&label=Release" /></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2563EB.svg" /></a>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-475569.svg" />
+  <img alt="Hosts" src="https://img.shields.io/badge/Hosts-Web%20Gemini%20%26%20ChatGPT-0F766E.svg" />
+</p>
+
+<p>
+  <a href="#一核心场景与主要功能">核心场景</a> ·
+  <a href="#二支持宿主范围与连接原理">连接原理</a> ·
+  <a href="#三30-秒上手与-3-类连接方式">30 秒上手</a> ·
+  <a href="#四默认-16-项核心工具standard-标准预设">16 项工具</a> ·
+  <a href="#五安全兜底目录分层与可选扩展包">安全护栏</a> ·
+  <a href="#六文档导航">教程导航</a>
+</p>
+
+</div>
+
+<p align="center">
+  <img src="assets/readme/hero-showcase.png" alt="WebAI2PC 网页 AI 直连本地电脑工作区" width="100%" />
+</p>
+
+**WebAI2PC** 是运行在个人电脑或自有云服务器上的本地 MCP（Model Context Protocol）服务端与可视化控制台，专门面向 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（对话模式）** 两个远程连接场景。它将授权工作目录内的文件读写、Word 与 Excel 文档修订、代码符号检索、无窗口终端命令、Python 执行、跨会话协作记录，以及可选的受管浏览器和桌面窗口操控工具，通过标准 HTTPS OAuth 2.1 连接器提供给网页端 AI 调用。
+
+## 一、核心场景与主要功能
+
+<p align="center">
+  <img src="assets/readme/bento-grid.png" alt="WebAI2PC 核心场景 2x2 拼版" width="100%" />
+</p>
 
 1. **直接使用已有网页订阅处理本机工程**：通过 Google AI Pro / Ultra 或 ChatGPT 网页订阅读取本地代码、修改文件与运行测试，免去按调用量单独配置 API 计费密钥。
 2. **云端并行子任务与大上下文支持**：在网页版 Gemini 任务模式中可将跨目录检索、多模块对比与测试排查拆分为多路异步子任务（`invoke_subagent`）并行执行，中间输出留在子任务内。
@@ -12,7 +44,15 @@ Cosmos MCP（WebAI2PC 本地控制台）是运行在个人电脑或自有云服�
 4. **Word、Excel、PPT、PDF 与本地图片直接处理**：`pc_read_file` 支持网页端 AI 直接查看本地清晰图片（自动封装二进制图像数据），并支持提取 PDF、`.docx`、`.xlsx`、`.pptx` 文本；`pc_edit_file` 支持保留段落样式直接替换 `.docx` 正文与表格文字、按单元格坐标修改 `.xlsx` 数值或公式，遇到文件被 Word 或 Excel 打开占用时自动拦截保护并支持 `undo` 撤回。
 5. **耗时命令自动转后台与笔记本电源保护**：运行超过同步等待阈值的编译或测试会自动转为 `pc_bg_command` 后台任务并返回 `job_id`；Windows 系统提供托盘四色状态灯，防休眠功能在接入交流电源时保持在线，笔记本改用电池供电时自动解除防休眠并在唤醒后自动重连。
 
-## 二、支持宿主范围与账号条件
+## 二、支持宿主范围与连接原理
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/architecture-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/architecture-light.svg" />
+    <img alt="WebAI2PC 连接原理与宿主边界图" src="assets/readme/architecture-light.svg" width="100%" />
+  </picture>
+</p>
 
 | 目标网页宿主 | 账号条件 | 连接端点与调用方式 |
 | :- | :- | :- |
@@ -20,14 +60,22 @@ Cosmos MCP（WebAI2PC 本地控制台）是运行在个人电脑或自有云服�
 | **网页版 ChatGPT（工作区账号）** | Team / Business / Enterprise / Edu 工作区账号 | 绑定主地址 `https://<域名>/mcp`，在聊天输入框工具图标菜单中勾选连接器后调用读写与执行工具。 |
 | **网页版 ChatGPT（个人订阅账号）** | 个人 Plus / Pro 订阅账号（平台仅允许自定义连接器暴露只读工具） | 绑定只读地址 `https://<域名>/mcp/readonly`，在聊天输入框工具图标菜单中勾选连接器后查阅本地代码与文档。 |
 
-## 三、启动服务与 3 类连接方式
+## 三、30 秒上手与 3 类连接方式
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/steps-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/steps-light.svg" />
+    <img alt="WebAI2PC 30 秒上手三步横幅" src="assets/readme/steps-light.svg" width="100%" />
+  </picture>
+</p>
 
 ### 一键复制给任意 Gemini / ChatGPT，让 AI 手把手带你配好
 
 如果你第一次使用，可以直接复制下方整段提示词发给**任何一个网页版 Gemini 或网页版 ChatGPT**（即使还没绑定连接器也能用），让 AI 对照最新公开教程一步步带你完成配置：
 
 ```text
-请做我的 WebAI2PC (Cosmos MCP) 配置向导，先读取官方公开配置教程全文（支持联网请直接访问 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md 或 https://github.com/cosmosomo/WebAI2PC/blob/main/docs/AI_SETUP_GUIDE.md ），再按以下核实摘要一步步带我配通（先问清我的电脑系统、是否已下载解压、准备连网页版 Gemini 还是 ChatGPT，每次只教当前这一步，不要一次刷满屏）：
+请做我的 WebAI2PC 配置向导，先读取官方公开配置教程全文（支持联网请直接访问 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md 或 https://github.com/cosmosomo/WebAI2PC/blob/main/docs/AI_SETUP_GUIDE.md ），再按以下核实摘要一步步带我配通（先问清我的电脑系统、是否已下载解压、准备连网页版 Gemini 还是 ChatGPT，每次只教当前这一步，不要一次刷满屏）：
 1. 下载解压：去 https://github.com/cosmosomo/WebAI2PC/releases 下载（Windows 免装 Python 选 win64-full.zip，已装 Python 3.10+ 或 macOS/Linux 选标准 zip），必须先完整解压缩到普通文件夹，再双击 一键启动_Cosmos_MCP.bat（macOS/Linux 运行 ./start_cosmos_mcp.sh），浏览器会自动打开本地控制台 http://127.0.0.1:8096/ 。
 2. 首次免注册直连：控制台默认开启「第 1 类：一键上手免登录直连」（自动生成 https://*.srv.us/mcp 或 *.trycloudflare.com/mcp）；复制连接地址（ChatGPT 个人 Plus/Pro 账号点「复制只读」用 /mcp/readonly）。
 3. 绑定网页端：Gemini 打开左侧 Customize -> Connectors -> + Custom，名称填 Cosmos 并粘贴 /mcp 地址（Client ID/Secret 留空），授权页点「本机一键允许连接」，再进连接器详情把 App actions 设为 Always allow，新对话首句发 @Cosmos 唤醒；ChatGPT 在 Settings -> Connectors 添加地址并在输入框工具菜单勾选 Cosmos。
@@ -43,7 +91,7 @@ Cosmos MCP（WebAI2PC 本地控制台）是运行在个人电脑或自有云服�
 - **完整离线绿色包 `Cosmos-MCP-v1.2.1-win64-full.zip`（推荐普通 Windows 用户）**：内置 `Python 3.12` 免安装运行环境与核心依赖，无需在本机预先安装 Python，完整解压后直接双击运行即可。
 - **标准轻量包 `Cosmos-MCP-v1.2.1.zip`（适合已安装 Python 3.10~3.14 的开发者及 macOS / Linux 用户）**：体积小巧，启动时自动扫描本机已安装的官方 Python `3.10` 至 `3.14`、Conda 或 `uv` 环境（自动跳过微软商店 `WindowsApps\python.exe` 空壳）并准备独立 `.venv`。
 
-Windows 双击解压后文件夹内的 `一键启动_Cosmos_MCP.bat`（macOS 与 Linux 运行 `./start_cosmos_mcp.sh`）。首次无配置启动默认创建并开放 `~/CosmosWorkspace` 目录，随后打开本地 `Cosmos Studio`（`WebAI2PC` 本地控制台）。
+Windows 双击解压后文件夹内的 `一键启动_Cosmos_MCP.bat`（macOS 与 Linux 运行 `./start_cosmos_mcp.sh`）。首次无配置启动默认创建并开放 `~/CosmosWorkspace` 目录，随后自动打开 **WebAI2PC 本地控制台**。
 
 ### 第 2 步：在控制台按需开启 3 类连接方式（支持多网关独立开关并存）
 
@@ -103,7 +151,15 @@ cosmos-mcp start --mode cloudflare_token --tunnel-token <TOKEN> --public-url htt
 | `pc_run_python` | 命令运行 | 通过标准输入直接执行多行 Python 代码，支持指定虚拟环境或 Conda 解释器。 |
 | `pc_bg_command` | 命令运行 | 启动、查询状态、等待完成、读取尾部日志或终止后台长耗时任务（`start\|status\|wait\|list\|kill`）。 |
 
-## 五、目录读写分层、可选扩展包与四档安全模式
+## 五、安全兜底、目录分层与可选扩展包
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/safety-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/safety-light.svg" />
+    <img alt="WebAI2PC 四道安全兜底护栏" src="assets/readme/safety-light.svg" width="100%" />
+  </picture>
+</p>
 
 ### 1. 工作区读写分层与宿主技能默认隔离
 
@@ -123,6 +179,21 @@ cosmos-mcp start --mode cloudflare_token --tunnel-token <TOKEN> --public-url htt
 - **`L2` 仅改文件禁跑命令**：允许在可读写工作目录内读取与编辑文件，禁止命令执行与外设扩展包，切换时自动终止在途后台进程。
 - **`L1` 只读浏览模式**：仅开放只读查询工具，控制台与系统托盘右键菜单均支持免口令一键切入。
 - **容器与虚拟机隔离（`sandbox/`）**：提供非特权 Docker 配置（`sandbox/Dockerfile`、`sandbox/docker-compose.yml`）与一次性 Windows Sandbox 配置（`sandbox/CosmosMCP_WindowsSandbox.wsb`）；打包完整免安装绿色版可执行 `python -B scripts/build_release.py --embed-python-dir <官方python-embed解压目录>`。
+
+### 4. 本地可视化控制台与同机授权界面实拍
+
+<p align="center">
+  <img src="assets/readme/studio-console.png" alt="WebAI2PC 本地可视化控制台桌面端界面" width="100%" />
+</p>
+
+<details>
+<summary>展开查看：同机一键 OAuth 2.1 授权页与移动端控制台实拍</summary>
+
+<p align="center">
+  <img src="assets/readme/studio-oauth-mobile.png" alt="WebAI2PC OAuth 2.1 授权确认页与手机端界面" width="100%" />
+</p>
+
+</details>
 
 ## 六、文档导航
 
