@@ -1,65 +1,25 @@
-# 01. 网页版 Gemini 与网页版 ChatGPT 连接指南（含手机端远控）
+# 01. 网页版 Gemini 与手机远程连接教程
 
-本指南说明如何启动 Cosmos MCP，按需开启 3 类连接方式接入 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（首次代连找 `Work` 模式或本机手动安装，装好后日常用 `Chat` 模式省额度、长程与定时任务用 `Work` 模式）**，以及绑定完成后的首句唤醒与多设备协同方法。启动本地服务后也可直接打开内置交互式教程页 `http://127.0.0.1:8096/tutorials` 一键复制当前生效地址。
+本教程按**默认免登录模式**从头到尾带你 30 秒连上 **网页版 Google Gemini（含同账号手机端 Gemini App）**。默认模式不用注册第三方账号、不用敲命令行；Cloudflare 固定网址、自有云服务器与多设备进阶配置放在后半部分，新手可以先跳过。
 
-## 一、接入前确认宿主与账号条件
+> 启动本地服务后，也可直接打开本地交互式教程页 `http://127.0.0.1:8096/tutorials` 一键复制当前生效地址。若要连接 **网页版 ChatGPT**，请看 [02. 网页版 ChatGPT 工作区与个人只读接入教程](02_网页版ChatGPT工作区与个人只读接入教程.md)。
 
-1. **网页版 Google Gemini（任务模式，含 Android / iOS 手机端 Gemini App）**：
-   - 需要年满 `18+` 周岁的 Google AI Pro 或 Ultra 订阅账号，或已开启自定义连接器权限的 Google Workspace 账号（免费个人 Google 账号暂未开放网页端自定义连接器入口）。
-   - 绑定主连接地址 `https://<域名>/mcp`。电脑端绑定一次后，登录同一 Google 账号的手机端 Gemini App 自动同步该连接器。
-2. **网页版 ChatGPT（区分首次代连与日常 `Chat` / `Work` 分工）**：
-   - **工作区账号（Team / Business / Enterprise / Edu）**：绑定主连接地址 `https://<域名>/mcp`，可调用全部 16 项读写与无窗口命令执行工具。
-   - **个人订阅账号（Plus / Pro）**：当受平台策略限制仅放行自定义 MCP 的 `read/fetch` 工具时，请绑定纯只读连接地址 `https://<域名>/mcp/readonly`。该端点按 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离固定开放 12 项只读查询能力，拒绝写入与执行请求。
-   - **两阶段模式边界**：首次在 `Plugins` 代填新插件时，只有具备受控浏览器的 `Work` 模式能操作页面（`Chat` 模式无浏览器，只能给文字步骤）；插件点 `Install` 装好后同账号互通，日常查改本地代码与跑测试优先用 `Chat` 模式 `@WebAI2PC`（零消耗 `Work / Codex` 智能体额度），跨应用长程交付与定时任务用 `Work` 模式 `@WebAI2PC`。
+---
 
-## 二、裸机启动与 3 类连接方式选择
+## 一、默认模式：30 秒连上网页版 Gemini（推荐先按这里做）
 
-Windows 用户双击 `一键启动_Cosmos_MCP.bat`，macOS 与 Linux 用户运行 `./start_cosmos_mcp.sh`。启动器会优先使用随包附带的 `python-embed` 免安装解释器或已就绪的 `.venv`，自动跳过 Windows 11 默认 `PATH` 下的微软商店 `WindowsApps\python.exe` 空壳，扫描本机官方 Python `3.10` 至 `3.14`、Conda 与 `uv` 解释器，自动打开本地 `Cosmos Studio` 控制台。
+### 第 1 步：完整解压并双击启动，复制 `/mcp` 地址
 
-网页端 AI 运行在云端机房，需通过标准 HTTPS 443 地址访问本机服务。控制台内 3 张连接卡片右上角均配独立开关，支持单开或多网关同时在线并存（互不中断），顶部连接栏自动展示当前选中的就绪网关 URL：
+1. 前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，已装 Python 3.10+ 或 macOS / Linux 选标准 `zip`），**先完整解压缩到普通文件夹**（不要在压缩包预览窗口里直接双击）。
+2. 启动本地控制台：
+   - **Windows**：双击 `一键启动_Cosmos_MCP.bat`
+   - **macOS / Linux**：在终端运行 `./start_cosmos_mcp.sh`
+3. 浏览器会自动打开本地控制台 `http://127.0.0.1:8096/`，默认直接开启 **「一键上手免登录直连」**，生成免登录固定网址（如 `https://xxxxx.srv.us/mcp`，重启电脑网址不变；若网络限制 22 端口，4 秒内自动切到临时快速通道 `https://*.trycloudflare.com/mcp`）。
+4. 确认顶部选中 **「网页版 Gemini」**，点击蓝色按钮 **「复制连接地址」**。
 
-### 方式 1：一键上手就能用（零登录开箱即连）
+### 第 2 步：把 `/mcp` 地址粘贴到 Gemini 连接器配置栏
 
-适合首次体验与同机快速验证，无需注册云账号或准备域名：
-- 启动后默认优先使用本机持久密钥连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，关机重启网址不变）；若当前网络限制 22 端口，4 秒内自动切换至内置快速通道（`https://*.trycloudflare.com`）生成可用 HTTPS 地址，也可在卡片内手动切换。
-- 在同一台电脑的浏览器中从网页版 Gemini 或 ChatGPT 跳转到授权页时，系统通过本机顶层回环桥接校验同机身份，直接点击「本机一键允许连接（免输口令）」即可完成绑定，免去复制粘贴连接口令；若在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页，或在手机、另一台电脑上授权，填入本地控制台显示的 6 位动态配对码（或粘贴备用口令）即可。
-- 若当前通道处于 `*.trycloudflare.com` 临时地址，电脑关机重启后域名会变化；可点击卡片按钮重试或恢复连接免登录固定网址，或切换至方式 2、方式 3。
-
-命令行启动示例（内网或离线环境可通过 `COSMOS_CLOUDFLARED_BIN`、`COSMOS_CLOUDFLARED_MIRROR`、`COSMOS_WHEELHOUSE` 指定本地缓存）：
-
-```bash
-cosmos-mcp start --workspace D:\Projects\my-app
-```
-
-### 方式 2：登录 Cloudflare 注册一下就行（3 秒自动部署终身固定网址）
-
-适合没有自有服务器与域名的长期日常使用及手机远程控机：
-1. 在本地 `Cosmos Studio` 控制台选择第 2 类连接卡片，点击页面预填好最小权限的 Cloudflare 令牌创建链接并登录账号。
-2. 生成 API 令牌后复制粘贴回控制台输入框并点击部署。
-3. 后台在约 3 秒内自动认领账号下的 `*.workers.dev` 子域，部署免费 SQLite Durable Object 休眠中继网关并生成固定 HTTPS 地址（如 `https://your-worker.your-subdomain.workers.dev/mcp`）；部署完成后 API 令牌立即清零销毁，不在磁盘留存明文。
-4. 后续可直接拨动卡片右上角独立开关启停连接（无需重填令牌），可与方式 1 或方式 3 同时开启；电脑重启、休眠唤醒或切换手机热点时，本机通过纯标准库出站 443 WebSocket 自动重连网关，网页版 Gemini 与 ChatGPT 中的连接器地址终身无需重填。
-
-### 方式 3：自己的服务器和域名（一键部署 24 小时主站或绑定自有域名）
-
-适合拥有 Linux 云服务器或自有域名的用户，合并提供两种接入路径：
-1. **填写服务器 IP 与 SSH 密码或私钥一键建站**：
-   - 在控制台填写云服务器公网 IP 与 SSH 端口，支持使用 SSH 密码（仅当次内存使用不落盘）、填写本地 SSH 私钥路径（如 `~/.ssh/id_ed25519`）或勾选本机默认 SSH 密钥免密登录（有域名可一并填写，无域名时自动签发公网访问证书）。
-   - 系统自动通过一次性免明文密钥交换在服务器上部署 24 小时常驻主站（内存小于 256MB 的轻量实例自动补充交换分区），同时纳管服务器目录与本地电脑目录；本地电脑关机期间，网页端仍可正常操作服务器文件，访问本地电脑路径时返回清晰的离线提示（`ERR_NODE_OFFLINE`）。
-2. **绑定自有固定域名（Cloudflare Named Tunnel 或自有反向代理）**：
-   - 拥有托管在 Cloudflare 的域名时，可在面板填入固定隧道令牌，或通过命令行传入 `--tunnel-token` 并开启登录自启：
-     ```bash
-     cosmos-mcp start --mode cloudflare_token --tunnel-token <粘贴你的TOKEN> --public-url https://mcp.example.com --autostart
-     ```
-   - 若服务器已自行配置反向代理或 SSH 反向映射，也可使用 `--mode vps` 或填入自有固定 HTTPS 地址：
-     ```bash
-     cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 18096 --public-url https://mcp.example.com --autostart
-     ```
-
-## 三、绑定完成后的设置与首句唤醒方法
-
-### 1. 网页版 Google Gemini（任务模式与手机端 App）
-
-> **重要提醒**：控制台生成的 `https://<你的域名>/mcp` **不是用来直接在浏览器地址栏打开访问的网址**，而是要复制到下面 Gemini 连接器页面的 **`MCP Server URL`** 配置栏里。
+> **重要提醒**：刚才复制的 `https://<你的域名>/mcp` **不是用来直接在浏览器地址栏里打开访问的网址**，而是要粘贴到下面 Gemini 连接器页面的 **`MCP Server URL`** 配置栏里。
 
 1. **进入 Gemini 连接器页面（两种方式等价，推荐直接点链接）**：
    - **直达地址（推荐）**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)
@@ -69,34 +29,80 @@ cosmos-mcp start --workspace D:\Projects\my-app
    | :-: | :-: |
    | ![步骤 1：点击 Personal Intelligence](../assets/tutorials/gemini-step1-personal-intelligence.png) | ![步骤 2：点击 Connected Apps](../assets/tutorials/gemini-step2-connected-apps.png) |
 
-2. **点击 `+ Custom` 并把 `/mcp` 地址粘贴到配置栏**：
+2. **点击 `+ Custom` 并粘贴地址**：
    - 在 `Connectors` 页面右上角点击 **`+ Custom`**。
-   - 在弹出的 **`Connect to an MCP server`** 窗口中，把控制台复制的 `https://<你的域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏（`Additional settings` 保持默认折叠，无需填写 Client ID / Secret），点击 **`Next`** 跳转到本地授权确认页并点 **「本机一键允许连接」**。
+   - 在弹出的 **`Connect to an MCP server`** 窗口中，把控制台复制的 `https://<你的域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏（`Additional settings` 保持默认折叠，无需填写 Client ID / Secret），点击 **`Next`**。
 
    | 第 3 步：点击右上角 `+ Custom` | 第 4 步：粘贴到 `MCP Server URL` 配置栏点 `Next` |
    | :-: | :-: |
    | ![步骤 3：点击右上角 + Custom](../assets/tutorials/gemini-step3-connectors-custom.png) | ![步骤 4：粘贴到 MCP Server URL 配置栏](../assets/tutorials/gemini-step4-mcp-server-url.png) |
 
-3. **开启免审批总开关**：绑定成功后，回到 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) 点开刚添加的连接器，将 **`App actions`** 总开关设为 **`Always allow（始终允许）`**。请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，单卡点击会按单工具覆盖并导致其余工具退回逐次确认。
-4. **导入操作守则**：在控制台点击「复制 AI 操作守则（推荐存入 Skills）」（或复制仓库 `host_skills/SKILL.md` 全文），保存到网页版 Gemini 的 `Skills` 设置中。
-5. **首句敲 `@Cosmos` 唤醒**：新建对话后，在输入框首句敲 `@Cosmos` 并选中弹出的 `Cosmos` 标签，例如发送：
+### 第 3 步：点击允许，并开启免审批总开关
+
+1. 跳转到本地授权确认页后，同一台电脑的浏览器会自动核验同机身份，直接点击 **「本机一键允许连接（免输口令）」** 即可完成绑定（若在手机或另一台电脑上授权，展开本地控制台 `配对与已连会话` 填入 6 位动态配对码）。
+2. **开启免审批总开关（避免每次弹窗点确认）**：回到 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) 点开刚添加的连接器，将 **`App actions`** 总开关设为 **`Always allow（始终允许）`**。
+   - 请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，单卡点击会按单工具粒度覆盖并导致其余工具退回逐次确认。
+3. **可选导入操作守则**：在本地控制台点击「复制 AI 操作守则（推荐存入 Skills）」（或复制仓库 `host_skills/SKILL.md` 全文），保存到网页版 Gemini 的 `Skills` 设置中，可减少 AI 误操作。
+
+### 第 4 步：发第一句话验证（手机端自动同步）
+
+1. 在网页版 Gemini 新建对话，输入框首句敲 `@Cosmos` 并选中弹出的连接器标签，发送：
    ```text
    @Cosmos 帮我看看当前工作目录里有哪些文件
    ```
-   授权刚完成时，控制台顶部绿色已连接横幅提供「一键复制首句唤醒测试词」按钮（Windows 托盘右键菜单提供「复制首句唤醒词」），可直接复制粘贴发送。
+   （授权刚完成时，控制台顶部绿色横幅和 Windows 托盘右键菜单都提供「复制首句唤醒词」，可直接粘贴发送。）
+2. **手机端免配置同步**：电脑端绑定完成后，登录同一 Google 账号的 Android / iOS 手机端 Gemini App 会自动同步该连接器，外出时直接发 `@Cosmos ...` 即可远程让家中电脑干活。
 
-### 2. 网页版 ChatGPT（首次代连找 `Work` 模式 · 装好后日常用 `Chat` 模式省额度）
+---
 
-1. **阶段一 · 切 `Work` 模式代填或在本机浏览器手动添加**：
-   - **委托 `Work` 模式代填**：在本地控制台 `网页版 ChatGPT` 页签等待网关就绪后，点 **「复制给 Work 模式帮我连接」**（仅含当前可用地址，不含配对码、口令与本机路径），先在 ChatGPT 顶部切换到 **`Work` 模式**再粘贴发送（`Chat` 模式没有受控浏览器，无法操作 `chatgpt.com/plugins`，只能输出文字步骤）。网页版 `Work` 云端浏览器填表后遇到登录或 `/consent` 授权确认时，点 `Take over` 接管，因浏览器在 OpenAI 云端不在本机，授权页会提示输入本地控制台 `6` 位动态配对码，完成后点 `Return control` 交回并完成 `Install` 安装。
-   - **本机浏览器手动添加**：在网页版 ChatGPT 左侧栏打开 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，工作区账号（Team / Business / Enterprise / Edu）填入 `https://<你的域名>/mcp`，个人 Plus / Pro 账号受平台限制写工具时填入 `https://<你的域名>/mcp/readonly`，认证选 `OAuth`，点击 `Create as a plugin` 并点击 `Install` 安装，本机浏览器跳转 `/consent` 时直接点「本机一键允许连接」。
-2. **阶段二 · 日常切回 `Chat` 模式调用 `@WebAI2PC`（长程与定时任务用 `Work`）**：插件安装后全账号互通。日常查改本地代码、修 Office 与跑测试优先切回 `Chat` 模式，输入 `@WebAI2PC` 调用 `pc_get_status` 确认接通（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做多步交付或配置 `Scheduled Tasks` 定时任务时切到 `Work` 模式输入 `@WebAI2PC`。AI 操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可放入 `Project Instructions` 或自定义指令。
+## 二、接入条件与常见注意点（连不上时看这里）
 
-## 四、手机远控、多设备前缀与跨机路由
+- **网页版 Google Gemini 账号条件**：需年满 `18+` 周岁的 Google AI Pro 或 Ultra 订阅账号，或已由管理员开启自定义连接器权限的 Google Workspace 账号（免费个人 Google 账号暂未开放自定义连接器入口）。
+- **临时地址说明**：默认模式优先走 `*.srv.us` 固定网址（重启不变）；若所在网络拦截 22 端口而自动切到了 `*.trycloudflare.com` 临时地址，电脑关机重启后域名会变化，届时在控制台点重试恢复，或升级到下文「进阶连接方式」里的 Cloudflare 免费固定网址。
+- **网页版 ChatGPT 用户**：工作区账号（Team / Business / Enterprise / Edu）用 `/mcp`，个人 Plus / Pro 账号受平台限制写工具时用 `/mcp/readonly`；详细步骤与 `Work` / `Chat` 模式分工见 [02. 网页版 ChatGPT 工作区与个人只读接入教程](02_网页版ChatGPT工作区与个人只读接入教程.md)。
 
-1. **手机远程控机与笔记本电源管理**：
-   - 使用免登录固定网址、方式 2 或方式 3 固定网址并开启开机自启后，外出时打开同账号手机端 Gemini App 发送 `@Cosmos 运行测试套件并汇报失败项`，耗时任务会自动转为 `pc_bg_command` 后台运行。
-   - Windows 笔记本接入交流电时默认开启防休眠保持在线；拔掉电源使用电池供电时自动解除防休眠保护电池续航，开盖唤醒或切换网络后在约 1.5 秒内自动恢复连接。
-2. **多连接器 `tool_prefix` 与单入口 `target="auto"` 跨机路由**：
-   - **多连接器前缀区分**：单台电脑保持默认 `pc` 即可；多台独立电脑接入同一对话时，可在控制台或启动参数设置不同的 `tool_prefix`（如 `--tool-prefix desk`、`--tool-prefix laptop`，注：`--prefix` 参数用于同一台电脑运行多实例时的配置槽位隔离），在同一聊天窗口分别调用 `desk_read_file` 与 `laptop_run_python`。
-   - **单入口自动路由**：采用方式 3 自有服务器 24 小时主站挂接本地电脑子节点时，只需在网页端绑定主站一个连接器；所有工具默认带 `target="auto"`，按传入路径自动路由到服务器或对应本地电脑，也可显式传 `target="server"`、`target="local"` 或节点名称定向执行。
+---
+
+## 三、手机远控、防休眠与多设备协同
+
+1. **手机远程控机与笔记本防休眠**：
+   - 使用免登录固定网址（或下文 Cloudflare / 自有服务器固定网址）并开启开机自启后，手机端发送长耗时任务（如跑测试、打包）会自动转后台运行。
+   - Windows 笔记本插电时默认开启防休眠保持在线；拔电用电池时自动解除防休眠，开盖唤醒或切换网络后约 1.5 秒内自动重连。
+2. **多台电脑同时接入（`tool_prefix`）**：
+   - 单台电脑保持默认 `pc` 即可；多台电脑接入同一对话时，可在控制台「设置 -> 工具与扩展」设置不同的 `tool_prefix`（如 `desk`、`laptop`），在同一聊天窗口分别调用 `desk_read_file` 与 `laptop_run_python`。
+
+---
+
+## 四、进阶连接方式（默认模式够用时可跳过）
+
+控制台「设置 -> 连接与网关」（`http://127.0.0.1:8096/#settings/gateways`）内 3 张连接卡片右上角均带独立开关，**支持多路网关同时在线**，配置新通道时不会断开当前已连会话（完整排障见 [04. 三大连接通道选型与网络排障手册](04_三大连接通道选型与网络排障手册.md)）：
+
+### 方式 2：Cloudflare 免费 3 秒终身固定网址（推荐长期稳定使用）
+
+适合没有自有服务器与域名、希望网址终身固定且不依赖 22 端口的用户：
+1. 打开控制台 `#settings/gateways`，展开第 2 张卡片 **「Cloudflare 专属固定网关」**，点击预填好最小权限的 Cloudflare 令牌创建链接并登录账号。
+2. 生成 API 令牌后复制粘贴回控制台输入框（有托管在 Cloudflare 的自有域名也可一并选填），点击 **「一键部署并开启（约 3 秒）」**。
+3. 后台自动认领 `*.workers.dev` 子域并部署免费休眠中继网关，生成固定地址 `https://<子域>.workers.dev/mcp`；部署完成瞬间 API 令牌立即从内存和磁盘清零销毁。
+4. 后续只需拨动卡片开关即可启停，电脑重启、休眠唤醒或切热点自动通过 443 端口重连，网页端连接器地址终身无需重填。
+
+### 方式 3：自有云服务器 24 小时主站 或 自有固定域名
+
+适合已有 Linux 云服务器或自有域名的用户：
+1. **一键部署 24 小时云服务器主站**：展开第 3 张卡片，填写服务器公网 IP 与 SSH 密码（仅当次内存使用不落盘）或本地 SSH 私钥，点击一键部署。部署后单个连接器默认通过 `target="auto"` 自动按路径路由到云服务器或本地电脑；本地电脑关机期间，云服务器仍 24 小时在线可用。
+2. **绑定自有固定域名（命令行 / 反向代理）**：
+
+<details>
+<summary>展开查看命令行启动与自有域名示例</summary>
+
+```bash
+# 默认模式指定工作区启动
+cosmos-mcp start --workspace D:\Projects\my-app
+
+# Cloudflare Named Tunnel 固定域名
+cosmos-mcp start --mode cloudflare_token --tunnel-token <粘贴你的TOKEN> --public-url https://mcp.example.com --autostart
+
+# 自有 VPS 反向代理 / SSH 反向映射
+cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 18096 --public-url https://mcp.example.com --autostart
+```
+
+</details>
