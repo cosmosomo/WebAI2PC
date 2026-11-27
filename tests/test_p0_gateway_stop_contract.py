@@ -208,16 +208,26 @@ def test_spawn_detached_daemon_blocked_by_user_stop_unless_explicitly_cleared(
     stop_flag.write_text("STOP:1700000000.0\n", encoding="utf-8")
 
     spawn_calls: List[List[str]] = []
+    real_popen = daemon.subprocess.Popen
 
     class _FakeProc:
         def __init__(self, pid: int = 54321) -> None:
             self.pid = pid
 
-    def _fake_popen(argv: List[str], **_kwargs: Any) -> _FakeProc:
-        spawn_calls.append(list(argv))
-        return _FakeProc()
+    def _fake_popen(argv: Any, *args: Any, **kwargs: Any) -> Any:
+        argv_list = [str(x) for x in argv] if isinstance(argv, (list, tuple)) else [str(argv)]
+        if any("cosmos_mcp" in part or str(st_dir) in part for part in argv_list):
+            spawn_calls.append(argv_list)
+            return _FakeProc()
+        return real_popen(argv, *args, **kwargs)
 
-    monkeypatch.setattr(daemon.subprocess, "Popen", _fake_popen)
+    import types
+
+    monkeypatch.setattr(
+        daemon,
+        "subprocess",
+        types.SimpleNamespace(**{**vars(daemon.subprocess), "Popen": _fake_popen}),
+    )
     monkeypatch.setattr(daemon, "_spawn_via_wmi_win32_process", lambda *_a, **_kw: None)
     monkeypatch.setattr(
         daemon,
