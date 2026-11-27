@@ -471,15 +471,39 @@
     var badge = $("service-status-badge");
     var dot = $("service-status-dot");
     var txt = $("service-status-text");
+    var onlineWord = $("service-online-word");
     var validKind = ["online", "editonly", "readonly", "offline"].indexOf(kind) >= 0 ? kind : "online";
     if (badge) badge.className = "status-badge " + validKind;
     if (dot) dot.className = "status-dot " + validKind;
+    if (onlineWord) onlineWord.textContent = validKind === "offline" ? "离线" : "在线";
     if (txt && txt.textContent !== (text || "")) txt.textContent = text || "";
+  }
+
+  var userToggledConnDrawer = false;
+  function setConnDrawerOpen(open) {
+    var drawer = $("wb-conn-drawer");
+    var btn = $("toggle-conn-details-btn");
+    if (!drawer) return;
+    drawer.classList.toggle("open", Boolean(open));
+    if (btn) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.textContent = open ? "收起详情 ▴" : "详情与配对 ▾";
+    }
   }
 
   function updateFirstWakeBanner(sessCount) {
     var banner = $("first-wake-banner");
     var cnt = Number(sessCount || 0);
+    var chip = $("conn-bar-session-chip");
+    var chipNum = $("conn-bar-sessions-num");
+    if (chip && chipNum) {
+      chipNum.textContent = String(cnt);
+      chip.style.display = cnt >= 1 ? "inline-flex" : "none";
+    }
+    if (!userToggledConnDrawer) {
+      var isChatgpt = activeHostScene === "chatgpt";
+      setConnDrawerOpen(cnt <= 0 || isChatgpt);
+    }
     var dismissed = false;
     try {
       dismissed = localStorage.getItem("cosmos_wake_banner_dismissed") === "1";
@@ -1390,6 +1414,7 @@
     renderSkills(doc.skills || {});
     updateTabTelemetryBadges(doc);
     syncIpWorkingPose(doc);
+    if (typeof syncOnboardingWizard === "function") syncOnboardingWizard(doc);
     if ($("save-python-btn")) $("save-python-btn").classList.remove("is-dirty-unsaved");
     if ($("save-tool-prefix-btn")) $("save-tool-prefix-btn").classList.remove("is-dirty-unsaved");
   }
@@ -1681,6 +1706,17 @@
   }
 
   function renderSafetyCards(modeCode) {
+    var shortPermMap = {
+      readonly: "只读",
+      edit_only: "仅改文件",
+      full_dev: "工作区开发",
+      full_power: "全盘开发",
+    };
+    var permPill = $("header-perm-pill");
+    if (permPill) {
+      permPill.textContent = shortPermMap[modeCode] || "工作区开发";
+      permPill.setAttribute("data-safety-mode", modeCode || "full_dev");
+    }
     var hintMap = {
       readonly: "仅读取与搜索，禁止修改与执行",
       edit_only: "可改工作区文件，禁止运行命令",
@@ -3398,6 +3434,14 @@
     if ($("open-gemini-connectors-btn")) {
       $("open-gemini-connectors-btn").addEventListener("click", probeAndOpenGeminiConnectors);
     }
+    if ($("toggle-conn-details-btn")) {
+      $("toggle-conn-details-btn").addEventListener("click", function () {
+        userToggledConnDrawer = true;
+        var drawer = $("wb-conn-drawer");
+        var isOpen = drawer ? drawer.classList.contains("open") : false;
+        setConnDrawerOpen(!isOpen);
+      });
+    }
     if ($("dismiss-workers-proxy-alert-btn")) {
       $("dismiss-workers-proxy-alert-btn").addEventListener("click", function () {
         if ($("workers-proxy-alert")) $("workers-proxy-alert").style.display = "none";
@@ -3901,6 +3945,8 @@
 
     if ($("open-pat-fallback-btn")) {
       $("open-pat-fallback-btn").addEventListener("click", function () {
+        var connDrw = $("wb-conn-drawer");
+        if (connDrw) connDrw.classList.add("open");
         var pairDet = $("pairing-sessions-details");
         var patDet = $("pat-mint-details");
         if (pairDet) pairDet.open = true;
@@ -4709,6 +4755,7 @@
           updateConnectionCardsUI(d.tunnel_mode || "public_gateway", state.connection);
           updateTabTelemetryBadges(d);
           syncIpWorkingPose(d);
+          if (typeof syncOnboardingWizard === "function") syncOnboardingWizard(state);
         })
         .catch(function () {
           setStatusIndicator("offline", "连接中断 · 本地服务未响应");
@@ -4723,8 +4770,507 @@
     void pollTimer;
   }
 
+  /* ========================================================================
+     First-Entry 3-Step Onboarding Wizard Controller
+     ======================================================================== */
+  var obState = {
+    step: 1,
+    host: "gemini",
+    chatgptTier: "workspace",
+    hasCf: false,
+    hasVps: false,
+    activeRoute: "instant",
+    vpsSubmode: "vps",
+    manualOpen: false,
+    prevSessions: 0,
+  };
+
+  function isOnboardingDismissed() {
+    try {
+      return localStorage.getItem("webai2pc_onboarding_done") === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setOnboardingDismissed(val) {
+    try {
+      if (val) localStorage.setItem("webai2pc_onboarding_done", "1");
+      else localStorage.removeItem("webai2pc_onboarding_done");
+    } catch (e) {}
+  }
+
+  function computeObRoute() {
+    if (obState.hasCf && obState.hasVps) {
+      if (obState.activeRoute !== "cloudflare" && obState.activeRoute !== "self_hosted") {
+        obState.activeRoute = "cloudflare";
+      }
+      return obState.activeRoute;
+    }
+    if (obState.hasCf) {
+      obState.activeRoute = "cloudflare";
+      return "cloudflare";
+    }
+    if (obState.hasVps) {
+      obState.activeRoute = "self_hosted";
+      return "self_hosted";
+    }
+    obState.activeRoute = "instant";
+    return "instant";
+  }
+
+  function setObStep(stepNum) {
+    var s = stepNum === 2 ? 2 : stepNum === 3 ? 3 : 1;
+    obState.step = s;
+    [1, 2, 3].forEach(function (n) {
+      var tab = $("ob-step-tab-" + n);
+      var pane = $("ob-pane-" + n);
+      var numEl = $("ob-step-num-" + n);
+      if (tab) {
+        tab.classList.toggle("active", n === s);
+        tab.classList.toggle("done", n < s);
+        tab.setAttribute("aria-selected", n === s ? "true" : "false");
+      }
+      if (numEl) {
+        numEl.textContent = n < s ? "✓" : String(n);
+      }
+      if (pane) {
+        pane.classList.toggle("active", n === s);
+      }
+    });
+    renderObDynamicState();
+    if (window.WebAI2PCI18n && window.WebAI2PCI18n.getLang() === "en") {
+      window.WebAI2PCI18n.apply("en");
+    }
+  }
+
+  function getObTargetUrl() {
+    var conn = (state && state.connection) || state || {};
+    var gws = conn.gateways || state.gateways || {};
+    var route = computeObRoute();
+    var isRo = obState.host === "chatgpt" && obState.chatgptTier === "personal";
+    var gwKey = route === "cloudflare" ? "workers_dev" : route === "self_hosted" ? "self_hosted" : "instant";
+    var gwObj = gws[gwKey] || {};
+    var baseMcp = "";
+    var baseRo = "";
+    if (gwObj && gwObj.ready && gwObj.mcp_url) {
+      baseMcp = gwObj.mcp_url;
+      baseRo = gwObj.readonly_mcp_url || gwObj.mcp_readonly_url || gwObj.mcp_url.replace(/\/mcp\/?$/, "/mcp/readonly");
+    } else if (conn.public_https_ready && conn.mcp_url) {
+      baseMcp = conn.mcp_url;
+      baseRo = conn.readonly_mcp_url || conn.mcp_readonly_url || conn.mcp_url.replace(/\/mcp\/?$/, "/mcp/readonly");
+    }
+    return {
+      ready: Boolean(baseMcp && /^https:\/\//i.test(baseMcp)),
+      gwReady: Boolean(gwObj && gwObj.ready && gwObj.mcp_url),
+      url: isRo ? baseRo : baseMcp,
+      mcpUrl: baseMcp,
+      roUrl: baseRo,
+      isRo: isRo,
+      route: route,
+    };
+  }
+
+  function renderObDynamicState() {
+    var band = $("onboarding-wizard-band");
+    if (!band || band.style.display === "none") return;
+
+    // Sync Step 1 Language buttons
+    var curLang = (window.WebAI2PCI18n && window.WebAI2PCI18n.getLang()) || "zh";
+    document.querySelectorAll("#ob-lang-group [data-ob-lang]").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-ob-lang") === curLang);
+    });
+
+    // Sync Step 1 Host cards & ChatGPT sub-tier
+    document.querySelectorAll("#ob-host-group [data-ob-host]").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-ob-host") === obState.host);
+    });
+    if ($("ob-chatgpt-tier-wrap")) {
+      $("ob-chatgpt-tier-wrap").style.display = obState.host === "chatgpt" ? "flex" : "none";
+    }
+    document.querySelectorAll("#ob-chatgpt-tier-wrap [data-ob-cgpt-tier]").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-ob-cgpt-tier") === obState.chatgptTier);
+    });
+
+    // Sync Step 1 Resource checkboxes & route summary
+    if ($("ob-lbl-has-cf")) $("ob-lbl-has-cf").classList.toggle("checked", obState.hasCf);
+    if ($("ob-lbl-has-vps")) $("ob-lbl-has-vps").classList.toggle("checked", obState.hasVps);
+    var route = computeObRoute();
+    var sumTxt = $("ob-route-summary-text");
+    if (sumTxt) {
+      if (obState.hasCf && obState.hasVps) {
+        sumTxt.textContent = "已勾选两项资源：下一步默认优先使用更省心的「Cloudflare 3 秒固定网关」，也可一键切到自有服务器。";
+      } else if (obState.hasCf) {
+        sumTxt.textContent = "已选 Cloudflare 账号：下一步将引导你 3 秒自动部署终身固定网址（*.workers.dev）。";
+      } else if (obState.hasVps) {
+        sumTxt.textContent = "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站或绑定自有 HTTPS 域名。";
+      } else {
+        sumTxt.textContent = "未勾选额外资源：将使用「免登录直连固定通道」，零注册直接生成连接网址。";
+      }
+    }
+
+    // Step 2: Dual route switcher & setup boxes
+    if ($("ob-dual-route-bar")) {
+      $("ob-dual-route-bar").style.display = obState.hasCf && obState.hasVps ? "flex" : "none";
+    }
+    document.querySelectorAll("#ob-dual-route-bar [data-ob-route]").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-ob-route") === route);
+    });
+    if ($("ob-gw-box-cloudflare")) {
+      $("ob-gw-box-cloudflare").style.display = route === "cloudflare" ? "block" : "none";
+    }
+    if ($("ob-gw-box-vps")) {
+      $("ob-gw-box-vps").style.display = route === "self_hosted" ? "block" : "none";
+    }
+    if ($("ob-vps-ip-row")) $("ob-vps-ip-row").style.display = obState.vpsSubmode === "vps" ? "flex" : "none";
+    if ($("ob-vps-domain-row")) $("ob-vps-domain-row").style.display = obState.vpsSubmode === "domain" ? "flex" : "none";
+    document.querySelectorAll("[data-ob-vps-mode]").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-ob-vps-mode") === obState.vpsSubmode);
+    });
+
+    // Sync Cloudflare prefilled template link if available
+    var conn = (state && state.connection) || {};
+    var cfTpl = conn.cloudflare_token_template_url || state.cloudflare_token_template_url || "";
+    if (cfTpl && $("ob-open-cf-tpl-btn")) {
+      $("ob-open-cf-tpl-btn").href = cfTpl;
+    }
+
+    // Step 2: URL & Host action buttons
+    var tInfo = getObTargetUrl();
+    if ($("ob-url-badge")) {
+      $("ob-url-badge").textContent =
+        obState.host === "chatgpt"
+          ? tInfo.isRo
+            ? "ChatGPT Read-Only"
+            : "ChatGPT MCP"
+          : "Gemini MCP";
+    }
+    if ($("ob-target-url-box")) {
+      $("ob-target-url-box").textContent = tInfo.ready
+        ? tInfo.url
+        : route === "cloudflare" && !tInfo.gwReady
+        ? "请先完成上方 Cloudflare 3 秒部署以生成固定网址…"
+        : route === "self_hosted" && !tInfo.gwReady
+        ? "请先完成上方云服务器或固定域名配置…"
+        : "正在建立加密连接通道…";
+    }
+    var mainBtn = $("ob-copy-and-open-btn");
+    if (mainBtn) {
+      mainBtn.disabled = !tInfo.ready;
+      mainBtn.textContent =
+        obState.host === "chatgpt" ? "复制地址并打开 ChatGPT 插件页" : "复制地址并打开 Gemini 连接器";
+    }
+    if ($("ob-only-copy-url-btn")) {
+      $("ob-only-copy-url-btn").disabled = !tInfo.ready;
+    }
+    if ($("ob-steps-gemini")) $("ob-steps-gemini").style.display = obState.host === "gemini" ? "flex" : "none";
+    if ($("ob-steps-chatgpt")) $("ob-steps-chatgpt").style.display = obState.host === "chatgpt" ? "flex" : "none";
+
+    var dynCode = conn.dynamic_pair_code || state.dynamic_pair_code || "------";
+    if ($("ob-pair-code-inline")) $("ob-pair-code-inline").textContent = dynCode;
+
+    var sessArr = conn.authorized_sessions || state.authorized_sessions || [];
+    var sessCnt = typeof conn.authorized_sessions_count === "number" ? conn.authorized_sessions_count : sessArr.length;
+    var stBox = $("ob-live-conn-status");
+    var stTxt = $("ob-conn-status-text");
+    if (stBox && stTxt) {
+      if (sessCnt >= 1) {
+        stBox.classList.add("connected");
+        stTxt.textContent = "已检测到网页端授权成功（已连 " + sessCnt + " 个会话）！请继续第 3 步发送首句测试词。";
+      } else {
+        stBox.classList.remove("connected");
+        stTxt.textContent = "正在等待网页端完成授权连接（点完允许后此处会自动变绿打勾）…";
+      }
+    }
+
+    // Step 3: Primary workspace & wake prompt
+    var ws = (state && state.workspaces) || {};
+    var pri = ws.primary || (ws.roots && ws.roots[0]) || "";
+    if ($("ob-primary-ws-box")) $("ob-primary-ws-box").textContent = pri || "(默认工作区)";
+    var pfx = typeof getEffectiveToolPrefix === "function" ? getEffectiveToolPrefix() : "pc";
+    var wakeStr =
+      obState.host === "chatgpt"
+        ? "@WebAI2PC 请调用 " + pfx + "_get_status 查看我的电脑状态与工作目录"
+        : buildWakeTestPrompt();
+    if ($("ob-wake-preview-code")) $("ob-wake-preview-code").textContent = wakeStr;
+
+    if (window.WebAI2PCI18n && window.WebAI2PCI18n.getLang() === "en") {
+      window.WebAI2PCI18n.apply("en");
+    }
+  }
+
+  function syncOnboardingWizard(doc) {
+    var band = $("onboarding-wizard-band");
+    if (!band) return;
+    var conn = (doc && doc.connection) || doc || {};
+    var sessArr = conn.authorized_sessions || (doc && doc.authorized_sessions) || [];
+    var sessCnt =
+      typeof conn.authorized_sessions_count === "number"
+        ? conn.authorized_sessions_count
+        : typeof (doc && doc.authorized_sessions_count) === "number"
+        ? doc.authorized_sessions_count
+        : sessArr.length;
+    var rec = (doc && doc.recovery) || (state && state.recovery) || {};
+    var auditCnt = Array.isArray(rec.audit_events) ? rec.audit_events.length : 0;
+
+    // Auto-show when 0 sessions (true first-time setup) and not dismissed, OR when manually opened
+    var shouldShow = obState.manualOpen || (!isOnboardingDismissed() && sessCnt <= 0);
+    // Keep open if already visible and user just connected their 1st session (advance to Step 3!)
+    if (band.style.display !== "none" && !isOnboardingDismissed()) {
+      shouldShow = true;
+      if (obState.prevSessions === 0 && sessCnt >= 1 && obState.step === 2) {
+        setObStep(3);
+        showToast("已检测到网页端授权成功！请复制第 3 步首句测试词发送验证。", false);
+      }
+      // Auto-complete & collapse once first tool call arrives while on Step 3
+      if (sessCnt >= 1 && auditCnt >= 1 && !obState.manualOpen && obState.step === 3) {
+        setOnboardingDismissed(true);
+        band.style.display = "none";
+        showToast("首句调用已跑通，配置向导已自动收起。", false);
+        obState.prevSessions = sessCnt;
+        return;
+      }
+    }
+    obState.prevSessions = sessCnt;
+    band.style.display = shouldShow ? "block" : "none";
+    if (shouldShow) {
+      renderObDynamicState();
+    }
+  }
+
+  function bindOnboardingEvents() {
+    var band = $("onboarding-wizard-band");
+    if (!band) return;
+
+    // Auto-preselect browser language if user hasn't explicitly chosen yet
+    try {
+      if (!localStorage.getItem("webai2pc_lang") && /^en\b/i.test(navigator.language || "")) {
+        if (window.WebAI2PCI18n) window.WebAI2PCI18n.setLang("en");
+      }
+    } catch (e) {}
+
+    // Stepper tab clicks
+    [1, 2, 3].forEach(function (n) {
+      var tab = $("ob-step-tab-" + n);
+      if (tab) {
+        tab.addEventListener("click", function () {
+          setObStep(n);
+        });
+      }
+    });
+
+    // Open / Dismiss wizard
+    if ($("open-onboarding-btn")) {
+      $("open-onboarding-btn").addEventListener("click", function () {
+        obState.manualOpen = true;
+        band.style.display = "block";
+        setObStep(1);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    }
+    function closeWizard() {
+      obState.manualOpen = false;
+      setOnboardingDismissed(true);
+      band.style.display = "none";
+    }
+    if ($("ob-dismiss-btn")) $("ob-dismiss-btn").addEventListener("click", closeWizard);
+    if ($("ob-finish-btn")) $("ob-finish-btn").addEventListener("click", closeWizard);
+
+    // Copy AI Setup Guide prompt
+    if ($("ob-copy-ai-guide-btn")) {
+      $("ob-copy-ai-guide-btn").addEventListener("click", function () {
+        var isEn = window.WebAI2PCI18n && window.WebAI2PCI18n.getLang() === "en";
+        var guidePrompt = isEn
+          ? "Please act as my WebAI2PC setup wizard. Read https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/en/AI_SETUP_GUIDE.md and guide me step-by-step (one short step at a time) to connect my local PC console (http://127.0.0.1:8096/) to Web Gemini or Web ChatGPT."
+          : "请做我的 WebAI2PC 配置向导，先读取官方配置教程 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md ，每次只教当前这一步，带我把本地控制台（http://127.0.0.1:8096/）连上网页版 Gemini 或 ChatGPT。";
+        copyText(guidePrompt, $("ob-copy-ai-guide-btn"));
+        showToast(isEn ? "Copied AI setup guide prompt!" : "已复制 AI 陪配提示词，直接粘贴给任意网页 AI 即可", false);
+      });
+    }
+
+    // Step 1: Language choice
+    document.querySelectorAll("#ob-lang-group [data-ob-lang]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var l = btn.getAttribute("data-ob-lang") === "en" ? "en" : "zh";
+        if (window.WebAI2PCI18n) window.WebAI2PCI18n.setLang(l);
+        renderObDynamicState();
+      });
+    });
+
+    // Step 1: Host choice + sync main workbench host switcher
+    document.querySelectorAll("#ob-host-group [data-ob-host]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var h = btn.getAttribute("data-ob-host") === "chatgpt" ? "chatgpt" : "gemini";
+        obState.host = h;
+        if (typeof switchHostScene === "function") switchHostScene(h);
+        renderObDynamicState();
+      });
+    });
+    document.querySelectorAll("#ob-chatgpt-tier-wrap [data-ob-cgpt-tier]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        obState.chatgptTier = btn.getAttribute("data-ob-cgpt-tier") === "personal" ? "personal" : "workspace";
+        renderObDynamicState();
+      });
+    });
+
+    // Step 1: Resource checkboxes
+    if ($("ob-chk-has-cf")) {
+      $("ob-chk-has-cf").addEventListener("change", function () {
+        obState.hasCf = Boolean($("ob-chk-has-cf").checked);
+        if (obState.hasCf) obState.activeRoute = "cloudflare";
+        renderObDynamicState();
+      });
+    }
+    if ($("ob-chk-has-vps")) {
+      $("ob-chk-has-vps").addEventListener("change", function () {
+        obState.hasVps = Boolean($("ob-chk-has-vps").checked);
+        if (obState.hasVps && !obState.hasCf) obState.activeRoute = "self_hosted";
+        renderObDynamicState();
+      });
+    }
+
+    // Step navigation buttons
+    if ($("ob-next-to-2-btn")) {
+      $("ob-next-to-2-btn").addEventListener("click", function () {
+        var route = computeObRoute();
+        if (route === "instant" && $("activate-card1-btn")) {
+          var conn = (state && state.connection) || {};
+          if (!conn.public_https_ready) $("activate-card1-btn").click();
+        }
+        setObStep(2);
+      });
+    }
+    if ($("ob-back-to-1-btn")) {
+      $("ob-back-to-1-btn").addEventListener("click", function () { setObStep(1); });
+    }
+    if ($("ob-next-to-3-btn")) {
+      $("ob-next-to-3-btn").addEventListener("click", function () { setObStep(3); });
+    }
+    if ($("ob-back-to-2-btn")) {
+      $("ob-back-to-2-btn").addEventListener("click", function () { setObStep(2); });
+    }
+
+    // Step 2: Dual route switcher & VPS submode
+    document.querySelectorAll("#ob-dual-route-bar [data-ob-route]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        obState.activeRoute = btn.getAttribute("data-ob-route") === "self_hosted" ? "self_hosted" : "cloudflare";
+        renderObDynamicState();
+      });
+    });
+    document.querySelectorAll("[data-ob-vps-mode]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        obState.vpsSubmode = btn.getAttribute("data-ob-vps-mode") === "domain" ? "domain" : "vps";
+        renderObDynamicState();
+      });
+    });
+
+    // Step 2: Delegate Cloudflare deploy to existing #deploy-cf-workers-btn
+    if ($("ob-deploy-cf-btn")) {
+      $("ob-deploy-cf-btn").addEventListener("click", function () {
+        var tok = $("ob-cf-token-input") ? $("ob-cf-token-input").value.trim() : "";
+        var dom = $("ob-cf-domain-input") ? $("ob-cf-domain-input").value.trim() : "";
+        if ($("cf-api-token-input")) $("cf-api-token-input").value = tok;
+        if ($("cf-custom-domain-input")) $("cf-custom-domain-input").value = dom;
+        if ($("deploy-cf-workers-btn")) $("deploy-cf-workers-btn").click();
+        if ($("ob-cf-token-input")) $("ob-cf-token-input").value = "";
+      });
+    }
+
+    // Step 2: Delegate VPS / Custom Domain to existing settings handlers
+    if ($("ob-deploy-vps-btn")) {
+      $("ob-deploy-vps-btn").addEventListener("click", function () {
+        var ip = $("ob-vps-ip-input") ? $("ob-vps-ip-input").value.trim() : "";
+        var pw = $("ob-vps-pw-input") ? $("ob-vps-pw-input").value : "";
+        if ($("vps-prov-host-input")) $("vps-prov-host-input").value = ip;
+        if ($("vps-prov-pw-input")) $("vps-prov-pw-input").value = pw;
+        if (!pw && $("chk-vps-use-ssh-key")) $("chk-vps-use-ssh-key").checked = true;
+        if ($("vps-provision-btn")) $("vps-provision-btn").click();
+      });
+    }
+    if ($("ob-save-domain-btn")) {
+      $("ob-save-domain-btn").addEventListener("click", function () {
+        var u = $("ob-custom-domain-url-input") ? $("ob-custom-domain-url-input").value.trim() : "";
+        if (!u) return showToast("请输入完整的 HTTPS 域名地址", true);
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: {
+            action: "save_gateway_config",
+            gateway_id: "self_hosted",
+            submode: "custom",
+            public_url: u,
+            enabled: true,
+          },
+        }).then(function (d) {
+          if (!d.ok) return showToast(d.error || "保存域名失败", true);
+          renderAll(d);
+          showToast("自有固定域名网关已启用", false);
+        });
+      });
+    }
+
+    // Step 2: Copy & Open Host
+    if ($("ob-copy-and-open-btn")) {
+      $("ob-copy-and-open-btn").addEventListener("click", function () {
+        var tInfo = getObTargetUrl();
+        if (!tInfo.ready) return;
+        copyText(tInfo.url, $("ob-copy-and-open-btn"));
+        if (obState.host === "chatgpt") {
+          window.open("https://chatgpt.com/plugins", "_blank", "noopener,noreferrer");
+        } else {
+          probeAndOpenGeminiConnectors();
+        }
+      });
+    }
+    if ($("ob-only-copy-url-btn")) {
+      $("ob-only-copy-url-btn").addEventListener("click", function () {
+        var tInfo = getObTargetUrl();
+        if (tInfo.ready) copyText(tInfo.url, $("ob-only-copy-url-btn"));
+      });
+    }
+    if ($("ob-target-url-box")) {
+      $("ob-target-url-box").addEventListener("click", function () {
+        var tInfo = getObTargetUrl();
+        if (tInfo.ready) copyText(tInfo.url, $("ob-only-copy-url-btn"));
+      });
+    }
+    if ($("ob-copy-cgpt-work-btn")) {
+      $("ob-copy-cgpt-work-btn").addEventListener("click", function () {
+        var tInfo = getObTargetUrl();
+        var btnTarget = tInfo.isRo ? $("copy-chatgpt-assist-ro-btn") : $("copy-chatgpt-assist-full-btn");
+        if (btnTarget && !btnTarget.disabled) {
+          btnTarget.click();
+        } else if (tInfo.ready) {
+          copyText(tInfo.url, $("ob-copy-cgpt-work-btn"));
+        }
+      });
+    }
+
+    // Step 3: Pick folder & Copy wake / skill
+    if ($("ob-pick-folder-btn")) {
+      $("ob-pick-folder-btn").addEventListener("click", function () {
+        if ($("pick-local-folder-btn")) $("pick-local-folder-btn").click();
+      });
+    }
+    if ($("ob-copy-wake-btn")) {
+      $("ob-copy-wake-btn").addEventListener("click", function () {
+        var codeEl = $("ob-wake-preview-code");
+        if (codeEl) {
+          copyText(codeEl.textContent, $("ob-copy-wake-btn"));
+          showToast("已复制首句测试词，去网页聊天框发送即可验证", false);
+        }
+      });
+    }
+    if ($("ob-copy-skill-btn")) {
+      $("ob-copy-skill-btn").addEventListener("click", function () {
+        var targetSkillBtn = obState.host === "chatgpt" ? $("copy-chatgpt-skill-btn") : $("copy-wake-skill-btn");
+        if (targetSkillBtn) targetSkillBtn.click();
+      });
+    }
+  }
+
   function boot() {
     initTheme();
+    bindOnboardingEvents();
     var bootEl = $("studio-boot-data");
     if (bootEl && bootEl.textContent) {
       try {
@@ -4733,11 +5279,15 @@
       } catch (e) {}
     }
     bindEvents();
-    // Honor URL hash #settings/<category> on initial load
+    // Honor URL hash #settings/<category> or #onboarding on initial load
     var h = String(window.location.hash || "");
     if (h.indexOf("#settings") === 0) {
       var parts = h.split("/");
       openSettings(parts[1] || "gateways");
+    } else if (h === "#onboarding") {
+      obState.manualOpen = true;
+      if ($("onboarding-wizard-band")) $("onboarding-wizard-band").style.display = "block";
+      setObStep(1);
     }
   }
 

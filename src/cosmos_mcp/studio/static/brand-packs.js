@@ -1761,3 +1761,900 @@
     module.exports = api;
   }
 })(typeof window !== "undefined" ? window : globalThis);
+
+/* ==========================================================================
+   WebAI2PC Shared Bilingual i18n Engine (ZH / EN)
+   Default: "zh" (preserves canonical Chinese DOM verbatim)
+   Toggle:  #lang-toggle-btn in top header (persisted in localStorage)
+   ========================================================================== */
+(function (global) {
+  "use strict";
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+
+  var STORAGE_KEY = "webai2pc_lang";
+  var ZH_TO_EN = {
+    "WebAI2PC · 本地控制台": "WebAI2PC · Local Console",
+    "WebAI2PC · 交互式使用教程": "WebAI2PC · Interactive Guides",
+    "· 交互式使用教程": "· Interactive Guides",
+    "在线": "Online",
+    "离线": "Offline",
+    "连接中": "Connecting",
+    "工作区开发": "Workspace Dev",
+    "全盘开发": "Full-Disk Dev",
+    "仅改文件": "Edit Files Only",
+    "只读": "Read-Only",
+    "一键只读": "Read-Only",
+    "恢复开发": "Resume Dev",
+    "实战教程": "Guides",
+    "设置": "Settings",
+    "← 返回主控台": "← Back to Console",
+    "返回 Studio 控制台": "Back to Console",
+    "深色模式": "Dark Mode",
+    "浅色模式": "Light Mode",
+    "离线示例预览": "Offline Preview",
+    "正在检测本地 Studio 服务连接状态…": "Checking local Studio service status…",
+    "输入本机连接口令解锁本地应急开关": "Enter Local Passcode to Unlock Controls",
+    "安全控制面板默认仅开放本机": "This console defaults to local loopback",
+    "访问（公网网关自动拦截外部管理请求）；本机会话失效时可输入口令重新验证本地应急开关。": "access only (public gateways block external admin requests). Re-enter your passcode if the local session expires.",
+    "显示": "Show",
+    "隐藏": "Hide",
+    "验证并解锁": "Verify & Unlock",
+    "本机直连已自动授权": "Local loopback auto-authorized",
+    "解锁会话": "Unlock Session",
+    "复制 /mcp 地址": "Copy /mcp URL",
+    "网页版 Gemini": "Web Gemini",
+    "网页版 ChatGPT": "Web ChatGPT",
+    "已连": "Connected",
+    "复制连接地址": "Copy MCP URL",
+    "复制 Gemini 连接地址": "Copy Gemini MCP URL",
+    "复制 ChatGPT 连接地址": "Copy ChatGPT MCP URL",
+    "已复制": "Copied",
+    "详情与配对 ▾": "Details & Pairing ▾",
+    "收起详情 ▴": "Hide Details ▴",
+    "接入向导": "Setup Wizard",
+    "首次接入向导": "Quick Setup",
+    "3 步连上你的网页端 AI": "Connect Your Web AI in 3 Steps",
+    "语言、平台与资源": "Preferences & Assets",
+    "生成网址并授权": "Generate URL & Connect",
+    "选目录与首句验证": "Folder & First Prompt",
+    "让 AI 带我配": "AI-Guided Setup",
+    "跳过向导 ×": "Skip ×",
+    "1. 界面语言": "1. Interface Language",
+    "2. 准备连接哪个网页 AI？": "2. Which Web AI are you connecting?",
+    "网页版 Google Gemini": "Web Google Gemini",
+    "支持桌面浏览器任务模式与同账号手机端 Gemini App 同步远控": "Works with desktop Gemini Task Mode and mobile Gemini App on the same account",
+    "装好后日常用普通 Chat 零智能体额度改代码，长任务用 Work": "Use regular Chat daily with zero agent quota cost, and Work for long tasks",
+    "账号类型：": "Account plan:",
+    "Team / Business / Edu（全功能）": "Team / Business / Edu (Full R/W)",
+    "个人 Plus / Pro（只读）": "Personal Plus / Pro (Read-Only)",
+    "3. 勾选你手头已有的资源（可不勾，直接免注册开箱用）": "3. Check any resources you already have (optional — works out-of-the-box without any)",
+    "我有 Cloudflare 账号（或愿用 Google 快捷登录）": "I have a Cloudflare account (or can sign in with Google)",
+    "粘贴一次令牌，3 秒自动部署免费专属网关（": "Paste a token once to deploy a free permanent gateway (",
+    "），关机重启永不变址。": ") in 3s — URL never changes across reboots.",
+    "我有自己的云服务器（VPS）或自有固定域名": "I have my own cloud server (VPS) or custom HTTPS domain",
+    "一键在云服务器部署 24 小时常驻主站，或接入已有 HTTPS 反代与隧道域名。": "Deploy a 24/7 VPS relay in one click or attach an existing HTTPS domain/tunnel.",
+    "未勾选额外资源：将使用「免登录直连固定通道」，零注册直接生成连接网址。": "No extra accounts checked: using Instant No-Login Direct Tunnel out of the box.",
+    "已选 Cloudflare 账号：下一步将引导你 3 秒自动部署终身固定网址（*.workers.dev）。": "Cloudflare selected: Step 2 will deploy your permanent *.workers.dev gateway in 3 seconds.",
+    "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站或绑定自有 HTTPS 域名。": "VPS / Domain selected: Step 2 will set up your 24/7 VPS relay or custom HTTPS domain.",
+    "已勾选两项资源：下一步默认优先使用更省心的「Cloudflare 3 秒固定网关」，也可一键切到自有服务器。": "Both checked: defaulting to Cloudflare 3s Fixed Gateway (easiest), with a 1-click switch to your VPS.",
+    "所有设置后续随时可在右上角「设置」中更改": "You can change any of these anytime in Settings",
+    "下一步：生成连接网址 →": "Next: Generate MCP URL →",
+    "你同时勾选了两项资源，当前使用：": "Both assets checked — active route:",
+    "Cloudflare 3 秒固定网关（省心推荐）": "Cloudflare 3s Fixed Gateway (Recommended)",
+    "自有云服务器 / 域名": "My Cloud Server / Domain",
+    "部署 Cloudflare 专属固定网关": "Deploy Cloudflare Fixed Gateway",
+    "令牌仅用于本次部署，完成后立即销毁": "Token is used once and wiped immediately after deploy",
+    "① 打开 Cloudflare 预填令牌页": "① Open Cloudflare Token Page",
+    "② 粘贴生成的 Cloudflare API 令牌": "② Paste Cloudflare API Token",
+    "选填：自定义域名（无则留空）": "Optional: Custom domain (leave blank if none)",
+    "③ 3 秒部署固定网址": "③ Deploy in 3s",
+    "接入自有云服务器或固定域名": "Connect Your VPS or Custom Domain",
+    "云服务器一键建主站": "1-Click 24/7 VPS Relay",
+    "已有 HTTPS 域名": "Existing HTTPS Domain",
+    "服务器公网 IP（如 203.0.113.10）": "Server public IP (e.g. 203.0.113.10)",
+    "SSH 密码（已配本机密钥可留空）": "SSH password (leave blank if using local SSH key)",
+    "一键部署 24h 主站": "Deploy 24/7 Relay",
+    "输入已反代本机端口的完整 HTTPS 域名（如 https://mcp.example.com）": "Full HTTPS domain forwarding to this PC (e.g. https://mcp.example.com)",
+    "保存并启用此域名": "Save & Enable Domain",
+    "请先完成上方 Cloudflare 3 秒部署以生成固定网址…": "Complete the 3s Cloudflare deploy above to generate your fixed URL…",
+    "请先完成上方云服务器或固定域名配置…": "Complete the VPS or custom domain setup above first…",
+    "复制地址并打开 Gemini 连接器": "Copy URL & Open Gemini Connectors",
+    "复制地址并打开 ChatGPT 插件页": "Copy URL & Open ChatGPT Plugins",
+    "仅复制地址": "Copy URL Only",
+    "在打开的 Gemini 页面点": "In Gemini Connectors, click",
+    "，名称填": ", set Name to",
+    "，粘贴上方地址（Client ID / Secret 留空）。": ", and paste the URL above (leave Client ID / Secret blank).",
+    "弹出确认页点绿色": "On the consent screen, click",
+    "「本机一键允许连接」": "\"Allow from This PC\"",
+    "（若用手机绑则核对配对码：": " (or verify code on mobile: ",
+    "），随后在连接器详情把": "), then set",
+    "设为": "to",
+    "在本机已登录的 ChatGPT 左侧点": "In ChatGPT on this PC, open",
+    "，粘贴上方地址并选": ", paste the URL above, choose",
+    "创建后点": "and click",
+    "跳转确认页直接点绿色": "On the consent screen, click",
+    "；若想让 ChatGPT Work 模式受控浏览器代填，也可点：": "; or let ChatGPT Work mode fill it for you:",
+    "正在等待网页端完成授权连接（点完允许后此处会自动变绿打勾）…": "Waiting for web host authorization (auto-completes once you click Allow)…",
+    "正在等待网页端完成授权连接（点完允许后此处会自动打勾）…": "Waiting for web host authorization (auto-completes once you click Allow)…",
+    "← 上一步": "← Back",
+    "下一步：选目录与发首句 →": "Next: Folder & First Prompt →",
+    "1. 确认开放给 AI 的本地工作目录": "1. Confirm Local Workspace Folder",
+    "换个文件夹": "Change Folder",
+    "AI 默认只在此目录内读写与运行代码；每次修改自动留存快照，可在主控台右栏一键撤回。": "AI reads/writes inside this folder by default. Every file edit saves an instant undo snapshot.",
+    "2. 复制第一句测试指令发给网页端 AI": "2. Send Your First Test Prompt in Web AI",
+    "复制首句测试词": "Copy Test Prompt",
+    "完成并进入主控台": "Finish & Enter Console",
+    "通道设置": "Gateways",
+    "已连上网页端 AI · 首句发送唤醒词即可开始": "Web AI connected · Send the wake word to start",
+    "复制首句唤醒测试词": "Copy First Wake Prompt",
+    "复制 AI 操作守则（推荐存入 Skills）": "Copy AI Rules (Save to Skills)",
+    "开机自启": "Launch at Login",
+    "当前未开启公网 HTTPS 通道，网页端 AI 需要公网 HTTPS 地址才能连接。": "No public HTTPS gateway is active. Web AI hosts require an HTTPS endpoint.",
+    "一键开启默认连接网关": "Enable Default Gateway",
+    "本机浏览器暂未直连 *.workers.dev（首次绑定提示）": "Local browser cannot reach *.workers.dev directly (first-time setup)",
+    "若浏览器打开连接器授权页加载缓慢，可在代理软件临时切全局 10 秒完成绑定，或在设置页填写自定义域名。": "If the connector consent page loads slowly, switch your proxy to Global for 10s or configure a custom domain in Settings.",
+    "继续打开 Gemini": "Open Gemini Anyway",
+    "自定义域名": "Custom Domain",
+    "正在建立加密连接通道…": "Establishing encrypted tunnel…",
+    "打开 Gemini 连接器": "Open Gemini Connectors",
+    "Team / Business / Enterprise / Edu 工作区（全功能读写 · 装好后日常用 Chat 省额度，长任务用 Work）": "Team / Business / Enterprise / Edu Workspace (Full Read/Write · Use Chat daily to save quota, Work for long runs)",
+    "Team / Business / Enterprise / Edu 工作区（全功能读写 · Chat 与 Work 通用）": "Team / Business / Enterprise / Edu Workspace (Full Read/Write · Chat & Work)",
+    "复制地址": "Copy URL",
+    "复制给 Work 模式帮我连接": "Copy for ChatGPT Work Mode Setup",
+    "复制给 ChatGPT 帮我连接": "Copy for ChatGPT Setup",
+    "个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用，装好后日常用 Chat 省额度）": "Personal Plus / Pro Account (Read-Only · Use when write tools are restricted)",
+    "个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用）": "Personal Plus / Pro Account (Read-Only · Use when write tools are restricted)",
+    "复制只读": "Copy Read-Only",
+    "首次绑定步骤与唤醒词": "First-Time Setup & Wake Words",
+    "复制唤醒词": "Copy Wake Word",
+    "复制 AI 守则": "Copy AI Rules",
+    "复制 ChatGPT 首句": "Copy ChatGPT Prompt",
+    "复制 ChatGPT 守则": "Copy ChatGPT Rules",
+    "图文教程": "Visual Guides",
+    "配对与已连会话": "Pairing & Sessions",
+    "6位码": "6-Digit Code",
+    "核对": "Verify",
+    "复制 6 位码": "Copy 6-Digit Code",
+    "复制核对码": "Copy Verify Code",
+    "20 位固定备用口令（仅回环被拦截时使用）": "20-Char Backup Passcode (only if loopback is blocked)",
+    "显示口令": "Show Passcode",
+    "复制备用口令": "Copy Backup Passcode",
+    "已连接网页会话列表": "Connected Web Sessions",
+    "全部断开": "Disconnect All",
+    "开放工作目录": "Workspace Folders",
+    "当前权限设置": "Permission Tier",
+    "点击即生效": "Instant",
+    "工作目录内读写与运行": "Read, edit & run inside workspaces",
+    "不限目录读写与运行（高权限）": "Full-disk read, edit & run (elevated)",
+    "仅查看与搜索，禁止改动": "View & search only, no writes",
+    "仅修改文件，禁止运行命令": "Edit files only, no shell commands",
+    "当前为「全盘开发（不限目录）」模式，下方列表仅作为未传路径时的默认起始目录。": "Full-Disk Dev mode is active. Folders below serve as default working directories when no path is given.",
+    "添加": "Add",
+    "选文件夹": "Browse…",
+    "以只读参考目录添加": "Add as read-only reference",
+    "浏览目录树": "Folder Tree",
+    "常用目录快选 ▸": "Quick Picks ▸",
+    "自动扫描的本机常见代码目录": "Detected local project directories",
+    "刷新": "Refresh",
+    "浏览本机盘符与文件夹": "Browse Local Drives & Folders",
+    "收起": "Collapse",
+    "盘符": "Drives",
+    "上一级": "Up",
+    "本机磁盘列表": "Local Drives",
+    "添加当前目录": "Add Folder",
+    "设为主目录": "Set Primary",
+    "新建": "New Folder",
+    "主读写目录": "Primary Read/Write",
+    "只读参考目录": "Read-Only Reference",
+    "读写": "Read/Write",
+    "只读父目录": "Read-Only Parent",
+    "移除": "Remove",
+    "实时动态与撤回": "Live Activity & Undo",
+    "在途任务": "Running Jobs",
+    "修改撤回": "Undo Edits",
+    "回收箱": "Trash",
+    "调用记录": "Call Log",
+    "查看后台命令输出流，可随时终止卡死进程": "Inspect background command streams and stop stuck processes anytime",
+    "终止全部": "Stop All",
+    "任务实时日志": "Live Job Output",
+    "复制日志": "Copy Log",
+    "关闭": "Close",
+    "查看实时日志": "View Log",
+    "写文件前自动留存快照，点「查看对比 Diff」审阅后回退": "Snapshots are saved before every edit. Review the diff and roll back in one click",
+    "查看对比 Diff": "View Diff",
+    "被清理的文件保存在可恢复安全回收箱，一键原位还原": "Deleted files stay in the recoverable trash for one-click restore",
+    "原位还原": "Restore",
+    "全部": "All",
+    "仅异常": "Errors Only",
+    "连接与网关": "Gateways",
+    "待连": "Idle",
+    "环境与系统": "Environment",
+    "工具与扩展": "Tools & Packs",
+    "工作区": "Workspace",
+    "全盘": "Full-Disk",
+    "技能管理": "Skills",
+    "外观与图标": "Appearance",
+    "支持多网关同时开启；点击任意通道展开配置，右上角开关可独立启停。": "Multiple gateways can run simultaneously. Click any card to configure, or toggle its switch independently.",
+    "第 1 类 · 默认免配置": "Tier 1 · Zero-Config Default",
+    "一键上手免登录直连": "Instant No-Login Direct Tunnel",
+    "免登录直连": "Direct Tunnel",
+    "零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡。": "No account or setup required. Copy the URL immediately and optionally export an encrypted PNG recovery card.",
+    "当前使用中": "Active",
+    "当前正在使用此方式": "Currently Active",
+    "已连通": "Connected",
+    "配置 ▾": "Configure ▾",
+    "复制 Plus/Pro 只读": "Copy Plus/Pro Read-Only",
+    "复制此卡地址": "Copy Card URL",
+    "使用一键上手模式": "Use Direct Tunnel",
+    "改用临时快速通道": "Switch to Quick Tunnel",
+    "导出身份恢复卡 PNG": "Export Recovery PNG",
+    "导入恢复卡 PNG": "Import Recovery PNG",
+    "第 2 类 · 无服务器固定网址": "Tier 2 · Serverless Fixed URL",
+    "Cloudflare 专属固定网关": "Cloudflare Fixed Gateway",
+    "Cloudflare 网关": "Cloudflare Gateway",
+    "支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址。": "Sign in with Google, paste an API token once, and deploy a permanent serverless gateway in 3 seconds.",
+    "终身固定推荐": "Recommended",
+    "未开启": "Off",
+    "已保存固定网关网址，直接打开右上角开关即可连接，无需重填令牌。": "Saved fixed gateway URL found. Toggle the switch above to connect without re-entering a token.",
+    "第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）": "Step 1: Open Cloudflare pre-filled token page (Google login supported)",
+    "第 2 步：粘贴 API 令牌（部署后立即销毁）": "Step 2: Paste API token (wiped immediately after deploy)",
+    "选填：自定义域名（Active Zone，国内免切代理）": "Optional: Custom domain (Active Zone)",
+    "检测到多个 Cloudflare 账号，请选择部署目标账号：": "Multiple Cloudflare accounts detected. Choose a target account:",
+    "一键部署并开启（约 3 秒）": "Deploy & Enable (~3s)",
+    "第 3 类 · 自有资产合一": "Tier 3 · Self-Hosted",
+    "自有云服务器 24h 主站 或 自有固定域名": "Self-Hosted 24/7 VPS or Custom Domain",
+    "自有主站": "Custom Server",
+    "一键在云服务器建 24h 主站，或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。": "Deploy a 24/7 VPS relay in one click or attach your own Cloudflare Tunnel / Caddy / Nginx / FRP domain.",
+    "服务器 / 域名": "VPS / Domain",
+    "自有服务器建 24h 主站": "Deploy 24/7 VPS Relay",
+    "自有固定域名 / 通用 HTTPS 反代": "Custom Domain / Reverse Proxy",
+    "服务器公网 IP（必填）": "Server Public IP (required)",
+    "SSH 密码（已配密钥可留空，不落盘）": "SSH Password (optional if key-based, never saved)",
+    "使用本机默认 SSH 密钥免密登录": "Use default local SSH key",
+    "高级项：SSH 私钥路径 / 端口 / 用户名 / 选填域名": "Advanced: SSH Key Path / Port / Username / Optional Domain",
+    "一键部署 24h 主站并开启": "Deploy 24/7 Relay & Enable",
+    "固定公网 HTTPS 域名": "Fixed Public HTTPS Domain",
+    "选填：Cloudflare Named Tunnel 令牌": "Optional: Cloudflare Named Tunnel Token",
+    "已有 SSH 免密反向隧道参数（可选）": "Existing SSH Reverse Tunnel Options (optional)",
+    "保存并开启此网关": "Save & Enable Gateway",
+    "配置默认 Python / Conda 解释器、开机与防休眠选项，以及本地后台服务控制。": "Configure the default Python/Conda runtime, startup & awake behavior, and local daemon controls.",
+    "默认 Python / Conda 解释器": "Default Python / Conda Interpreter",
+    "检测到的可用解释器": "Detected Interpreters",
+    "自动识别项目虚拟环境或系统默认解释器": "Auto-detect project venv or system default",
+    "自定义解释器路径（留空自动探测）": "Custom interpreter path (leave blank to auto-detect)",
+    "保存路径": "Save Path",
+    "系统运行行为": "System Behavior",
+    "开机自动启动": "Launch at Login",
+    "下次开机自动在后台拉起本地服务与已开启网关": "Start local service and enabled gateways automatically on login",
+    "插电防自动休眠": "Prevent Sleep on AC Power",
+    "外接电源时阻止系统睡眠（笔记本物理合盖仍会由硬件断网）": "Keep system awake while plugged in (closing a laptop lid still sleeps)",
+    "显示系统托盘状态图标": "Show System Tray Icon",
+    "在系统右下角显示在线灯，支持右键快速打开控制台或切只读": "Show status indicator in the tray with quick console and read-only actions",
+    "服务控制": "Service Control",
+    "确认执行后台服务操作？": "Confirm background service action?",
+    "确认执行": "Confirm",
+    "取消": "Cancel",
+    "本地后台服务启停": "Local Daemon Lifecycle",
+    "重启服务会短暂中断当前正在执行的工具调用": "Restarting briefly interrupts any in-flight tool calls",
+    "锁定远程会话": "Lock Remote Sessions",
+    "重启服务": "Restart Service",
+    "停止服务": "Stop Service",
+    "控制确认策略、可选扩展包、多机工具前缀与 16 项内置核心工具清单。": "Manage confirmation policies, optional extension packs, multi-PC tool prefixes, and the 16 built-in core tools.",
+    "安全确认与扩展包": "Confirmations & Extension Packs",
+    "写文件与运行命令前向宿主请求确认": "Ask host for confirmation before writes or commands",
+    "只读模式自动关闭": "Auto-off in Read-Only",
+    "关闭时配合宿主 Always allow 保持连贯开发；开启后每次写入或运行命令都会弹确认": "Turn off with Always Allow for smooth flow; turn on to confirm every write/command",
+    "受管浏览器包": "Managed Browser Pack",
+    "启动独立隔离浏览器完成网页查阅与截图，不触碰个人浏览器窗口": "Launch an isolated browser for web checks and screenshots without touching personal profiles",
+    "桌面窗口操控包": "Desktop Automation Pack",
+    "提供离屏窗口画面感知与受控界面辅助，检测到键鼠活跃时自动礼让": "Off-screen window perception and guarded UI automation that yields to human input",
+    "扫描本机全局技能目录（如 .claude / .codex）": "Scan global local skill folders (.claude / .codex)",
+    "默认关闭以保持项目与受管技能库隔离；开启后只读发现本机其他编程工具全局技能": "Off by default for isolation; enable to discover global skills read-only",
+    "多设备工具前缀": "Multi-Device Tool Prefix",
+    "本机工具前缀（单台电脑保持默认 pc 即可；多电脑同连一个窗口时区分设备，如 desk / laptop）": "Local tool prefix (keep default 'pc' for one machine; use e.g. desk/laptop for multiple PCs)",
+    "保存工具前缀": "Save Prefix",
+    "默认 16 项核心工具说明": "16 Built-In Core Tools",
+    "点击展开速查表": "Expand Reference",
+    "开箱内置覆盖代码阅读、精准编辑、无窗口命令执行与技能管理的 16 项核心工具。": "16 built-in tools for code reading, surgical editing, windowless shell runs, and skills.",
+    "修改": "Edit",
+    "命令": "Run",
+    "统一管理工作区与受管技能库，内置三级 AST 供应链安全体检与回收箱。": "Manage workspace and managed skills with 3-tier AST supply-chain scanning and trash recovery.",
+    "刷新技能列表": "Refresh Skills",
+    "正在读取本机技能库状态…": "Loading local skills…",
+    "本机技能与详情": "Local Skills",
+    "在线市场与体检安装": "Marketplace & Audit",
+    "新建技能": "New Skill",
+    "全部来源": "All Sources",
+    "当前工作区": "Workspace",
+    "受管技能库": "Managed Library",
+    "其他本地目录": "Other Local",
+    "检索": "Search",
+    "点击左侧技能查看详情与 AST 体检结果": "Select a skill on the left to inspect details and AST audit results",
+    "未选中技能": "No Skill Selected",
+    "本地技能三级 AST 安全体检报告": "3-Tier AST Security Audit Report",
+    "级别": "Level",
+    "规则": "Rule",
+    "文件 (file_rel)": "File (file_rel)",
+    "详情说明": "Details",
+    "查看已自动扫描的技能目录清单": "View scanned skill directories",
+    "在线技能市场聚合检索（skills.sh / ClawHub / GitHub / MCP Registry）": "Federated Skill Search (skills.sh / ClawHub / GitHub / MCP Registry)",
+    "搜索在线市场": "Search Market",
+    "先体检后安装（三级 AST 供应链安全门禁）": "Audit Before Install (3-Tier AST Gate)",
+    "粘贴 GitHub 仓库、ClawHub 标识或本地目录路径，先在内存中扫描再决定是否安装。": "Paste a GitHub repo, ClawHub ID, or local folder path to scan in memory before installing.",
+    "主工作区项目": "Primary Workspace",
+    "执行 AST 体检": "Run AST Audit",
+    "规则编号": "Rule ID",
+    "定位文件 (file_rel)": "File (file_rel)",
+    "检测说明与修复建议": "Findings & Remediation",
+    "我已逐条审阅上述 WARN 风险项与源码文件，确认继续安装": "I have reviewed the WARN items and source files and confirm installation",
+    "若存在同名技能，先移入安全回收箱再覆盖": "Move any existing skill with the same name to Trash first",
+    "确认安装此技能": "Install Skill",
+    "新技能名称（英文/数字/连字符）": "New Skill Name (letters/digits/hyphens)",
+    "保存位置范围": "Target Scope",
+    "受管技能库（所有工作区共用）": "Managed Library (shared across workspaces)",
+    "当前主工作区（.agents/skills/）": "Primary Workspace (.agents/skills/)",
+    "填入模板": "Insert Template",
+    "SKILL.md 完整内容": "Full SKILL.md Content",
+    "若触发 WARN 提示，确认继续保存": "Confirm save if WARN findings occur",
+    "若同名技能已存在，先移入回收箱再覆盖": "Move existing skill to Trash before overwriting",
+    "安全体检并创建技能": "Audit & Create Skill",
+    "移入安全回收箱的技能保留完整目录与哈希，可随时一键恢复。": "Trashed skills retain full folders and hashes for one-click restore.",
+    "刷新回收箱": "Refresh Trash",
+    "切换浅深模式、4 套主题风格包、4 套 IP 图标与转向姿态，偏好保存在本地浏览器。": "Switch light/dark theme, 4 style packs, and icon sets. Preferences are stored locally in your browser.",
+    "节点身份恢复卡 PNG": "Node Identity Recovery Card PNG",
+    "通过加密 PNG 图片备份或迁移本机固定节点身份": "Back up or migrate your fixed node identity via an encrypted PNG",
+    "设置恢复卡加密口令（恢复时需输入同一口令）": "Set recovery card passphrase (required on restore)",
+    "生成并下载身份恢复卡 PNG": "Generate & Download Recovery PNG",
+    "选择备份的身份恢复卡 PNG 文件": "Select Recovery PNG File",
+    "输入导出时设置的加密口令": "Enter the export passphrase",
+    "解密并恢复固定节点身份": "Decrypt & Restore Identity",
+    "文件修改前后对比 (Diff)": "File Edit Diff",
+    "撤回此修改": "Revert Edit",
+    "输入本机连接口令": "Enter local passcode",
+    "输入或粘贴管理口令": "Enter or paste admin passcode",
+    "输入或粘贴文件夹路径，回车添加": "Type or paste a folder path and press Enter",
+    "新子文件夹名": "New subfolder name",
+    "筛选工具名…": "Filter tools…",
+    "粘贴生成的 Cloudflare API 令牌": "Paste Cloudflare API token",
+    "例如 mcp.yourdomain.dpdns.org": "e.g. mcp.yourdomain.dpdns.org",
+    "例如 203.0.113.10": "e.g. 203.0.113.10",
+    "输入服务器 SSH 密码": "Enter server SSH password",
+    "选填 SSH 私钥路径（如 ~/.ssh/id_ed25519）": "Optional SSH key path (e.g. ~/.ssh/id_ed25519)",
+    "用户名 (默认 root)": "Username (default root)",
+    "端口 22": "Port 22",
+    "选填绑定域名（留空自动签发公网 IP 证书）": "Optional domain (leave blank for IP cert)",
+    "例如 https://mcp.yourdomain.com": "e.g. https://mcp.yourdomain.com",
+    "粘贴 eyJ... 令牌（已反代留空）": "Paste eyJ... token (leave blank if proxied)",
+    "SSH 目标（如 root@vps.example.com）": "SSH target (e.g. root@vps.example.com)",
+    "远端转发端口（默认 18096）": "Remote forward port (default 18096)",
+    "公网 HTTPS 访问地址": "Public HTTPS URL",
+    "填写解释器路径或项目 .venv 目录": "Enter interpreter path or project .venv",
+    "默认 pc（小写字母、数字与下划线）": "Default: pc (lowercase, digits, underscore)",
+    "输入名称或关键词检索技能": "Search skills by name or keyword",
+    "输入关键词后按回车或点击搜索，例如 interface-design, pdf": "Type keywords and press Enter, e.g. interface-design, pdf",
+    "输入 owner/repo、https://github.com/... 或本地目录路径": "Enter owner/repo, https://github.com/..., or local path",
+    "例如 my-workflow-helper": "e.g. my-workflow-helper",
+    "输入加密保护口令": "Enter encryption passphrase",
+    "输入恢复口令": "Enter recovery passphrase",
+    "暂无运行中的后台命令。": "No background jobs running.",
+    "暂无待撤回的文件修改快照。": "No file edit snapshots yet.",
+    "安全回收箱为空。": "Trash is empty.",
+    "暂无工具调用记录。": "No tool calls recorded yet.",
+    "暂无已连接网页会话。": "No connected web sessions yet.",
+    "全部 6 大交互式实战教程": "All 6 Interactive Guides",
+    "快速接入与排障": "Quick Setup & Troubleshooting",
+    "工作区账号 Team / Business / Edu（读写全开）": "Workspace Team / Business / Edu (Full Read/Write)",
+    "个人 Plus / Pro 账号（只读查阅）": "Personal Plus / Pro Account (Read-Only)",
+    "不要把网址直接粘进浏览器地址栏。": "Do not open this URL in the browser address bar.",
+    "打开": "Open",
+    "（或左下角「Personal Intelligence → Connected Apps」），点右上角「+ Custom」，粘贴到「MCP Server URL」配置栏后点 Next。": " (or 'Personal Intelligence → Connected Apps' at bottom-left), click '+ Custom', paste into 'MCP Server URL', and click Next.",
+    "），再回到连接器页把 App actions 设为 Always allow。": " on mobile), then return to Connectors and set App actions to Always allow.",
+    "不要把": "Do not open the",
+    "地址直接粘进浏览器地址栏。": "URL in the browser address bar.",
+    "（或左下角「Personal Intelligence → Connected Apps」），点右上角「+ Custom」，把地址粘贴到「MCP Server URL」配置栏点 Next，确认页点「本机一键允许连接」并将 App actions 设为 Always allow，新建对话输入": " (or 'Personal Intelligence → Connected Apps' at bottom-left), click '+ Custom', paste into 'MCP Server URL' and click Next, approve on the consent screen, set App actions to Always allow, then start a new chat with",
+    "开始使用。": "to begin.",
+    "ChatGPT：": "ChatGPT:",
+    "打开左侧「Plugins → + → Add custom MCP server」，名称填": "Open 'Plugins → + → Add custom MCP server' on the left, set Name to",
+    "，粘贴对应地址并选 OAuth，创建后点「本机一键允许连接」并点击 Install（也可点上方「复制给 Work 模式帮我连接」代填）。装好后日常用 Chat 模式发": ", paste the URL with OAuth, click 'Allow from This PC' and Install (or use 'Copy for ChatGPT Work Mode Setup' above). Use Chat mode daily with",
+    "写代码不耗智能体额度，长任务用 Work 模式。": "for coding at zero agent quota cost, and Work mode for long tasks.",
+    "正在读取本机连接状态…": "Checking local connection status…",
+    "离线预览": "Offline Preview",
+    "待开启公网网关": "Gateway Off",
+    "待开启网关": "Gateway Off",
+    "本机真实地址": "Live Local URL",
+    "本机已启动 · 开启任一连接通道后自动填入真实网址": "Local service running · Enable any gateway to populate your live URL",
+    "离线预览模式 · 在本地控制台打开自动填入真实网址": "Offline preview · Open from your local console to load live URLs",
+    "尚未开启公网网关，当前显示示例地址。": "Public gateway is off. Showing sample URLs.",
+    "当前显示示例地址，在本地控制台打开即自动替换。": "Showing sample URLs. Open from your local console to auto-fill.",
+    "切换浅色与深色模式": "Toggle Light / Dark Mode",
+    "示例地址": "Sample URL",
+    "已自动填入当前电脑的连接地址，点击即可复制。": "Your computer's live MCP URLs are filled below — click to copy.",
+    "刷新本机地址": "Refresh URL",
+    "展开全部 6 章": "Show All 6 Guides",
+    "切回单章聚焦": "Single-Guide View",
+    "主连接地址 · Gemini / ChatGPT 工作区": "Primary URL · Gemini & ChatGPT Workspace",
+    "点击复制主连接地址": "Click to copy primary URL",
+    "只读地址 · ChatGPT 个人 Plus / Pro": "Read-Only URL · ChatGPT Personal Plus / Pro",
+    "点击复制只读地址": "Click to copy read-only URL",
+    "复制只读地址": "Copy Read-Only URL",
+    "搜索步骤或常见问题…": "Search steps or FAQs…",
+    "1. Gemini 接入": "1. Gemini Setup",
+    "2. ChatGPT 接入": "2. ChatGPT Setup",
+    "3. 通道选型": "3. Gateways",
+    "4. 常用指令": "4. Prompts",
+    "5. 权限与撤回": "5. Safety & Undo",
+    "6. 常见问题": "6. FAQ",
+    "完成进度": "Progress",
+    "勾选后自动保存": "Saved automatically",
+    "重置": "Reset",
+    "搜索步骤或问题…": "Search guides…",
+    "清空": "Clear",
+    "1. Gemini 与手机远控": "1. Gemini & Mobile",
+    "2. ChatGPT 接入与分工": "2. ChatGPT Setup",
+    "3. 连接通道选型": "3. Gateway Options",
+    "4. 常用指令示例": "4. Prompt Examples",
+    "5. 权限与修改撤回": "5. Safety & Undo",
+    "6. 常见问题速查": "6. Troubleshooting",
+    "已按关键词筛选章节": "Filtered guides by keyword",
+    "清除筛选": "Clear Filter",
+    "教程 1 · Google Gemini 网页版与手机 App": "Guide 1 · Google Gemini Web & Mobile App",
+    "接入 Google Gemini（电脑绑定一次，手机自动同步）": "Connect Google Gemini (Set Up Once, Syncs to Mobile)",
+    "在电脑浏览器添加一次连接器，登录同账号的 Android / iOS 手机 Gemini App 即可直接使用。": "Add the connector once on desktop — your Android & iOS Gemini App on the same account gets it automatically.",
+    "打开 Gemini 连接器页": "Open Gemini Connectors",
+    "1. 确认账号支持自定义连接器": "1. Check account eligibility",
+    "需使用满 18 周岁的 Google AI Pro / Ultra 订阅账号，或已开启连接器权限的 Workspace 企业与教育账号。": "Requires an 18+ Google AI Pro / Ultra account, or a Workspace Business / Education account with custom connectors enabled.",
+    "确认页点绿色": "On the consent screen, click",
+    "（手机端输入配对码": " (or enter pairing code ",
+    "在本机 ChatGPT 左侧打开「Plugins → + → Add custom MCP server」，名称填": "In ChatGPT on this PC, open 'Plugins → + → Add custom MCP server', set Name to",
+    "，粘贴地址并选 OAuth，创建后点 Install。": ", paste the URL, select OAuth, create, and click Install.",
+    "弹出确认页点绿色": "On the consent screen, click",
+    "即可；也可点右侧按钮让 Work 模式代填：": "; or let Work mode fill it automatically:",
+    "Gemini：": "Gemini:",
+    "2. 打开 Gemini 连接器页，粘贴地址到 MCP Server URL": "2. Open Gemini Connectors & paste into MCP Server URL",
+    "不要把网址直接粘贴到浏览器地址栏打开。": "Do not paste this URL into the browser address bar.",
+    "点击右上角按钮访问": "Open",
+    "（或在首页左下角依次点「Personal Intelligence → Connected Apps」），点右上角「+ Custom」，把": " (or click 'Personal Intelligence → Connected Apps' at bottom-left), click '+ Custom', paste",
+    "粘贴到「MCP Server URL」配置栏（Additional settings 保持折叠），点 Next。": "into 'MCP Server URL' (keep Additional settings collapsed), and click Next.",
+    "回到": "Return to",
+    "点开刚添加的连接器，将「App actions」设为「Always allow（始终允许）」。也可在主控台复制 AI 操作守则存入 Gemini Skills。": ", open your connector, and set 'App actions' to 'Always allow'. Optionally save the AI Rules into Gemini Skills.",
+    "3. 在弹出的确认页允许连接": "3. Approve on the consent screen",
+    "本机浏览器": "On This PC",
+    "直接点击绿色按钮「本机一键允许连接」即可完成绑定。": "Click the green 'Allow from This PC' button to finish instantly.",
+    "手机或异地": "Mobile / Remote",
+    "核对页面 4 位确认码后，填入本机控制台显示的 6 位配对码。": "Verify the 4-digit code on screen, then enter the 6-digit pairing code shown in your local console.",
+    "4. 开启「Always allow」免每次弹窗确认": "4. Set 'App actions' to 'Always allow'",
+    "在连接器列表点开 Cosmos，将「App actions」设为「Always allow（始终允许）」。也可在主控台复制 AI 操作守则存入 Gemini Skills。": "Open Cosmos in Connectors and set 'App actions' to 'Always allow'. Optionally save the AI Rules into Gemini Skills.",
+    "5. 新建对话，首句输入 @Cosmos 开始使用": "5. Start a new chat with @Cosmos",
+    "开启新对话，输入": "Start a new chat, type",
+    "点选弹出的连接器标签，粘贴下方测试句发送即可读取本地目录。": "to select the connector tag, and send the test prompt below.",
+    "首句唤醒词与配对码速查": "First Prompt & Pairing Quick View",
+    "本机授权": "This PC",
+    "手机配对码": "Mobile Code",
+    "本机同浏览器点击确认页的「本机一键允许连接」即可，无需输入任何口令。": "On the same PC browser, click 'Allow from This PC' — no passcode required.",
+    "手机端请核对 4 位确认码": "On mobile, match the 4-digit check code",
+    "，再输入本机 6 位配对码": ", then enter the 6-digit pairing code",
+    "复制首句唤醒词": "Copy First Prompt",
+    "教程 2 · 网页版 ChatGPT": "Guide 2 · Web ChatGPT",
+    "接入网页版 ChatGPT": "Connect Web ChatGPT",
+    "安装一次插件后全账号通用：日常写代码用 Chat 模式（不耗智能体额度），长任务用 Work 模式。": "Install once for your whole account: use Chat mode daily for fast coding (zero agent quota used), and Work mode for multi-app tasks.",
+    "工作区账号 (/mcp)": "Workspace (/mcp)",
+    "个人 Plus/Pro (只读)": "Personal Plus/Pro (Read-Only)",
+    "工作区账号（Team / Business / Edu）": "Workspace (Team / Business / Edu)",
+    "读写全开": "Full Read/Write",
+    "只读查阅": "Read-Only",
+    "开放代码读写、Word / Excel 修订与无窗口命令运行。": "Enables file editing, Word/Excel revisions, and windowless command execution.",
+    "复制连接配置发给 ChatGPT Work 模式自动代填": "Copy setup instructions for ChatGPT Work mode",
+    "个人订阅账号（Plus / Pro）": "Personal Subscription (Plus / Pro)",
+    "适配个人版权限规则，开放代码检索、文档提取与看图分析。": "Matches personal plan rules with code search, document reading, and image inspection.",
+    "复制只读配置发给 ChatGPT Work 模式自动代填": "Copy read-only setup instructions for ChatGPT Work mode",
+    "1. 复制上方对应账号的连接地址": "1. Copy the URL matching your ChatGPT plan",
+    "团队工作区账号复制": "Copy",
+    "地址；个人 Plus / Pro 账号复制": "for Team / Business / Edu workspaces, or",
+    "只读地址。": "for Personal Plus / Pro.",
+    "2. 在 ChatGPT 添加并安装插件（二选一）": "2. Add & install the plugin in ChatGPT (pick either way)",
+    "本机手动添加（推荐）": "Manual on This PC (Fastest)",
+    "打开 ChatGPT 左侧「Plugins → + → Add custom MCP server」，名称填": "Open 'Plugins → + → Add custom MCP server' in ChatGPT, set Name to",
+    "，粘贴地址并选 OAuth，创建后点「本机一键允许连接」并点击 Install。": ", paste the URL with OAuth, click 'Allow from This PC', and click Install.",
+    "Work 模式代填": "Work Mode Assist",
+    "点击上方「复制给 Work 模式帮我连接」，在 ChatGPT 顶部切到 Work 模式发送；弹出云端接管（Take over）提示时输入本机 6 位配对码即可。": "Click 'Copy for ChatGPT Work Mode Setup' above, switch ChatGPT to Work mode, and send. When prompted to Take over, enter your 6-digit pairing code.",
+    "3. 日常写代码用 Chat，跨应用长任务用 Work": "3. Use Chat for daily coding, Work for multi-app tasks",
+    "Chat 模式": "Chat Mode",
+    "输入": "Type",
+    "查改本地代码与文档，响应快且不消耗 Work 智能体额度。": "to read/edit local code and Office files quickly without using Work quota.",
+    "Work 模式": "Work Mode",
+    "处理跨邮件、网盘或定时执行的复杂任务。": "for multi-step workflows across email, cloud drives, or scheduled tasks.",
+    "4. 发送首句指令验证连通": "4. Send your first test prompt",
+    "新建对话发送下方验证词，AI 调用": "Start a new chat with the prompt below — once AI calls",
+    "返回你的电脑名称与工作目录即代表接入成功。": "and returns your computer name and workspace, you're connected.",
+    "ChatGPT 首轮验证指令": "First ChatGPT Test Prompt",
+    "复制首轮验证词": "Copy Test Prompt",
+    "教程 3 · 连接通道选型": "Guide 3 · Gateway Options",
+    "按你的网络与资源选择连接通道": "Choose the Right Connection Gateway",
+    "三类加密通道可在控制台「设置 → 连接与网关」随时切换，也支持同时开启并存。": "Switch or run multiple HTTPS gateways side-by-side anytime in 'Settings → Gateways'.",
+    "通道 1 · 默认开启": "Option 1 · Default",
+    "免注册直接用": "Instant No-Login",
+    "不注册云账号、不买域名，启动后直接生成连接网址。": "Zero sign-ups or domains — generates a working HTTPS URL on launch.",
+    "通道 2 · 长期推荐": "Option 2 · Recommended",
+    "免费固定网址": "Free Permanent URL",
+    "贴一次 Cloudflare 令牌，3 秒部署专属网关，重启网址不变。": "Paste a Cloudflare token once to deploy a permanent URL in 3 seconds.",
+    "通道 3 · 自有资产": "Option 3 · Self-Hosted",
+    "自有云服务器或域名": "Your Own VPS or Domain",
+    "一键部署 24 小时云服务器主站，或接入已有 HTTPS 域名。": "Deploy a 24/7 VPS hub in one click, or attach an existing HTTPS domain.",
+    "通道 1：免登录直连通道（零配置开箱即用）": "Option 1: Instant No-Login Tunnel (Zero Setup)",
+    "双击启动程序后默认开启，自动生成固定连接网址；若校园网或公司网限制端口，4 秒内自动切换备用快速通道。": "Enabled by default on launch with a persistent URL, automatically falling back within 4s on restricted networks.",
+    "建议在「设置 → 外观与图标」导出加密身份恢复卡 PNG，重装系统或换电脑时可一键恢复原网址。": "Export an encrypted Recovery PNG in 'Settings → Appearance' to keep the same URL if you switch PCs.",
+    "通道 2：Cloudflare 免费固定网关（3 秒部署，令牌用后即毁）": "Option 2: Cloudflare Free Fixed Gateway (3s Deploy, Token Wiped)",
+    "在控制台打开「设置 → 连接与网关 → Cloudflare 专属固定网关」，点击第 1 步链接打开预填权限页（支持 Google 登录）。": "In 'Settings → Gateways → Cloudflare Fixed Gateway', open the pre-filled token link (Google sign-in supported).",
+    "复制生成的 API 令牌粘贴回第 2 步，点击「一键部署并开启」（约 3 秒生成专属固定网址）。": "Paste the API token into Step 2 and click 'Deploy & Enable' (~3s).",
+    "部署完成后本机立即销毁令牌，后续电脑重启或休眠唤醒均自动重连。": "The API token is wiped immediately after deployment, and your PC reconnects automatically after sleep or reboot.",
+    "打开 Cloudflare 令牌页": "Open Cloudflare Tokens",
+    "通道 3：自有云服务器 24h 主站 或 自有域名": "Option 3: 24/7 Cloud Server Hub or Custom HTTPS Domain",
+    "云服务器建 24h 主站": "24/7 VPS Hub",
+    "：在「设置 → 连接与网关」填入服务器公网 IP 与 SSH 密码（或勾选本机 SSH 密钥）一键部署。电脑关机时仍可操作云端文件，电脑开机后自动接通本地目录。": ": Enter your server IP and SSH credentials in 'Settings → Gateways' for 1-click setup. Manage server files even when your PC is off.",
+    "已有固定 HTTPS 域名": "Existing HTTPS Domain",
+    "：切换到「自有固定域名 / 通用 HTTPS 反代」，填入完整域名或 Cloudflare Tunnel 令牌保存即可。": ": Switch to 'Custom Domain / Reverse Proxy' and enter your HTTPS URL or Cloudflare Tunnel token.",
+    "1. 确认已生成 https 连接地址": "1. Confirm your HTTPS URL is ready",
+    "顶部状态显示绿色「在线」，且地址栏出现可复制的": "The top badge shows 'Online' and a copyable",
+    "链接。": "link is displayed.",
+    "2. 按需开启开机自启与插电防休眠": "2. Enable Launch at Login & Prevent Sleep if needed",
+    "需要出门用手机随时远控电脑时，可在「设置 → 环境与系统」打开这两项开关。": "Turn both on in 'Settings → Environment' if you want reliable mobile access while away.",
+    "3. 导出身份恢复卡 PNG 备份（选做）": "3. Back up your Recovery Card PNG (optional)",
+    "保存一张加密恢复卡图片，换新电脑导入即可沿用原固定网址，无需重绑连接器。": "Import the encrypted PNG on a new PC to keep your fixed URL without re-binding connectors.",
+    "4. 确认睡眠唤醒后自动恢复连接": "4. Automatic reconnect after sleep",
+    "使用固定网址时，电脑重启或开盖唤醒后约 1～2 秒自动恢复在线。": "With a fixed URL, waking your PC restores the connection in 1–2 seconds.",
+    "教程 4 · 常用指令示例": "Guide 4 · Prompt Templates",
+    "一键复制可用的实战提示词": "Ready-to-Use Prompt Examples",
+    "Gemini 可直接粘贴发送；ChatGPT 将开头的": "Paste directly into Gemini; in ChatGPT, replace",
+    "换成": "with",
+    "即可。": ".",
+    "全部 (6)": "All (6)",
+    "代码与测试": "Code & Tests",
+    "办公文档与看图": "Office & Vision",
+    "多设备协同": "Multi-PC",
+    "1. 多目录并行代码审查": "1. Parallel Multi-Folder Code Review",
+    "代码审查": "Code Review",
+    "拆分并行子任务同时检查不同模块，汇总具体文件路径、行号与修复建议。": "Inspect backend, frontend, and tests in parallel sub-tasks and summarize file paths, lines, and fixes.",
+    "复制指令 1": "Copy Prompt 1",
+    "2. Word 保格式修订与 Excel 填公式": "2. Format-Preserving Word & Excel Edits",
+    "办公文档": "Office Docs",
+    "保留原有段落与字体样式更新 Word 文字，并按单元格坐标填写 Excel 汇总公式。": "Update Word text while keeping styles intact, and write Excel formulas by cell coordinates.",
+    "复制指令 2": "Copy Prompt 2",
+    "3. 读取 PDF 需求并核对本地截图": "3. Compare PDF Specs Against Local Screenshots",
+    "看图核对": "PDF + Vision",
+    "免上传附件，直接查看本地 PNG / JPG 截图并与 PDF 文档内容逐项比对。": "Read local screenshots and PDFs directly from disk without manual uploads.",
+    "复制指令 3": "Copy Prompt 3",
+    "4. 后台静默跑完整测试与构建": "4. Run Full Test & Build Suites in Background",
+    "后台任务": "Background Job",
+    "长耗时编译或全量测试在后台无窗口运行，不弹黑框、不打断你当前打字。": "Run long builds silently in the background with zero popup windows or focus steals.",
+    "复制指令 4": "Copy Prompt 4",
+    "5. 台式机与笔记本同窗口协同": "5. Coordinate Desktop & Laptop in One Chat",
+    "多机协同": "Multi-Device",
+    "为不同电脑设置区分前缀（如 desk 与 laptop），在同一对话窗口跨设备核对环境。": "Assign custom prefixes (e.g. desk & laptop) to compare environments across machines.",
+    "复制指令 5": "Copy Prompt 5",
+    "6. 换机恢复后核对设备与目录": "6. Verify Node & Folders After Migration",
+    "迁移核验": "Migration Check",
+    "导入身份恢复卡后，一键检查当前电脑名称、权限档位与开放目录是否生效。": "Confirm hostname, permission tier, and workspace roots after importing a recovery card.",
+    "复制指令 6": "Copy Prompt 6",
+    "1. 复制任意指令卡到网页 AI 试用": "1. Try any prompt card in your web AI",
+    "体验免上传直读本地代码、PDF 与图片。": "Read local repositories, PDFs, and screenshots directly without uploading.",
+    "2. 在主控台右侧查看实时任务与修改记录": "2. Check live jobs & edit history on the console",
+    "后台运行中的命令可随时查看输出流或一键停止。": "Inspect live output or stop background commands anytime.",
+    "3. 多台电脑同连时设置不同工具前缀（选做）": "3. Set distinct tool prefixes for multiple PCs (optional)",
+    "单台电脑保持默认 pc 即可；多台电脑可在「设置 → 工具与扩展」修改前缀区分设备。": "Keep default 'pc' for one computer, or customize it in 'Settings → Tools & Packs'.",
+    "教程 5 · 权限控制与安全恢复": "Guide 5 · Permissions & Undo",
+    "四档权限设置、目录隔离与一键撤回": "4 Permission Tiers, Folder Isolation & Instant Undo",
+    "顶栏可随时一键切回只读，每次改文件前自动保存快照，删除文件统一进入可还原回收箱。": "Switch to Read-Only in one click, auto-snapshot every file edit, and recover deleted files from Trash.",
+    "L1 · 急停保护": "L1 · Instant Lock",
+    "仅查看搜索，禁改文件与命令": "Read & search only, no edits or commands",
+    "L2 · 纯改文档": "L2 · Edit Only",
+    "允许改文件，禁止运行命令": "File edits allowed, shell commands blocked",
+    "L3 · 默认推荐": "L3 · Default",
+    "仅在开放目录内读写与运行": "Read, edit & run inside workspace folders",
+    "L4 · 跨盘操作": "L4 · Full Disk",
+    "不限目录读写，保留快照与回收箱": "Unrestricted paths with snapshots & Trash",
+    "当前查看：只读（L1 · 顶栏一键急停）": "Viewing: Read-Only (L1 · Instant Emergency Lock)",
+    "仅允许在开放目录与只读参考目录内读取文件、提取文档与搜索代码，禁止任何文件写入与命令执行。点击主控台顶栏「一键只读」即可立即切回只读并终止所有正在运行的任务。": "Allows reading files and searching code only — all writes and commands are blocked. Click 'Read-Only' in the top bar anytime to lock immediately and stop running jobs.",
+    "当前查看：仅改文件（L2 · 纯代码与文档编辑）": "Viewing: Edit Files Only (L2 · No Shell Commands)",
+    "允许查阅目录并修改工作区内的代码及 Word / Excel 文档（每次写前自动留存快照），禁止运行任何终端命令、Python 脚本与外部操控扩展包。": "Allows reading and editing workspace code and Word/Excel files (with automatic undo snapshots), while blocking all shell commands and Python execution.",
+    "当前查看：工作区开发（默认推荐）": "Viewing: Workspace Dev (L3 · Default)",
+    "当前查看：工作区开发（L3 · 默认推荐）": "Viewing: Workspace Dev (L3 · Default)",
+    "AI 只能在已开放的工作目录内读写代码、修订文档与运行命令；点击主控台顶栏「一键只读」可立即切回只读并停止正在运行的任务。": "AI can read, edit, and run commands strictly inside your enabled workspace folders. Click 'Read-Only' in the top bar anytime to pause.",
+    "AI 只能在已开放的工作目录内读写代码、修订文档与运行命令；外层只读参考目录仅允许检索查阅，自动拦截误写。": "AI reads, edits, and runs commands strictly inside enabled workspace folders; read-only reference folders block all writes.",
+    "当前查看：全盘开发（L4 · 不限目录读写）": "Viewing: Full-Disk Dev (L4 · Unrestricted Paths)",
+    "允许跨本机任意目录读写文件与运行命令；同时保留写前自动快照、安全回收箱防误删及本机敏感凭据隔离。": "Allows reading, editing, and running commands across any local folder, while keeping undo snapshots, Trash protection, and credential isolation.",
+    "只读参考目录与读写目录分层": "Read-Only Reference vs. Read/Write Folders",
+    "可将外层参考代码库（如 D:\\Projects）添加为": "Add a parent folder (e.g. D:\\Projects) as a ",
+    "，供 AI 跨项目查代码，同时自动拦截任何写入。": " so AI can search reference code while writes are blocked.",
+    "当前正在开发的子目录（如 D:\\Projects\\my-app）设为": "Set your active project subfolder (e.g. D:\\Projects\\my-app) as ",
+    "，允许正常修改代码与运行测试。": " for normal coding and testing.",
+    "外部技能安全体检": "3-Tier Skill Security Scan",
+    "在「设置 → 技能管理」安装外部 GitHub 或市场技能前，系统会先在内存中扫描高危命令与隐私外发行为，确认安全后再落盘启用。": "Before installing external skills in 'Settings → Skills', scripts are scanned in memory for risky commands or data exfiltration.",
+    "修改前后对比（Diff）与一键撤回": "Before/After Diff & 1-Click Undo",
+    "代码文件快照": "Code Diff",
+    "Word / Excel 快照": "Office Diff",
+    "修改前快照 · config.py": "Snapshot · config.py",
+    "修改前快照 · 项目周报.docx（保留原段落与字体样式）": "Snapshot · Weekly_Report.docx (styles preserved)",
+    "删除文件不会直接清空，自动移入回收箱支持原位还原；改错文件可在主控台点「查看对比 Diff → 撤回此修改」。": "Deleted files go to Trash for 1-click restore; review diffs and revert any file edit from the console.",
+    "复制撤回指令": "Copy Undo Prompt",
+    "1. 认识顶栏「一键只读」按钮": "1. Locate the 'Read-Only' button in the top bar",
+    "点击立即切入只读并停止所有在途任务（系统右下角托盘菜单也可一键切换）。": "Switches to Read-Only and stops active tasks immediately (also available from the system tray).",
+    "2. 为参考资料库勾选「以只读参考目录添加」": "2. Add reference repos as 'Read-Only Reference'",
+    "既能让 AI 查阅历史项目参考实现，又能防止误改旧代码。": "Lets AI search reference code across repos without modifying them.",
+    "3. 安装外部技能前先跑安全体检": "3. Run AST security audit before installing external skills",
+    "在「设置 → 技能管理」先扫描脚本风险，确认无误再安装启用。": "Review scan findings in 'Settings → Skills' before enabling third-party skills.",
+    "4. 在主控台右侧体验修改对比与回收箱还原": "4. Review file diffs and Trash restore on the console",
+    "代码与办公文档的改动都支持随时一键回退。": "Both source code and Word/Excel edits can be reverted in one click.",
+    "教程 6 · 常见问题速查": "Guide 6 · Troubleshooting",
+    "连接与使用常见问题": "Common Questions & Fixes",
+    "输入关键词或点击分类查看解决方法，点击任意问题展开详情。": "Filter by keyword or category, and click any question to expand the fix.",
+    "搜索问题关键词（如：代理、刷新、Word 占用、休眠、弹窗）…": "Search issues (e.g. proxy, refresh, Word locked, sleep, prompt)…",
+    "代理与网络": "Proxy & Network",
+    "工具刷新与弹窗": "Refresh & Prompts",
+    "Python 与文档占用": "Python & Office Lock",
+    "电源与休眠": "Power & Sleep",
+    "没有找到匹配的问题，请清空关键词或切回「全部」。": "No matching questions found. Clear the filter or select 'All'.",
+    "1. 开启代理软件时，Cloudflare 网关一直显示连接中或打不开授权页": "1. Cloudflare gateway stays 'Connecting' or consent page fails to load under a proxy",
+    "原因：": "Cause: ",
+    "分流规则将 workers.dev 设为了直连，或系统环境变量 NO_PROXY 范围过宽。": "Split-tunnel rules route workers.dev directly, or NO_PROXY is set too broadly.",
+    "解决：": "Fix: ",
+    "首次点击绑定时，把代理软件临时切到": "Switch your proxy to ",
+    "全局模式 10 秒": "Global Mode for 10s",
+    "完成授权（绑好后由云端直连，日常无需开全局）；或在网关设置填入自定义域名。": " during one-time authorization (cloud hosts connect directly afterward), or set a custom domain.",
+    "复制自检命令": "Copy Diagnostic Command",
+    "2. 开启浏览器/桌面扩展包或改前缀后，AI 对话里看不到新工具": "2. Newly enabled extension packs or renamed prefixes don't show up in chat",
+    "工具刷新": "Refresh Tools",
+    "Gemini 与 ChatGPT 会在开启对话时缓存工具清单，旧对话不会自动加载新开启的工具。": "Gemini and ChatGPT cache the tool schema when a chat starts, so existing chats won't see newly toggled packs.",
+    "在 Gemini 连接器页刷新 Cosmos（或在 ChatGPT 插件页点 Refresh），然后": "Refresh Cosmos in Gemini Connectors (or click Refresh in ChatGPT Plugins), then ",
+    "新建一个对话": "start a new chat",
+    "即可调用新工具。": " to load the updated tools.",
+    "3. Windows 输入 python 弹出应用商店，或想指定项目的 Conda / 虚拟环境": "3. Typing python on Windows opens Microsoft Store, or you want a specific Conda/venv",
+    "Python 环境": "Python Env",
+    "说明：": "Note: ",
+    "启动器会自动跳过微软商店的 WindowsApps 空壳解释器，优先使用内置环境或本机已安装的 Python / Conda。": "WebAI2PC automatically skips the WindowsApps store stub and selects bundled or installed Python/Conda runtimes.",
+    "指定环境：": "Custom runtime: ",
+    "如需固定某个虚拟环境，打开控制台「设置 → 环境与系统」，在解释器下拉框选择或填入路径保存即可。": "Choose or paste your interpreter path in 'Settings → Environment'.",
+    "4. 让 AI 修改 Word 或 Excel 时提示文件正在被占用（ERR_OFFICE_FILE_LOCKED）": "4. Editing Word or Excel returns ERR_OFFICE_FILE_LOCKED",
+    "文档保护": "File Lock Guard",
+    "该文件正被本地 Word 或 Excel 打开，系统自动拒绝覆盖，防止冲掉你窗口里未保存的手工修改。": "The file is currently open in Word or Excel, so writes are blocked to protect unsaved changes.",
+    "先在 Word 或 Excel 按 Ctrl+S 保存并关闭该文档窗口，再让 AI 重试即可。": "Press Ctrl+S and close the document in Word/Excel, then ask AI to retry.",
+    "5. 笔记本拔掉电源或合上盖子后，手机端连不上电脑": "5. Mobile app loses connection when laptop is unplugged or lid is closed",
+    "笔记本改用电池供电时会自动恢复省电休眠；物理合上屏幕盖子也会触发硬件睡眠断网。": "On battery power, sleep protection yields to save battery; closing the laptop lid also triggers hardware sleep.",
+    "外出需要手机远控笔记本时，请保持连接电源、开启「插电防自动休眠」并保持开盖（可将屏幕亮度调低）。": "Keep the laptop plugged into AC power with 'Prevent Sleep on AC Power' enabled and the lid open.",
+    "6. Gemini 每次调用工具都弹确认卡，无法连续自动执行": "6. Gemini asks for confirmation on every single tool call",
+    "免确认设置": "Auto-Approve",
+    "连接器未开启全局允许，只在聊天流单张确认卡上点了单次允许；或控制台打开了写前确认开关。": "The connector isn't set to Always allow globally, or host confirmation is turned on in Settings.",
+    "（或左下角「Personal Intelligence → Connected Apps」）点开连接器将「App actions」设为「Always allow」，并在本机「设置 → 工具与扩展」关闭「写文件与运行命令前向宿主请求确认」。": " (or 'Personal Intelligence → Connected Apps' at bottom-left), open the connector and set 'App actions' to 'Always allow', and turn off 'Ask host for confirmation' in 'Settings → Tools & Packs'.",
+    "1. 确认控制台顶栏显示绿色「在线」": "1. Check that the top status badge shows 'Online'",
+    "若一直显示连接中，先检查本地代理分流规则或切换免登录直连通道。": "If stuck connecting, check proxy rules or switch to Instant Direct Tunnel.",
+    "2. 开关扩展包或改前缀后新建对话": "2. Start a new chat after toggling extension packs",
+    "新对话会自动拉取最新的工具列表。": "New chats automatically fetch the updated tool list.",
+    "3. 让 AI 改文档前先保存关闭本地 Word / Excel": "3. Save and close open Word/Excel files before AI edits",
+    "避免触发文件占用保护。": "Prevents file-lock conflicts with unsaved local edits.",
+    "4. 手机远控笔记本时保持插电且不合盖": "4. Keep laptops plugged in with lid open for mobile access",
+    "插电状态下自动维持系统唤醒不断网。": "Maintains continuous connection while on AC power."
+  };
+
+  Object.assign(ZH_TO_EN, {
+    // Merged origin/main showcase, ChatGPT plugins & PAT translations
+    "Team / Business / Enterprise / Edu 工作区（全功能读写 · 装好后日常用 Chat 省额度，长任务用 Work）": "Team / Business / Enterprise / Edu Workspace (Full Read/Write · Daily Chat saves quota, Work for long tasks)",
+    "个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用，装好后日常用 Chat 省额度）": "Personal Plus / Pro Account (Read-only · Use when write tools are restricted, Chat saves quota)",
+    "复制地址并打开 ChatGPT 插件页": "Copy URL & Open ChatGPT Plugins",
+    "复制给 ChatGPT 接入 / 排障": "Copy ChatGPT Connect / Debug Prompt",
+    "仅复制地址": "Copy URL Only",
+    "仅复制只读": "Copy Read-Only",
+    "展开 Sites 环境变量 / CLI 专用密钥兜底 ▾": "Expand Sites Secrets / CLI Dedicated Token Fallback ▾",
+    "注意：控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue。": "Security Note: Copied connection URLs and prompts are for your own signed-in AI account only. Never share them in group chats, public posts, or Issues.",
+    "受限工作区 403 免管理员兜底：Sites / CLI 专用密钥": "Restricted Workspace 403 Fallback: Sites / CLI Dedicated Token",
+    "仅本机 127.0.0.1 可签发 · 随时一键断开": "Loopback 127.0.0.1 only · Revoke anytime",
+    "仅只读（推荐 · 限 /mcp/readonly）": "Read-only (Recommended · /mcp/readonly)",
+    "工作区读写（允许 /mcp）": "Workspace Read/Write (/mcp)",
+    "有效期 7 天": "Valid for 7 days",
+    "有效期 30 天": "Valid for 30 days",
+    "有效期 90 天": "Valid for 90 days",
+    "本机生成专用密钥": "Mint Dedicated Token Locally",
+    "复制专用密钥": "Copy Dedicated Token",
+    "关闭并擦除明文": "Close & Wipe Plaintext",
+    "一句话实机效果 · 3 个零依赖 WebGL2 案例（看效果 & 一键复制提示词）": "One-Shot Live Demos · 3 Zero-Dependency WebGL2 Showcases (Copy Prompt)",
+    "01 · 黑洞引力透镜仿真 (": "01 · Black Hole Gravitational Lensing (",
+    "单文件原生 WebGL2 光线步进 · 三组电影机位与 4 项实时物理滑块 · 集显 60fps": "Single-file native WebGL2 raymarching · 3 cinematic cameras & 4 live physics sliders · 60fps on iGPU",
+    "单文件 32 KB": "Single file 32 KB",
+    "02 · 元素全息金属典藏卡 (": "02 · Holographic Metallic Element Cards (",
+    "单文件 54 KB": "Single file 54 KB",
+    "03 · 霓虹峡谷 3D 低空飞行 (": "03 · Neon Canyon 3D Low-Altitude Flight (",
+    "5 文件本地工程 · 合成波线框峡谷 + Web Audio 实时合成音效 + 键鼠切换": "5-file local project · Synthwave wireframe canyon + Web Audio synth SFX + keyboard/mouse toggle",
+    "5 文件工程": "5-file project",
+    "复制提示词": "Copy Prompt",
+    "全部 (9)": "All (9)",
+    "3D 实机效果案例 (3)": "3D Live Showcases (3)",
+  });
+
+  var PATTERNS = [
+    [/^本机设备：(.+?)\s*·\s*版本\s*v(.+)$/, "Device: $1 · v$2"],
+    [/^本机设备：(.+)$/, "Device: $1"],
+    [/^已就绪\s*·\s*(.+)$/, "Ready · $1"],
+    [/^已自动填入本机连接地址（已连\s*(\d+)\s*个会话）。$/, "Live MCP URLs loaded ($1 active session(s))."],
+    [/^(\d+)\s*\/\s*(\d+)\s*步$/, "$1 / $2 steps"],
+    [/^已连\s*(\d+)$/, "$1 connected"],
+    [/^已结束（退出码\s*(-?\d+)）$/, "Finished (exit $1)"],
+    [/^运行中（PID\s*(\d+)）$/, "Running (PID $1)"],
+    [/^耗时\s*([\d.]+)\s*秒\s*·\s*目录：/, "Duration $1s · Dir: "],
+    [/^安全回收箱\s*\((\d+)\)$/, "Trash ($1)"],
+    [/^免登录直连\s*·\s*已连通$/, "Direct Tunnel · Connected"],
+    [/^Cloudflare\s*固定网关\s*·\s*已连通$/, "Cloudflare Gateway · Connected"],
+    [/^Cloudflare\s*网关\s*·\s*已连通$/, "Cloudflare Gateway · Connected"],
+    [/^自有主站\s*·\s*已连通$/, "Custom Server · Connected"],
+    [/^已连接\s*(\d+)\s*个会话$/, "$1 session(s) connected"],
+    [/^已检测到网页端授权成功（已连\s*(\d+)\s*个会话）！请继续第\s*3\s*步发送首句测试词。$/, "Web host authorized ($1 session(s) connected)! Continue to Step 3 to send your first test prompt."],
+    [/^已连\s*(\d+)\s*个会话$/, "$1 session(s) connected"],
+    [/^共\s*(\d+)\s*条记录$/, "$1 entries"],
+    [/^共\s*(\d+)\s*项$/, "$1 items"]
+  ];
+
+  var origText = new WeakMap();
+  var origAttr = new WeakMap();
+  var currentLang = "zh";
+  var observer = null;
+  var isApplying = false;
+  var rafId = 0;
+
+  function translateText(raw) {
+    if (!raw || !/[\u4e00-\u9fff]/.test(raw)) return raw;
+    var lead = raw.match(/^\s*/)[0];
+    var trail = raw.match(/\s*$/)[0];
+    var core = raw.trim();
+    if (!core) return raw;
+    if (Object.prototype.hasOwnProperty.call(ZH_TO_EN, core)) {
+      return lead + ZH_TO_EN[core] + trail;
+    }
+    for (var i = 0; i < PATTERNS.length; i++) {
+      if (PATTERNS[i][0].test(core)) {
+        return lead + core.replace(PATTERNS[i][0], PATTERNS[i][1]) + trail;
+      }
+    }
+    return raw;
+  }
+
+  function shouldSkipElement(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var tag = el.tagName;
+    if (tag === "SCRIPT" || tag === "STYLE" || tag === "SVG" || tag === "CODE" || tag === "PRE") return true;
+    if (el.id === "lang-toggle-btn" || el.id === "service-status-text") return true;
+    if (el.classList && (el.classList.contains("mono-value") || el.classList.contains("lang-toggle-btn"))) return true;
+    return false;
+  }
+
+  function applyToNode(root, lang) {
+    if (!root) return;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      var parent = node.parentElement;
+      if (!parent || shouldSkipElement(parent)) continue;
+      if (parent.closest && parent.closest("script,style,svg,pre,.lang-toggle-btn,#service-status-text")) continue;
+      if (lang === "en") {
+        var cur = node.nodeValue;
+        if (!origText.has(node)) {
+          if (/[\u4e00-\u9fff]/.test(cur)) origText.set(node, cur);
+        } else if (/[\u4e00-\u9fff]/.test(cur) && cur !== origText.get(node)) {
+          origText.set(node, cur);
+        }
+        var src = origText.get(node) || cur;
+        var next = translateText(src);
+        if (next !== cur) node.nodeValue = next;
+      } else {
+        if (origText.has(node)) {
+          var zh = origText.get(node);
+          if (node.nodeValue !== zh) node.nodeValue = zh;
+        }
+      }
+    }
+    var els = root.querySelectorAll ? root.querySelectorAll("[placeholder],[title]") : [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (shouldSkipElement(el)) continue;
+      var saved = origAttr.get(el);
+      if (!saved) {
+        saved = {};
+        origAttr.set(el, saved);
+      }
+      ["placeholder", "title"].forEach(function (attr) {
+        var val = el.getAttribute(attr);
+        if (!val) return;
+        if (lang === "en") {
+          if (!saved[attr] && /[\u4e00-\u9fff]/.test(val)) saved[attr] = val;
+          var tr = translateText(saved[attr] || val);
+          if (tr !== val) el.setAttribute(attr, tr);
+        } else if (saved[attr] && val !== saved[attr]) {
+          el.setAttribute(attr, saved[attr]);
+        }
+      });
+    }
+  }
+
+  function updateToggleButtons(lang) {
+    var btns = document.querySelectorAll("#lang-toggle-btn, .lang-toggle-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var opts = btns[i].querySelectorAll("[data-lang-opt]");
+      for (var j = 0; j < opts.length; j++) {
+        opts[j].classList.toggle("active", opts[j].getAttribute("data-lang-opt") === lang);
+      }
+      btns[i].setAttribute("aria-pressed", lang === "en" ? "true" : "false");
+    }
+  }
+
+  function ensureObserver() {
+    if (observer || typeof MutationObserver === "undefined") return;
+    observer = new MutationObserver(function () {
+      if (isApplying || currentLang !== "en") return;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(function () {
+        rafId = 0;
+        if (currentLang === "en") apply("en");
+      });
+    });
+    if (document.body) {
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+  }
+
+  function apply(lang) {
+    isApplying = true;
+    try {
+      currentLang = lang === "en" ? "en" : "zh";
+      document.documentElement.lang = currentLang === "en" ? "en" : "zh-CN";
+      document.documentElement.setAttribute("data-lang", currentLang);
+      if (!origText.has(document)) origText.set(document, document.title);
+      document.title = currentLang === "en" ? translateText(origText.get(document)) : origText.get(document);
+      if (document.body) applyToNode(document.body, currentLang);
+      updateToggleButtons(currentLang);
+      if (currentLang === "en") ensureObserver();
+    } finally {
+      isApplying = false;
+    }
+  }
+
+  function setLang(lang) {
+    var next = lang === "en" ? "en" : "zh";
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
+    apply(next);
+    return next;
+  }
+
+  function toggleLang() {
+    return setLang(currentLang === "en" ? "zh" : "en");
+  }
+
+  function getLang() {
+    try {
+      var saved = localStorage.getItem(STORAGE_KEY);
+      if (saved === "en" || saved === "zh") return saved;
+    } catch (_) {}
+    return "zh";
+  }
+
+  function boot() {
+    var btns = document.querySelectorAll("#lang-toggle-btn, .lang-toggle-btn");
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].dataset.i18nBound) continue;
+      btns[i].dataset.i18nBound = "1";
+      btns[i].addEventListener("click", function () { toggleLang(); });
+    }
+    var initial = getLang();
+    updateToggleButtons(initial);
+    if (initial === "en") apply("en");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  global.WebAI2PCI18n = {
+    getLang: getLang,
+    setLang: setLang,
+    toggleLang: toggleLang,
+    apply: apply,
+    ZH_TO_EN: ZH_TO_EN
+  };
+})(typeof window !== "undefined" ? window : globalThis);

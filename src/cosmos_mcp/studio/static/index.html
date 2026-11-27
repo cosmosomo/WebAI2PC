@@ -156,9 +156,13 @@
             <h1>WebAI<span class="brand-two">2</span>PC</h1>
             <div class="brand-sub" id="brand-subtitle">本机设备：__DEVICE_LABEL__ · 版本 v__VERSION__</div>
           </div>
-          <div class="status-badge __STATUS_KIND__" id="service-status-badge">
-            <span class="status-dot __STATUS_KIND__" id="service-status-dot"></span>
-            <span id="service-status-text">__STATUS_TEXT__</span>
+          <div class="header-status-group">
+            <div class="status-badge __STATUS_KIND__" id="service-status-badge" title="本地服务连接状态">
+              <span class="status-dot __STATUS_KIND__" id="service-status-dot"></span>
+              <span id="service-online-word">在线</span>
+              <span id="service-status-text" class="sr-only">__STATUS_TEXT__</span>
+            </div>
+            <span class="header-perm-pill" id="header-perm-pill" data-safety-mode="full_dev" title="当前权限档位">工作区开发</span>
           </div>
         </div>
 
@@ -167,10 +171,11 @@
             <button type="button" class="btn btn-tonal" id="quick-readonly-btn" title="一键切入只读保护模式">一键只读</button>
             <button type="button" class="btn btn-primary" id="quick-restore-dev-btn" style="display:none;">恢复开发</button>
             <a href="/tutorials" class="btn" id="top-open-tutorials-btn" title="打开 6 大场景交互式实战教程与排障速查">实战教程</a>
+            <button type="button" class="btn lang-toggle-btn" id="lang-toggle-btn" title="切换界面语言 / Switch Language" aria-label="切换语言 / Switch Language"><span class="lang-opt active" data-lang-opt="zh">中</span><span class="lang-sep">/</span><span class="lang-opt" data-lang-opt="en">EN</span></button>
             <button type="button" class="btn settings-trigger-btn" id="open-settings-btn" title="打开设置页（连接网关、Python 环境、工具扩展、技能管理、外观风格 · 快捷键 Ctrl+,）">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
               <span>设置</span>
             </button>
@@ -213,27 +218,235 @@
       </div>
 
       <!-- ================================================================ -->
-      <!-- VIEW 1: SINGLE-SCREEN HIGH-DENSITY WORKBENCH (主控首页)           -->
+      <!-- VIEW 1: APP-SHELL SPLIT WORKBENCH (主控首页 · 零卡片堆叠)          -->
       <!-- ================================================================ -->
       <div id="workbench-view" class="workbench-view active">
-        <!-- Compact 1-Line First-Message Wakeup Banner (dismissible) -->
-        <div id="first-wake-banner" class="wake-banner wb-wake-compact" style="display:none;" role="region" aria-label="首句唤醒提示">
-          <div class="wake-banner-top">
-            <span class="wake-banner-title"><span class="wb-online-dot" aria-hidden="true"></span>已连上网页端 AI · 首句发送唤醒词即可开始</span>
-            <div class="ws-actions">
-              <button type="button" class="btn btn-primary btn-sm wake-banner-btn" id="copy-wake-prompt-btn">复制首句唤醒测试词</button>
-              <button type="button" class="btn btn-sm" id="copy-wake-skill-btn">复制 AI 操作守则（推荐存入 Skills）</button>
-              <label class="chk-inline" id="wake-banner-autostart-wrap" style="font-size:12px;">
-                <input type="checkbox" class="apple-switch" id="chk-wake-autostart">
-                <span>开机自启</span>
-              </label>
-              <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-wake-banner-btn" title="隐藏提示条" aria-label="隐藏提示条">×</button>
+        <!-- FIRST-ENTRY 3-STEP ONBOARDING WIZARD (Auto-shown when sessions == 0, re-openable via #open-onboarding-btn) -->
+        <section class="ob-wizard-band" id="onboarding-wizard-band" style="display:none;" aria-label="首次连接配置向导">
+          <div class="ob-wizard-inner">
+            <div class="ob-wizard-top">
+              <div class="ob-wizard-title-group">
+                <span class="ob-kicker-badge">首次接入向导</span>
+                <h2 class="ob-wizard-title">3 步连上你的网页端 AI</h2>
+              </div>
+
+              <div class="ob-stepper" role="tablist" aria-label="配置向导步骤">
+                <button type="button" class="ob-step-pill active" id="ob-step-tab-1" data-ob-step="1" role="tab" aria-selected="true">
+                  <span class="ob-step-num" id="ob-step-num-1">1</span>
+                  <span>语言、平台与资源</span>
+                </button>
+                <span class="ob-step-line" aria-hidden="true"></span>
+                <button type="button" class="ob-step-pill" id="ob-step-tab-2" data-ob-step="2" role="tab" aria-selected="false">
+                  <span class="ob-step-num" id="ob-step-num-2">2</span>
+                  <span>生成网址并授权</span>
+                </button>
+                <span class="ob-step-line" aria-hidden="true"></span>
+                <button type="button" class="ob-step-pill" id="ob-step-tab-3" data-ob-step="3" role="tab" aria-selected="false">
+                  <span class="ob-step-num" id="ob-step-num-3">3</span>
+                  <span>选目录与首句验证</span>
+                </button>
+              </div>
+
+              <div class="ob-top-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="ob-copy-ai-guide-btn" title="复制完整陪配提示词发给任意网页 AI，手把手带你配">让 AI 带我配</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="ob-dismiss-btn">跳过向导 ×</button>
+              </div>
+            </div>
+
+            <!-- STEP 1: Language, Target Host, Existing Assets -->
+            <div class="ob-pane active" id="ob-pane-1" role="tabpanel">
+              <div class="ob-step1-grid">
+                <!-- Col 1: Language & Host -->
+                <div class="ob-col-card">
+                  <div class="ob-field-block">
+                    <div class="ob-field-label">1. 界面语言</div>
+                    <div class="ob-seg-group" id="ob-lang-group">
+                      <button type="button" class="ob-seg-choice active" data-ob-lang="zh">简体中文</button>
+                      <button type="button" class="ob-seg-choice" data-ob-lang="en">English</button>
+                    </div>
+                  </div>
+
+                  <div class="ob-field-block" style="margin-top:16px;">
+                    <div class="ob-field-label">2. 准备连接哪个网页 AI？</div>
+                    <div class="ob-host-cards" id="ob-host-group">
+                      <button type="button" class="ob-choice-card active" data-ob-host="gemini">
+                        <div class="ob-choice-head">
+                          <span class="ob-radio-dot"></span>
+                          <span class="ob-choice-title">网页版 Google Gemini</span>
+                        </div>
+                        <div class="ob-choice-desc">支持桌面浏览器任务模式与同账号手机端 Gemini App 同步远控</div>
+                      </button>
+                      <button type="button" class="ob-choice-card" data-ob-host="chatgpt">
+                        <div class="ob-choice-head">
+                          <span class="ob-radio-dot"></span>
+                          <span class="ob-choice-title">网页版 ChatGPT</span>
+                        </div>
+                        <div class="ob-choice-desc">装好后日常用普通 Chat 零智能体额度改代码，长任务用 Work</div>
+                      </button>
+                    </div>
+
+                    <div class="ob-sub-tier" id="ob-chatgpt-tier-wrap" style="display:none;">
+                      <span class="ob-sub-label">账号类型：</span>
+                      <button type="button" class="ob-mini-pill active" data-ob-cgpt-tier="workspace">Team / Business / Edu（全功能）</button>
+                      <button type="button" class="ob-mini-pill" data-ob-cgpt-tier="personal">个人 Plus / Pro（只读）</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Col 2: Existing Resources Checkboxes -->
+                <div class="ob-col-card">
+                  <div class="ob-field-label">3. 勾选你手头已有的资源（可不勾，直接免注册开箱用）</div>
+                  <div class="ob-check-list">
+                    <label class="ob-check-card" id="ob-lbl-has-cf">
+                      <input type="checkbox" id="ob-chk-has-cf">
+                      <div class="ob-check-body">
+                        <div class="ob-check-title-row">
+                          <span class="ob-check-title">我有 Cloudflare 账号（或愿用 Google 快捷登录）</span>
+                          <span class="ob-rec-tag">终身固定推荐</span>
+                        </div>
+                        <div class="ob-check-desc">粘贴一次令牌，3 秒自动部署免费专属网关（<code>*.workers.dev</code>），关机重启永不变址。</div>
+                      </div>
+                    </label>
+
+                    <label class="ob-check-card" id="ob-lbl-has-vps">
+                      <input type="checkbox" id="ob-chk-has-vps">
+                      <div class="ob-check-body">
+                        <div class="ob-check-title-row">
+                          <span class="ob-check-title">我有自己的云服务器（VPS）或自有固定域名</span>
+                        </div>
+                        <div class="ob-check-desc">一键在云服务器部署 24 小时常驻主站，或接入已有 HTTPS 反代与隧道域名。</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="ob-route-summary" id="ob-route-summary">
+                    <span class="ob-route-dot"></span>
+                    <span id="ob-route-summary-text">未勾选额外资源：将使用「免登录直连固定通道」，零注册直接生成连接网址。</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ob-footer-bar">
+                <span class="ob-footer-hint">所有设置后续随时可在右上角「设置」中更改</span>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-primary" id="ob-next-to-2-btn">下一步：生成连接网址 →</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- STEP 2: Tailored Single-Path Gateway & Host Binding -->
+            <div class="ob-pane" id="ob-pane-2" role="tabpanel">
+              <!-- Route Switcher (only shown if user checked BOTH Cloudflare & VPS) -->
+              <div class="ob-dual-route-bar" id="ob-dual-route-bar" style="display:none;">
+                <span class="ob-sub-label">你同时勾选了两项资源，当前使用：</span>
+                <button type="button" class="ob-mini-pill active" data-ob-route="cloudflare">Cloudflare 3 秒固定网关（省心推荐）</button>
+                <button type="button" class="ob-mini-pill" data-ob-route="self_hosted">自有云服务器 / 域名</button>
+              </div>
+
+              <!-- Gateway Setup Sub-block B: Cloudflare 3s Deploy -->
+              <div class="ob-gw-setup-box" id="ob-gw-box-cloudflare" style="display:none;">
+                <div class="ob-gw-setup-head">
+                  <strong>部署 Cloudflare 专属固定网关</strong>
+                  <span class="ob-gw-sub">令牌仅用于本次部署，完成后立即销毁</span>
+                </div>
+                <div class="ob-cf-inline-grid">
+                  <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" class="btn btn-tonal btn-sm" id="ob-open-cf-tpl-btn">① 打开 Cloudflare 预填令牌页</a>
+                  <input type="password" id="ob-cf-token-input" class="flex-input" placeholder="② 粘贴生成的 Cloudflare API 令牌" autocomplete="off">
+                  <input type="text" id="ob-cf-domain-input" class="flex-input" placeholder="选填：自定义域名（无则留空）">
+                  <button type="button" class="btn btn-primary btn-sm" id="ob-deploy-cf-btn">③ 3 秒部署固定网址</button>
+                </div>
+              </div>
+
+              <!-- Gateway Setup Sub-block C: VPS / Custom Domain -->
+              <div class="ob-gw-setup-box" id="ob-gw-box-vps" style="display:none;">
+                <div class="ob-gw-setup-head">
+                  <div class="ws-actions">
+                    <strong>接入自有云服务器或固定域名</strong>
+                    <button type="button" class="ob-mini-pill active" data-ob-vps-mode="vps">云服务器一键建主站</button>
+                    <button type="button" class="ob-mini-pill" data-ob-vps-mode="domain">已有 HTTPS 域名</button>
+                  </div>
+                </div>
+                <div class="ob-cf-inline-grid" id="ob-vps-ip-row">
+                  <input type="text" id="ob-vps-ip-input" class="flex-input" placeholder="服务器公网 IP（如 203.0.113.10）">
+                  <input type="password" id="ob-vps-pw-input" class="flex-input" placeholder="SSH 密码（已配本机密钥可留空）" autocomplete="off">
+                  <button type="button" class="btn btn-primary btn-sm" id="ob-deploy-vps-btn">一键部署 24h 主站</button>
+                </div>
+                <div class="ob-cf-inline-grid" id="ob-vps-domain-row" style="display:none;">
+                  <input type="text" id="ob-custom-domain-url-input" class="flex-input" placeholder="输入已反代本机端口的完整 HTTPS 域名（如 https://mcp.example.com）">
+                  <button type="button" class="btn btn-primary btn-sm" id="ob-save-domain-btn">保存并启用此域名</button>
+                </div>
+              </div>
+
+              <!-- Tailored URL & Host Binding Card -->
+              <div class="ob-bind-card">
+                <div class="ob-bind-url-row">
+                  <span class="wb-url-tag" id="ob-url-badge">Gemini MCP</span>
+                  <div class="mono-value" id="ob-target-url-box" title="点击复制连接地址">正在建立加密连接通道…</div>
+                  <button type="button" class="btn btn-primary" id="ob-copy-and-open-btn">复制地址并打开 Gemini 连接器</button>
+                  <button type="button" class="btn btn-tonal" id="ob-only-copy-url-btn">仅复制地址</button>
+                </div>
+
+                <!-- Host-specific concise 2-line instructions -->
+                <div class="ob-bind-steps" id="ob-steps-gemini">
+                  <div class="ob-step-line-item"><span class="ob-mini-idx">A</span><span><strong>不要把网址直接粘进浏览器地址栏。</strong>打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer">gemini.google.com/customize/connectors</a>（或左下角「Personal Intelligence → Connected Apps」），点右上角「+ Custom」，粘贴到「MCP Server URL」配置栏后点 Next。</span></div>
+                  <div class="ob-step-line-item"><span class="ob-mini-idx">B</span><span>确认页点绿色<strong>「本机一键允许连接」</strong>（手机端输入配对码 <code id="ob-pair-code-inline">------</code>），再回到连接器页把 App actions 设为 Always allow。</span></div>
+                </div>
+
+                <div class="ob-bind-steps" id="ob-steps-chatgpt" style="display:none;">
+                  <div class="ob-step-line-item"><span class="ob-mini-idx">A</span><span>在本机 ChatGPT 左侧打开「Plugins → + → Add custom MCP server」，名称填 <code>WebAI2PC</code>，粘贴地址并选 OAuth，创建后点 Install。</span></div>
+                  <div class="ob-step-line-item"><span class="ob-mini-idx">B</span><span>弹出确认页点绿色<strong>「本机一键允许连接」</strong>即可；也可点右侧按钮让 Work 模式代填：<button type="button" class="btn btn-ghost btn-sm" id="ob-copy-cgpt-work-btn" style="margin-left:4px;">复制给 Work 模式帮我连接</button></span></div>
+                </div>
+
+                <div class="ob-live-conn-status" id="ob-live-conn-status">
+                  <span class="ob-pulse-dot" id="ob-conn-dot"></span>
+                  <span id="ob-conn-status-text">正在等待网页端完成授权连接（点完允许后此处会自动打勾）…</span>
+                </div>
+              </div>
+
+              <div class="ob-footer-bar">
+                <button type="button" class="btn btn-ghost" id="ob-back-to-1-btn">← 上一步</button>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-primary" id="ob-next-to-3-btn">下一步：选目录与发首句 →</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- STEP 3: Confirm Workspace Folder & Send First Wake Message -->
+            <div class="ob-pane" id="ob-pane-3" role="tabpanel">
+              <div class="ob-step3-grid">
+                <div class="ob-col-card">
+                  <div class="ob-field-label">1. 确认开放给 AI 的本地工作目录</div>
+                  <div class="ob-ws-row">
+                    <code class="ob-ws-path" id="ob-primary-ws-box">-</code>
+                    <button type="button" class="btn btn-tonal btn-sm" id="ob-pick-folder-btn">换个文件夹</button>
+                  </div>
+                  <div class="ob-choice-desc" style="margin-top:8px;">AI 默认只在此目录内读写与运行代码；每次修改自动留存快照，可在主控台右栏一键撤回。</div>
+                </div>
+
+                <div class="ob-col-card">
+                  <div class="ob-field-label">2. 复制第一句测试指令发给网页端 AI</div>
+                  <div class="ob-wake-box">
+                    <code id="ob-wake-preview-code">@Cosmos 帮我看看当前工作目录里有哪些文件</code>
+                  </div>
+                  <div class="ws-actions" style="margin-top:10px;">
+                    <button type="button" class="btn btn-primary btn-sm" id="ob-copy-wake-btn">复制首句测试词</button>
+                    <button type="button" class="btn btn-tonal btn-sm" id="ob-copy-skill-btn">复制 AI 操作守则（推荐存入 Skills）</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ob-footer-bar">
+                <button type="button" class="btn btn-ghost" id="ob-back-to-2-btn">← 上一步</button>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-primary" id="ob-finish-btn">完成并进入主控台</button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- TOP BAR CARD: Host Switcher + URL Copy + Collapsible Guide & Pairing Strip -->
-        <section class="card wb-conn-card" id="host-connection-top-card">
+        <!-- 1-LINE CONNECTION COMMAND BAR (Collapsed when connected; Details drawer on click) -->
+        <section class="wb-conn-card" id="host-connection-top-card">
           <div class="wb-conn-head">
             <div class="wb-conn-head-left">
               <div class="host-seg-bar wb-host-seg" id="host-scene-switcher" role="tablist" aria-label="目标网页宿主选择">
@@ -241,40 +454,60 @@
                 <button type="button" class="host-seg-btn" role="tab" aria-selected="false" data-host-scene="chatgpt">网页版 ChatGPT</button>
               </div>
               <div class="top-gateway-switcher wb-gw-inline" id="top-gateway-switcher" style="display:none;" role="group" aria-label="已开启连接网关切换"></div>
+              <span class="wb-conn-session-chip" id="conn-bar-session-chip" style="display:none;">已连 <strong id="conn-bar-sessions-num">0</strong></span>
             </div>
-            <div class="ws-actions">
-              <button type="button" class="btn btn-sm" id="open-settings-gateways-btn" data-open-settings="gateways">配置连接通道 ▸</button>
-            </div>
-          </div>
-
-          <div id="local-loopback-guide" class="callout callout-warn wb-compact-callout" style="display:none;">
-            <span id="local-loopback-warn-title">当前未开启公网 HTTPS 通道，网页端 AI 需要公网 HTTPS 地址才能连接。</span>
-            <button type="button" class="btn btn-primary btn-sm" id="quick-enable-cf-btn">一键开启默认连接网关</button>
-          </div>
-
-          <div id="overview-channel-callout" class="callout callout-info wb-compact-callout" style="display:none;"></div>
-
-          <div id="workers-proxy-alert" class="callout callout-warn wb-compact-callout wb-proxy-callout" style="display:none;">
-            <div class="wb-proxy-callout-body">
-              <div class="callout-strong-title">本机浏览器暂未直连 *.workers.dev（首次绑定提示）</div>
-              <div class="callout-sub-note">若浏览器打开连接器授权页加载缓慢，可在代理软件临时切全局 10 秒完成绑定，或在设置页填写自定义域名。</div>
-            </div>
-            <div class="ws-actions">
-              <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">继续打开 Gemini</a>
-              <button type="button" class="btn btn-sm" id="focus-custom-domain-btn">自定义域名</button>
-              <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-workers-proxy-alert-btn" title="关闭提示" aria-label="关闭提示">×</button>
-            </div>
-          </div>
-
-          <!-- Host Panel A: Web Gemini -->
-          <div class="host-scene-panel active" id="host-panel-gemini" role="tabpanel">
-            <div class="url-action-row wb-url-row">
-              <span class="wb-url-tag" id="mcp-url-label" title="完整读写连接地址（网页版 Gemini 与同账号手机端共用）">Gemini MCP</span>
-              <div class="mono-value" id="mcp-url-box" title="点击直接复制连接地址">正在建立加密连接通道…</div>
+            <div class="ws-actions wb-conn-head-right">
               <button type="button" class="btn btn-primary" id="copy-mcp-url-btn" data-copy-url-kind="mcp">复制连接地址</button>
-              <button type="button" class="btn btn-tonal" id="open-gemini-connectors-btn">打开 Gemini 连接器</button>
+              <button type="button" class="btn btn-ghost" id="toggle-conn-details-btn" aria-expanded="true" aria-controls="wb-conn-drawer">详情与配对 ▾</button>
+              <button type="button" class="btn btn-ghost" id="open-onboarding-btn" title="重新打开首次接入配置向导">接入向导</button>
+              <button type="button" class="btn btn-ghost" id="open-settings-gateways-btn" data-open-settings="gateways">通道设置</button>
             </div>
           </div>
+
+          <div id="wb-conn-drawer" class="wb-conn-drawer open">
+            <!-- Compact 1-Line First-Message Wakeup Banner (inside drawer, dismissible) -->
+            <div id="first-wake-banner" class="wake-banner wb-wake-compact" style="display:none;" role="region" aria-label="首句唤醒提示">
+              <div class="wake-banner-top">
+                <span class="wake-banner-title"><span class="wb-online-dot" aria-hidden="true"></span>已连上网页端 AI · 首句发送唤醒词即可开始</span>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-primary btn-sm wake-banner-btn" id="copy-wake-prompt-btn">复制首句唤醒测试词</button>
+                  <button type="button" class="btn btn-sm" id="copy-wake-skill-btn">复制 AI 操作守则（推荐存入 Skills）</button>
+                  <label class="chk-inline" id="wake-banner-autostart-wrap" style="font-size:12px;">
+                    <input type="checkbox" class="apple-switch apple-switch-sm" id="chk-wake-autostart">
+                    <span>开机自启</span>
+                  </label>
+                  <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-wake-banner-btn" title="隐藏提示条" aria-label="隐藏提示条">×</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="local-loopback-guide" class="callout callout-warn wb-compact-callout" style="display:none;">
+              <span id="local-loopback-warn-title">当前未开启公网 HTTPS 通道，网页端 AI 需要公网 HTTPS 地址才能连接。</span>
+              <button type="button" class="btn btn-primary btn-sm" id="quick-enable-cf-btn">一键开启默认连接网关</button>
+            </div>
+
+            <div id="overview-channel-callout" class="callout callout-info wb-compact-callout" style="display:none;"></div>
+
+            <div id="workers-proxy-alert" class="callout callout-warn wb-compact-callout wb-proxy-callout" style="display:none;">
+              <div class="wb-proxy-callout-body">
+                <div class="callout-strong-title">本机浏览器暂未直连 *.workers.dev（首次绑定提示）</div>
+                <div class="callout-sub-note">若浏览器打开连接器授权页加载缓慢，可在代理软件临时切全局 10 秒完成绑定，或在设置页填写自定义域名。</div>
+              </div>
+              <div class="ws-actions">
+                <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">继续打开 Gemini</a>
+                <button type="button" class="btn btn-sm" id="focus-custom-domain-btn">自定义域名</button>
+                <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="dismiss-workers-proxy-alert-btn" title="关闭提示" aria-label="关闭提示">×</button>
+              </div>
+            </div>
+
+            <!-- Host Panel A: Web Gemini -->
+            <div class="host-scene-panel active" id="host-panel-gemini" role="tabpanel">
+              <div class="url-action-row wb-url-row">
+                <span class="wb-url-tag" id="mcp-url-label" title="完整读写连接地址（网页版 Gemini 与同账号手机端共用）">Gemini MCP</span>
+                <div class="mono-value" id="mcp-url-box" title="点击直接复制连接地址">正在建立加密连接通道…</div>
+                <button type="button" class="btn btn-tonal" id="open-gemini-connectors-btn">打开 Gemini 连接器</button>
+              </div>
+            </div>
 
           <!-- Host Panel B: Web ChatGPT -->
           <div class="host-scene-panel" id="host-panel-chatgpt" role="tabpanel">
@@ -450,6 +683,7 @@
               </div>
             </details>
           </div>
+          </div>
         </section>
 
         <!-- LOWER 2-COLUMN WORKBENCH GRID: Workspaces+Safety (Left) & Activity+Undo (Right) -->
@@ -490,7 +724,7 @@
               <div class="copy-row">
                 <input type="text" id="manual-ws-input" class="flex-input" placeholder="输入或粘贴文件夹路径，回车添加">
                 <button type="button" class="btn" id="add-manual-ws-btn">添加</button>
-                <button type="button" class="btn btn-primary" id="pick-local-folder-btn" title="调用系统文件夹选择框">选文件夹</button>
+                <button type="button" class="btn" id="pick-local-folder-btn" title="调用系统文件夹选择框">选文件夹</button>
               </div>
               <div class="wb-ws-add-meta">
                 <label class="chk-inline wb-ro-add-chk">
@@ -666,7 +900,7 @@
                           <span class="conn-card-step-num">第 1 类 · 默认免配置</span>
                           <h3 class="conn-card-title">一键上手免登录直连</h3>
                         </div>
-                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡（默认 <code>*.srv.us</code> 走系统 <code>ssh</code> 免代理直连；临时通道需自动拉取 <code>cloudflared</code>）。</p>
+                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-ok" id="card1-status-badge">当前使用中</span>
@@ -720,7 +954,7 @@
                           <span class="conn-card-step-num">第 2 类 · 无服务器固定网址</span>
                           <h3 class="conn-card-title">Cloudflare 专属固定网关</h3>
                         </div>
-                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址（纯 Python <code>443 WSS</code> 免装 <code>cloudflared</code>；国内用默认 <code>*.workers.dev</code> 需常开系统代理，绑自定义域名可免代理直连）。</p>
+                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-info" id="card2-status-badge">终身固定推荐</span>
@@ -785,7 +1019,7 @@
                           <span class="conn-card-step-num">第 3 类 · 自有资产合一</span>
                           <h3 class="conn-card-title">自有云服务器 24h 主站 或 自有固定域名</h3>
                         </div>
-                        <p class="conn-card-sub">一键在云服务器建 24h 主站（无 Cloudflare 与日配额限制，近岸/国内服务器可免代理直连），或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
+                        <p class="conn-card-sub">一键在云服务器建 24h 主站，或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-muted" id="card3-status-badge">服务器 / 域名</span>

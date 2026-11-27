@@ -660,6 +660,8 @@ def test_s6_headless_consent_csp_toggle_and_studio_per_client_kick_dom(tmp_path:
 
             before_text = driver.evaluate(
                 """(targetCid) => {
+                    const cd = document.getElementById('wb-conn-drawer');
+                    if (cd) cd.classList.add('open');
                     const pd = document.getElementById('pairing-sessions-details');
                     if (pd) pd.open = true;
                     const listEl = document.getElementById('authorized-sessions-list');
