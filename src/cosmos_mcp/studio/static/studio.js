@@ -54,6 +54,15 @@
   var coreToolsCollapsed = false;
   var activeAuditFilter = "all";
   var auditSearchQuery = "";
+  var lastStateRevision = null;
+  var stateSyncInFlight = false;
+  var authBackupRevealed = false;
+  var authBackupPlain = "";
+  var authRotateConfirmArmed = false;
+  var endpointSecretConfirmTimers = {};
+
+  var PAT_ANTI_LEAK_TOAST =
+    "已复制专用密钥！严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue！仅限填入 ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件；如怀疑泄露请在已授权列表点击『断开』立即作废。";
 
   function $(id) {
     return document.getElementById(id);
@@ -1276,9 +1285,671 @@
     }
   }
 
+  function isPatSession(sess) {
+    if (!sess || typeof sess !== "object") return false;
+    var tk = String(sess.token_kind || "").trim().toLowerCase();
+    if (tk === "pat" || tk === "personal_access_token") return true;
+    var cid = String(sess.client_id || "").trim();
+    if (cid.indexOf("pat_") === 0) return true;
+    var plat = String(sess.platform || "");
+    return plat.indexOf("专用密钥") >= 0;
+  }
+
+  function extractPatSessions(doc) {
+    var d = doc || state || {};
+    var conn = d.connection && typeof d.connection === "object" ? d.connection : {};
+    var sessArr = Array.isArray(d.authorized_sessions)
+      ? d.authorized_sessions
+      : Array.isArray(conn.authorized_sessions)
+      ? conn.authorized_sessions
+      : [];
+    var matched = sessArr.filter(isPatSession);
+    var extraPats = Array.isArray(d.pats)
+      ? d.pats
+      : Array.isArray(d.personal_access_tokens)
+      ? d.personal_access_tokens
+      : [];
+    if (extraPats.length) {
+      var seen = {};
+      matched.forEach(function (item) {
+        if (item && item.client_id) seen[String(item.client_id)] = true;
+      });
+      extraPats.forEach(function (p) {
+        if (!p || typeof p !== "object") return;
+        var pid = String(p.client_id || p.id || "");
+        if (pid && seen[pid]) return;
+        if (pid) seen[pid] = true;
+        matched.push(p);
+      });
+    }
+    return matched;
+  }
+
+  function computePatCount(doc, sessArr) {
+    var d = doc || state || {};
+    var conn = d.connection && typeof d.connection === "object" ? d.connection : {};
+    if (typeof d.pat_count === "number") return d.pat_count;
+    if (typeof conn.pat_count === "number") return conn.pat_count;
+    var baseList = Array.isArray(sessArr)
+      ? sessArr
+      : Array.isArray(d.authorized_sessions)
+      ? d.authorized_sessions
+      : Array.isArray(conn.authorized_sessions)
+      ? conn.authorized_sessions
+      : [];
+    return baseList.filter(isPatSession).length;
+  }
+
+  function resolvePairCodes(doc) {
+    var d = doc || state || {};
+    var conn = d.connection && typeof d.connection === "object" ? d.connection : {};
+    var rawDyn = String(d.dynamic_pair_code || conn.dynamic_pair_code || "").trim();
+    if (rawDyn === "------" || rawDyn === "-") rawDyn = "";
+    var rawVer = String(
+      d.consent_pair_code || conn.consent_pair_code || d.pair_code || conn.pair_code || ""
+    ).trim();
+    if (rawVer === "----" || rawVer === "-") rawVer = "";
+    return {
+      dynamicCode: rawDyn,
+      consentCode: rawVer,
+    };
+  }
+
+  function syncPairCodeDom(dynCode, consentCode) {
+    var cleanDyn = dynCode && dynCode !== "------" && dynCode !== "-" ? String(dynCode).trim() : "";
+    var cleanVer = consentCode && consentCode !== "----" && consentCode !== "-" ? String(consentCode).trim() : "";
+    var dispDyn = cleanDyn || "------";
+    var dispVer = cleanVer || "----";
+
+    if ($("dynamic-pair-code-box") && $("dynamic-pair-code-box").textContent !== dispDyn) {
+      $("dynamic-pair-code-box").textContent = dispDyn;
+    }
+    if ($("copy-dynamic-code-btn")) {
+      $("copy-dynamic-code-btn").disabled = !cleanDyn;
+    }
+
+    if ($("pair-code-box") && $("pair-code-box").textContent !== dispVer) {
+      $("pair-code-box").textContent = dispVer;
+    }
+    if ($("copy-pair-code-btn")) {
+      $("copy-pair-code-btn").disabled = !cleanVer;
+    }
+
+    if ($("auth-pair-code-val") && $("auth-pair-code-val").textContent !== dispDyn) {
+      $("auth-pair-code-val").textContent = dispDyn;
+    }
+    if ($("auth-copy-pair-btn")) {
+      $("auth-copy-pair-btn").disabled = !cleanDyn;
+    }
+
+    if ($("auth-verify-code-val") && $("auth-verify-code-val").textContent !== dispVer) {
+      $("auth-verify-code-val").textContent = dispVer;
+    }
+    if ($("auth-copy-verify-btn")) {
+      $("auth-copy-verify-btn").disabled = !cleanVer;
+    }
+  }
+
+  function syncAuthBackupDisplay() {
+    var bkEl = $("auth-backup-token-val");
+    if (bkEl) {
+      bkEl.textContent =
+        authBackupRevealed && authBackupPlain ? authBackupPlain : "••••••••••••••••••••";
+    }
+    var togBtn = $("auth-toggle-backup-btn");
+    if (togBtn) {
+      togBtn.textContent = authBackupRevealed && authBackupPlain ? "隐藏口令" : "显示 / 隐藏";
+    }
+  }
+
+  function setAuthRotateConfirmOpen(open) {
+    authRotateConfirmArmed = Boolean(open);
+    var bar = $("auth-rotate-backup-confirm-bar");
+    if (bar) {
+      bar.style.display = authRotateConfirmArmed ? "flex" : "none";
+    }
+    var rotBtn = $("auth-rotate-backup-btn");
+    if (rotBtn) {
+      rotBtn.textContent = authRotateConfirmArmed ? "再点确认重置" : "重置备用口令";
+      rotBtn.classList.toggle("btn-danger", authRotateConfirmArmed);
+    }
+  }
+
+  function clearPatOnceResult(onlyIfClientId, targetPrefix) {
+    var targets = targetPrefix
+      ? [targetPrefix]
+      : ["pat-once", "auth-pat-once"];
+    targets.forEach(function (pfx) {
+      var box = $(pfx + "-result-box");
+      if (!box) return;
+      if (onlyIfClientId && box.getAttribute("data-client-id") !== onlyIfClientId) {
+        return;
+      }
+      box.style.display = "none";
+      box.removeAttribute("data-client-id");
+      if ($(pfx + "-token-value")) $(pfx + "-token-value").textContent = "";
+      if ($(pfx + "-meta-text")) $(pfx + "-meta-text").textContent = "";
+    });
+  }
+
+  function requestMintPersonalAccessToken(params) {
+    return apiFetch("/api/studio/tokens/mint", {
+      method: "POST",
+      body: params,
+    }).then(function (d) {
+      if (d && d._httpStatus === 404) {
+        return apiFetch("/api/studio/pats", {
+          method: "POST",
+          body: Object.assign({}, params, {
+            scope: params.readonly ? "readonly" : "readwrite",
+          }),
+        });
+      }
+      return d;
+    });
+  }
+
+  function submitPatMintFlow(uiCfg) {
+    var mBtn = $(uiCfg.btnId);
+    var scopeSel = $(uiCfg.scopeSelectId);
+    var ttlSel = $(uiCfg.ttlSelectId);
+    var lblInp = $(uiCfg.labelInputId);
+    var wantReadonly = !scopeSel || scopeSel.value !== "readwrite";
+    var ttlDays = ttlSel ? parseInt(ttlSel.value, 10) || 30 : 30;
+    var labelVal = lblInp ? lblInp.value.trim() : "";
+
+    if (mBtn) mBtn.disabled = true;
+    return requestMintPersonalAccessToken({
+      readonly: wantReadonly,
+      ttl_days: ttlDays,
+      label: labelVal,
+    })
+      .then(function (d) {
+        if (mBtn) mBtn.disabled = state.is_loopback === false;
+        var minted = (d && d.minted_token) || (d && d.token ? d : null);
+        if (!d || !d.ok || !minted || !minted.token) {
+          showToast((d && (d.message || d.error)) || "生成专用密钥失败", true);
+          return;
+        }
+        var mintedCopy = Object.assign({}, minted);
+        if (d.minted_token) {
+          delete d.minted_token;
+        }
+        if (d.gateways || d.workspaces || d.authorized_sessions) {
+          renderAll(d);
+        } else {
+          apiFetch("/api/studio/state").then(renderAll);
+        }
+        if (lblInp) lblInp.value = "";
+        var pfx = uiCfg.oncePrefix;
+        var resBox = $(pfx + "-result-box");
+        var tokValEl = $(pfx + "-token-value");
+        var metaEl = $(pfx + "-meta-text");
+        if (tokValEl) tokValEl.textContent = String(mintedCopy.token);
+        if (metaEl) {
+          var isRo = mintedCopy.readonly !== undefined ? Boolean(mintedCopy.readonly) : wantReadonly;
+          var scopeDesc = isRo ? "仅只读权限（限 /mcp/readonly）" : "工作区读写权限（允许 /mcp）";
+          metaEl.textContent =
+            "已签发：" +
+            (mintedCopy.platform || "专用密钥 (Sites / CLI)") +
+            " · " +
+            (mintedCopy.client_name || labelVal || "专用密钥") +
+            " ｜ " +
+            scopeDesc +
+            " ｜ 到期：" +
+            (mintedCopy.expires_at_text || "-");
+        }
+        if (resBox) {
+          resBox.setAttribute("data-client-id", String(mintedCopy.client_id || ""));
+          resBox.style.display = "block";
+        }
+        showToast(
+          "已生成专用密钥（仅显示一次）！严禁发进聊天对话框、微信群或公开 Issue，仅限填入 ChatGPT Sites 后台 Secrets 或本地 CLI 配置。",
+          true
+        );
+      })
+      .catch(function () {
+        if (mBtn) mBtn.disabled = state.is_loopback === false;
+        showToast("生成专用密钥失败，请确认本地服务在线", true);
+      });
+  }
+
+  function revokeAuthorizedClient(clientId, successMsg) {
+    var cid = String(clientId || "").trim();
+    if (!cid) return Promise.resolve({ ok: false });
+    return apiFetch("/api/studio/connection", {
+      method: "POST",
+      body: { action: "revoke_client", client_id: cid },
+    })
+      .then(function (d) {
+        if (d && d._httpStatus === 404) {
+          return apiFetch("/api/studio/revoke", {
+            method: "POST",
+            body: { client_id: cid },
+          });
+        }
+        return d;
+      })
+      .then(function (d) {
+        if (!d || !d.ok) {
+          showToast((d && (d.error || d.message)) || "吊销客户端授权失败", true);
+          return d;
+        }
+        clearPatOnceResult(cid);
+        if (d.gateways || d.workspaces || d.authorized_sessions) {
+          renderAll(d);
+        } else {
+          apiFetch("/api/studio/state").then(renderAll);
+        }
+        showToast(d.message || successMsg || "已吊销该客户端授权", false);
+        return d;
+      })
+      .catch(function () {
+        showToast("吊销请求失败，请确认本机服务在线", true);
+        return { ok: false };
+      });
+  }
+
+  function revealConnectionPassword() {
+    return apiFetch("/api/studio/connection", {
+      method: "POST",
+      body: { action: "reveal_password" },
+    }).then(function (d) {
+      if (!d || !d.ok) {
+        return {
+          ok: false,
+          password: "",
+          error: (d && (d.error || d.message)) || "当前仅允许在本机回环浏览器读取备用口令",
+        };
+      }
+      var pw = String(
+        d.connection_password || (d.connection && d.connection.connection_password) || ""
+      );
+      if (!pw) {
+        return {
+          ok: false,
+          password: "",
+          error: "本机当前未保存可展示的明文备用口令（可点击旁侧重置重新生成）",
+        };
+      }
+      return { ok: true, password: pw, error: "" };
+    });
+  }
+
+  function renderInstantSubchannels(connObj, docObj) {
+    var doc = docObj || state || {};
+    var conn = connObj || (doc && doc.connection) || {};
+    var gws = (conn && conn.gateways) || doc.gateways || state.gateways || {};
+    var instant = gws.instant || {};
+    var subs = instant.subchannels && typeof instant.subchannels === "object" ? instant.subchannels : {};
+
+    var srv = subs.srv_us || {};
+    var srvSt = String(
+      srv.status ||
+        (instant.srvus_fixed_active ? "ready" : instant.enabled ? "connecting" : "disabled")
+    );
+    var srvPill = $("sub-pill-srv_us");
+    if (srvPill) {
+      srvPill.className = "gw-status-pill is-" + srvSt;
+      srvPill.textContent =
+        srvSt === "ready" ? "已连通" : srvSt === "error" ? "异常" : srvSt === "connecting" ? "连接中" : "未开启";
+    }
+    var srvUrl = String(srv.mcp_url || "").trim();
+    var srvUrlEl = $("sub-url-srv_us");
+    var srvCopyBtn = $("sub-copy-srv_us");
+    if (srvUrlEl) {
+      srvUrlEl.textContent =
+        srvUrl ||
+        (srvSt === "error"
+          ? "srv.us 暂未连通（可点击右侧重连或展开下方排查日志）"
+          : "等待 srv.us 分配固定地址…");
+      srvUrlEl.className = srvUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
+    }
+    if (srvCopyBtn) {
+      srvCopyBtn.disabled = !srvUrl;
+      srvCopyBtn.setAttribute("data-url", srvUrl);
+    }
+    var srvErr = $("sub-err-srv_us");
+    if (srvErr) {
+      var srvErrTxt = String(srv.last_error || "").trim();
+      srvErr.style.display = srvErrTxt ? "block" : "none";
+      srvErr.textContent = srvErrTxt;
+    }
+
+    var cf = subs.trycloudflare || {};
+    var cfEnabled = Boolean(cf.enabled || instant.trycloudflare_backup);
+    var cfSt = String(cf.status || (cfEnabled ? "connecting" : "disabled"));
+    var cfSw = $("instant-sub-trycf-switch");
+    if (cfSw) {
+      cfSw.checked = Boolean(instant.trycloudflare_backup || cf.enabled);
+      cfSw.setAttribute("aria-checked", cfSw.checked ? "true" : "false");
+    }
+    var cfPill = $("sub-pill-trycloudflare");
+    if (cfPill) {
+      cfPill.className = "gw-status-pill is-" + cfSt;
+      cfPill.textContent =
+        cfSt === "ready" ? "已连通" : cfSt === "error" ? "异常" : cfSt === "connecting" ? "连接中" : "未开启";
+    }
+    var cfUrl = String(cf.mcp_url || "").trim();
+    var cfUrlEl = $("sub-url-trycloudflare");
+    var cfCopyBtn = $("sub-copy-trycloudflare");
+    if (cfUrlEl) {
+      cfUrlEl.textContent =
+        cfUrl ||
+        (cfEnabled
+          ? "正在建立 trycloudflare 临时通道…"
+          : "未开启（需要时打开上方开关即可与 srv.us 同时显示两个 URL）");
+      cfUrlEl.className = cfUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
+    }
+    if (cfCopyBtn) {
+      cfCopyBtn.disabled = !cfUrl;
+      cfCopyBtn.setAttribute("data-url", cfUrl);
+    }
+    var cfErr = $("sub-err-trycloudflare");
+    if (cfErr) {
+      var cfErrTxt = String(cf.last_error || "").trim();
+      cfErr.style.display = cfErrTxt ? "block" : "none";
+      cfErr.textContent = cfErrTxt;
+    }
+  }
+
+  function renderEndpointSecretControls(connObj, docObj) {
+    var doc = docObj || state || {};
+    var conn = connObj || (doc && doc.connection) || {};
+    var epOn = Boolean(
+      doc.endpoint_secret_enabled !== undefined
+        ? doc.endpoint_secret_enabled
+        : conn.endpoint_secret_enabled
+    );
+    var epMask = String(
+      doc.endpoint_secret_masked ||
+        conn.endpoint_secret_masked ||
+        (state.connection && state.connection.endpoint_secret_masked) ||
+        ""
+    );
+    var epLabel = epOn ? "已开启（/u/" + (epMask || "••••") + "/mcp）" : "未开启（默认 /mcp）";
+    ["gw-endpoint-secret-status-pill", "auth-endpoint-secret-pill"].forEach(function (id) {
+      var el = $(id);
+      if (el) {
+        el.textContent = epLabel;
+        el.className = epOn ? "tag tag-ok" : "tag tag-muted";
+      }
+    });
+    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.style.display = epOn ? "inline-flex" : "none";
+    });
+  }
+
+  function renderAuthPatList(patItems, isStrictLoopback) {
+    var ul = $("auth-pat-list");
+    if (!ul) return;
+    ul.innerHTML = "";
+    var list = Array.isArray(patItems) ? patItems : [];
+    if (!list.length) {
+      var emp = document.createElement("li");
+      emp.className = "empty-hint";
+      emp.style.padding = "8px 10px";
+      emp.textContent = "当前暂无已签发的专用密钥。";
+      ul.appendChild(emp);
+      return;
+    }
+    list.forEach(function (item) {
+      var li = document.createElement("li");
+      li.className = "item-row";
+
+      var left = document.createElement("div");
+      left.className = "session-item-info";
+
+      var topLine = document.createElement("div");
+      topLine.style.display = "flex";
+      topLine.style.flexWrap = "wrap";
+      topLine.style.alignItems = "center";
+      topLine.style.gap = "6px";
+
+      var nameStrong = document.createElement("strong");
+      nameStrong.style.fontSize = "12.5px";
+      nameStrong.textContent = String(item.client_name || item.label || item.client_id || "专用密钥");
+      topLine.appendChild(nameStrong);
+
+      var badgeInfo = resolveSessionScopeBadge(item);
+      var scopeTag = document.createElement("span");
+      scopeTag.className = badgeInfo.cls;
+      scopeTag.textContent = badgeInfo.text;
+      topLine.appendChild(scopeTag);
+
+      var meta = document.createElement("div");
+      meta.className = "item-meta";
+      var cidTxt = item.client_id ? "标识：" + item.client_id + " · " : "";
+      meta.textContent = cidTxt + "到期：" + (item.expires_at_text || "-");
+
+      left.appendChild(topLine);
+      left.appendChild(meta);
+
+      var revBtn = document.createElement("button");
+      revBtn.type = "button";
+      revBtn.className = "btn btn-danger btn-sm auth-revoke-pat-btn";
+      revBtn.setAttribute("data-client-id", item.client_id || "");
+      revBtn.disabled = isStrictLoopback === false && !state.unlocked;
+      revBtn.textContent = "吊销";
+      revBtn.addEventListener("click", function () {
+        revBtn.disabled = true;
+        revokeAuthorizedClient(item.client_id, "已吊销该专用密钥").finally(function () {
+          revBtn.disabled = false;
+        });
+      });
+
+      li.appendChild(left);
+      li.appendChild(revBtn);
+      ul.appendChild(li);
+    });
+  }
+
+  function renderAuthCredentialsPane(doc) {
+    var d = doc || state || {};
+    var isStrictLb = d.is_loopback !== false;
+    var lbPill = $("auth-local-bridge-pill");
+    if (lbPill) {
+      lbPill.className = isStrictLb ? "tag tag-ok" : "tag tag-muted";
+      lbPill.textContent = isStrictLb
+        ? "已启用（仅限本机 127.0.0.1 浏览器）"
+        : "当前为非回环访问（仅本机 127.0.0.1 浏览器可用）";
+    }
+
+    var codes = resolvePairCodes(d);
+    syncPairCodeDom(codes.dynamicCode, codes.consentCode);
+    syncAuthBackupDisplay();
+
+    var patItems = extractPatSessions(d);
+    var patCnt = computePatCount(d, (d.connection && d.connection.authorized_sessions) || d.authorized_sessions);
+    if ($("auth-pat-count-val")) {
+      $("auth-pat-count-val").textContent = String(patCnt);
+    }
+    if ($("auth-mint-pat-btn")) {
+      $("auth-mint-pat-btn").disabled = !isStrictLb;
+    }
+    if ($("auth-pat-loopback-only-hint")) {
+      $("auth-pat-loopback-only-hint").style.display = isStrictLb ? "none" : "block";
+    }
+    renderAuthPatList(patItems, isStrictLb);
+  }
+
+  var ENV_LOCK_META_MAP = {
+    permission_tier: { label: "权限安全档位", defaultVar: "COSMOS_MCP_PERMISSION_TIER", panes: ["workbench", "tools"] },
+    tier_key: { label: "权限安全档位", defaultVar: "COSMOS_MCP_PERMISSION_TIER", panes: ["workbench", "tools"] },
+    safety_mode: { label: "权限安全档位", defaultVar: "COSMOS_MCP_PERMISSION_TIER", panes: ["workbench", "tools"] },
+    workspace_roots: { label: "开放工作目录", defaultVar: "COSMOS_WORKSPACE_ROOTS", panes: ["workbench"] },
+    workspaces: { label: "开放工作目录", defaultVar: "COSMOS_WORKSPACE_ROOTS", panes: ["workbench"] },
+    readonly_workspace_roots: { label: "只读工作目录", defaultVar: "COSMOS_READONLY_WORKSPACE_ROOTS", panes: ["workbench"] },
+    enabled_packs: { label: "扩展能力包", defaultVar: "COSMOS_ENABLED_PACKS", panes: ["tools"] },
+    toolset_profile: { label: "核心工具预设", defaultVar: "COSMOS_TOOLSET_PROFILE", panes: ["tools"] },
+    prompt_profile: { label: "提示词预设", defaultVar: "COSMOS_PROMPT_PROFILE", panes: ["tools"] },
+    enabled_tools: { label: "启用工具列表", defaultVar: "COSMOS_ENABLED_TOOLS", panes: ["tools"] },
+    disabled_tools: { label: "禁用工具列表", defaultVar: "COSMOS_DISABLED_TOOLS", panes: ["tools"] },
+    tool_prefix: { label: "多设备工具前缀", defaultVar: "COSMOS_TOOL_PREFIX", panes: ["tools"] },
+    python_path: { label: "默认 Python 解释器", defaultVar: "COSMOS_PYTHON_PATH", panes: ["runtime"] },
+    keep_awake: { label: "插电防休眠", defaultVar: "COSMOS_KEEP_AWAKE", panes: ["runtime"] },
+    tunnel_mode: { label: "连接与网关模式", defaultVar: "COSMOS_TUNNEL_MODE", panes: ["gateways"] },
+    public_url: { label: "固定公网地址", defaultVar: "COSMOS_PUBLIC_URL", panes: ["gateways"] },
+    gateways: { label: "网关通道配置", defaultVar: "COSMOS_GATEWAYS", panes: ["gateways"] },
+    endpoint_secret: { label: "静态防扫描路径", defaultVar: "COSMOS_ENDPOINT_SECRET", panes: ["gateways", "auth"] },
+  };
+
+  function normalizeEnvLocks(doc) {
+    var d = doc || state || {};
+    var raw =
+      d.env_locks && typeof d.env_locks === "object" && !Array.isArray(d.env_locks)
+        ? d.env_locks
+        : d.connection && d.connection.env_locks && typeof d.connection.env_locks === "object"
+        ? d.connection.env_locks
+        : null;
+    var items = [];
+    var lockedKeys = {};
+    if (!raw) return { items: items, lockedKeys: lockedKeys };
+
+    Object.keys(raw).forEach(function (k) {
+      var val = raw[k];
+      if (!val) return;
+      lockedKeys[k] = true;
+      var meta = ENV_LOCK_META_MAP[k] || {
+        label: k,
+        defaultVar: String(k).toUpperCase(),
+        panes: ["workbench", "gateways", "auth", "runtime", "tools"],
+      };
+      var envVar = meta.defaultVar;
+      var customReason = "";
+      if (typeof val === "string") {
+        envVar = val.trim() || envVar;
+      } else if (typeof val === "object") {
+        if (val.env_var || val.var || val.name) {
+          envVar = String(val.env_var || val.var || val.name).trim();
+        }
+        if (val.label) {
+          meta = { label: String(val.label), defaultVar: envVar, panes: meta.panes };
+        }
+        if (val.reason) {
+          customReason = String(val.reason).trim();
+        }
+      }
+      items.push({
+        key: k,
+        label: meta.label,
+        envVar: envVar,
+        reason: customReason,
+        panes: meta.panes,
+      });
+    });
+    return { items: items, lockedKeys: lockedKeys };
+  }
+
+  function renderEnvLockBanners(doc) {
+    var parsed = normalizeEnvLocks(doc);
+    var items = parsed.items;
+    var lockedKeys = parsed.lockedKeys;
+
+    var bannerMap = {
+      workbench: $("wb-env-lock-banner"),
+      gateways: $("settings-env-lock-gateways"),
+      auth: $("settings-env-lock-auth"),
+      runtime: $("settings-env-lock-runtime"),
+      tools: $("settings-env-lock-tools"),
+    };
+
+    Object.keys(bannerMap).forEach(function (paneKey) {
+      var container = bannerMap[paneKey];
+      if (!container) return;
+      var matched = items.filter(function (it) {
+        return it.panes.indexOf(paneKey) >= 0;
+      });
+      if (!matched.length) {
+        container.style.display = "none";
+        container.innerHTML = "";
+        return;
+      }
+      container.innerHTML = "";
+      matched.forEach(function (it, idx) {
+        var line = document.createElement("div");
+        if (idx > 0) line.style.marginTop = "4px";
+        var strong = document.createElement("strong");
+        strong.textContent = it.label + "已锁定（";
+        var code = document.createElement("code");
+        code.textContent = it.envVar;
+        var tail = document.createElement("span");
+        var baseNotice = "由启动环境变量锁定，需修改启动环境并重启后更改。";
+        var extraReason =
+          it.reason && it.reason.indexOf("启动环境") < 0 ? "（" + it.reason + "）" : "";
+        tail.textContent = "）：" + baseNotice + extraReason;
+        line.appendChild(strong);
+        line.appendChild(code);
+        line.appendChild(tail);
+        container.appendChild(line);
+      });
+      container.style.display = "block";
+    });
+
+    var tierLocked = Boolean(
+      lockedKeys.permission_tier || lockedKeys.tier_key || lockedKeys.safety_mode
+    );
+    document.querySelectorAll("#safety-mode-cards [data-target-safety]").forEach(function (btn) {
+      var isAct = btn.classList.contains("active");
+      btn.disabled = tierLocked && !isAct;
+    });
+
+    var wsLocked = Boolean(lockedKeys.workspace_roots || lockedKeys.workspaces);
+    ["manual-ws-input", "add-manual-ws-btn", "pick-local-folder-btn", "tree-add-ws-btn", "tree-set-primary-btn"].forEach(
+      function (id) {
+        if ($(id)) $(id).disabled = wsLocked;
+      }
+    );
+    document.querySelectorAll("#workspace-roots-list button").forEach(function (btn) {
+      if (wsLocked) btn.disabled = true;
+    });
+
+    if (lockedKeys.enabled_packs) {
+      if ($("chk-pack-browser")) $("chk-pack-browser").disabled = true;
+      if ($("chk-pack-desktop")) $("chk-pack-desktop").disabled = true;
+    }
+    var pyLocked = Boolean(lockedKeys.python_path);
+    ["python-candidates-select", "python-path-input", "save-python-btn"].forEach(function (id) {
+      if ($(id)) $(id).disabled = pyLocked;
+    });
+    var tpLocked = Boolean(lockedKeys.tool_prefix);
+    ["tool-prefix-input", "save-tool-prefix-btn"].forEach(function (id) {
+      if ($(id)) $(id).disabled = tpLocked;
+    });
+  }
+
+  function loadGatewayDebug(gid) {
+    var logEl = $("gw-debug-log-" + gid);
+    if (logEl) logEl.textContent = "正在拉取脱敏实时日志…";
+    apiFetch("/api/studio/gateway-debug", { method: "GET" })
+      .then(function (data) {
+        if (!data || !data.gateways) return;
+        var g = data.gateways[gid] || {};
+        var eng = $("gw-debug-engine-" + gid);
+        if (eng) eng.textContent = String(g.effective_mode || g.status || "-");
+        var fb = $("gw-debug-fallback-" + gid);
+        if (fb) fb.textContent = g.fallback_active ? "是（已降级临时通道）" : "否";
+        var err = $("gw-debug-error-" + gid);
+        if (err) err.textContent = String(g.last_error || "无");
+        var src = $("gw-debug-source-" + gid);
+        if (src) src.textContent = "日志来源：" + String(g.log_source || "-");
+        if (logEl) {
+          var lines = Array.isArray(g.log_tail) ? g.log_tail : [];
+          logEl.textContent = lines.length ? lines.join("\n") : "（当前暂无相关日志记录）";
+        }
+      })
+      .catch(function (e) {
+        if (logEl) logEl.textContent = "拉取调试日志失败：" + (e && e.message ? e.message : String(e));
+      });
+  }
+
   function renderAll(doc) {
     if (!doc || typeof doc !== "object") return;
     state = doc;
+    if (doc.state_revision !== undefined && doc.state_revision !== null) {
+      lastStateRevision = String(doc.state_revision);
+    }
 
     if (doc.flash_notice) showToast(doc.flash_notice, false);
     if (doc.flash_error) showToast(doc.flash_error, true);
@@ -1292,13 +1963,15 @@
     var lockPanel = $("remote-lock-panel");
     var mainContent = $("studio-main-content");
     if (doc.locked) {
+      authBackupRevealed = false;
+      authBackupPlain = "";
+      syncAuthBackupDisplay();
       if (lockPanel) lockPanel.style.display = "block";
       if (mainContent) mainContent.style.display = "none";
       return;
     }
     if (lockPanel) lockPanel.style.display = "none";
     if (mainContent) mainContent.style.display = "block";
-    try { renderTransparentGatewaysAndAuth(doc); } catch (_e) {}
 
     var sBar = $("session-unlock-bar");
     var sText = $("session-bar-text");
@@ -1332,17 +2005,8 @@
     }
     renderConnectionGuides(conn);
 
-    var dynCode = conn.dynamic_pair_code || doc.dynamic_pair_code || "------";
-    if ($("dynamic-pair-code-box")) $("dynamic-pair-code-box").textContent = dynCode;
-    if ($("copy-dynamic-code-btn")) {
-      $("copy-dynamic-code-btn").disabled = !dynCode || dynCode === "------";
-    }
-
-    var pCode = conn.consent_pair_code || conn.pair_code || doc.consent_pair_code || "----";
-    if ($("pair-code-box")) $("pair-code-box").textContent = pCode;
-    if ($("copy-pair-code-btn")) {
-      $("copy-pair-code-btn").disabled = !pCode || pCode === "----";
-    }
+    var codes = resolvePairCodes(doc);
+    syncPairCodeDom(codes.dynamicCode, codes.consentCode);
 
     var sessArr = conn.authorized_sessions || doc.authorized_sessions || [];
     var sessCnt = typeof conn.authorized_sessions_count === "number" ? conn.authorized_sessions_count : sessArr.length;
@@ -1374,8 +2038,12 @@
     }
 
     updateConnectionCardsUI(conn.tunnel_mode || "public_gateway", conn);
-    lastSessionsSignature = JSON.stringify({ s: sessArr, m: doc.safety_mode || "full_dev" });
+    renderInstantSubchannels(conn, doc);
+    renderEndpointSecretControls(conn, doc);
+    var patCnt = computePatCount(doc, sessArr);
+    lastSessionsSignature = JSON.stringify({ s: sessArr, p: patCnt, m: doc.safety_mode || "full_dev" });
     renderAuthorizedSessions(sessArr);
+    renderAuthCredentialsPane(doc);
 
     // Tab 2: Workspaces & Python
     var ws = doc.workspaces || {};
@@ -1391,6 +2059,7 @@
     var sMode = doc.safety_mode || "full_dev";
     renderSafetyCards(sMode);
     applyToolsSafetyLinkage(sMode, tc);
+    renderEnvLockBanners(doc);
 
     var coreToolsList = tc.core_tools || [];
     var coreCount = Number(tc.core_count || coreToolsList.length || 16);
@@ -1421,18 +2090,24 @@
   }
 
   function resolveSessionScopeBadge(sess) {
-    var scopes = Array.isArray(sess.scopes)
-      ? sess.scopes.map(function (x) {
-          return String(x || "").toLowerCase();
-        })
+    var rawScopes = Array.isArray(sess.scopes)
+      ? sess.scopes
+      : typeof sess.scope === "string" && sess.scope.trim()
+      ? sess.scope.trim().split(/[\s,]+/)
       : [];
+    var scopes = rawScopes.map(function (x) {
+      return String(x || "").toLowerCase();
+    });
     var isRo = Boolean(
       sess.readonly ||
         scopes.indexOf("readonly") >= 0 ||
         scopes.indexOf("mcp:readonly") >= 0 ||
         scopes.indexOf("read_only") >= 0
     );
-    var tempSuffix = sess.temporary_session ? " · 临时会话" : "";
+    var tempSuffix = sess.temporary_session ? " · 2小时临时授权" : "";
+    if (sess.temporary_session && (!sess.scope_label || sess.scope_label.indexOf("临时") < 0)) {
+      tempSuffix = " · 临时会话";
+    }
     if (isRo) {
       var roTxt = sess.scope_label && sess.scope_label.indexOf("只读") >= 0 ? sess.scope_label : "仅只读权限" + tempSuffix;
       return { cls: "tag tag-warn", text: roTxt };
@@ -1513,20 +2188,9 @@
       btn.setAttribute("data-client-id", sess.client_id || "");
       btn.textContent = "断开";
       btn.addEventListener("click", function () {
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: { action: "revoke_client", client_id: sess.client_id },
-        }).then(function (d) {
-          if (!d.ok) return showToast(d.error || "断开客户端失败", true);
-          var patResBox = $("pat-once-result-box");
-          if (patResBox && patResBox.getAttribute("data-client-id") === String(sess.client_id || "")) {
-            patResBox.style.display = "none";
-            patResBox.removeAttribute("data-client-id");
-            if ($("pat-once-token-value")) $("pat-once-token-value").textContent = "";
-            if ($("pat-once-meta-text")) $("pat-once-meta-text").textContent = "";
-          }
-          renderAll(d);
-          showToast(d.message || "已断开该客户端授权", false);
+        btn.disabled = true;
+        revokeAuthorizedClient(sess.client_id, "已断开该客户端授权").finally(function () {
+          btn.disabled = false;
         });
       });
 
@@ -3195,22 +3859,20 @@
         ? "只读查看我本地授权目录的文件与状态"
         : "读写我本地授权目录的文件并执行本地开发工具";
       return [
-        "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e) 帮我创建一个插件，把我的本地电脑服务 WebAI2PC 接入当前 ChatGPT 账号，并完成首次调用验证（请在 Work 模式下执行；装好后日常可在 Chat 模式通过 @WebAI2PC 直接调用，不扣 Work/Codex 额度）。",
+        "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e) 帮我创建一个插件，把我的本地电脑服务 WebAI2PC 接入当前 ChatGPT 账号，并完成首次调用验证（请在 Work 模式下执行；装好后日常可在 Chat 模式通过 @WebAI2PC 直接调用）。",
         "",
         "插件名称：WebAI2PC",
         "MCP 地址：" + oneclickUrl,
-        "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0），用于" +
+        "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0，采用标准 OAuth 2.1 认证），用于" +
           scopeDesc +
-          "；该专属地址已预授权，支持标准 Streamable HTTP（无状态 JSON-RPC 2.0 POST，无需额外配置 OAuth 令牌或密钥）；首次验证工具为 " +
+          "；首次验证工具为 " +
           statusHint +
           "。",
         "",
-        "执行要求：",
-        "1. 请优先用 @Plugin Creator 直接接入上述 MCP 地址创建并安装 WebAI2PC 插件（如该地址启用了 OAuth 则按服务端公布的元数据自动协商，需要我点授权确认时提示我操作）。",
-        "2. 如果当前工作区限制直接绑定外部域名 MCP（例如返回 403），请直接通过私有 ChatGPT Sites 部署轻量 MCP 转发服务指向上述地址，用自动生成的同域配套插件完成接入（把上述专属地址保存在你的服务端配置中，不要对外公开）。",
-        "3. 插件就绪后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
-        "",
-        "安全提醒：上方包含本机专属连接地址，仅限发给本人登录的 ChatGPT 账号，请勿发往群聊、论坛、公开 Issue 或转给他人（若不慎外发可在本地控制台一键更换作废）。",
+        "执行步骤：",
+        "1. 请使用 @Plugin Creator 直接接入上述标准 OAuth MCP 地址创建并安装 WebAI2PC 插件；按服务端公布的 OAuth 元数据自动协商，需要我点击授权确认时请提示我操作。",
+        "2. 插件安装并授权完成后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
+        "3. 若当前工作区策略禁止添加或绑定外部 MCP 插件（例如返回 403 或缺少相应权限），请如实向我汇报该限制即可。",
       ].join("\n");
     }
 
@@ -3228,7 +3890,7 @@
       });
     }
 
-    // Primary ChatGPT Action: Mint/reuse pre-authorized one-click URL & copy @Plugin Creator prompt for Work mode
+    // Primary ChatGPT Action: Fetch single-source standard OAuth @Plugin Creator prompt for Work mode
     document.querySelectorAll("[data-copy-chatgpt-assist]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var kind = btn.getAttribute("data-copy-chatgpt-assist") === "readonly" ? "readonly" : "mcp";
@@ -3243,8 +3905,16 @@
           body: { kind: kind, rotate: false },
         })
           .then(function (d) {
-            var effUrl = d && d.ok && isSafeHttpsUrl(d.oneclick_url) ? d.oneclick_url : targetUrl;
-            var connectPrompt = buildChatGptConnectPrompt(kind, effUrl);
+            var connectPrompt = "";
+            if (d && d.ok && typeof d.prompt === "string" && d.prompt.trim()) {
+              connectPrompt = d.prompt.trim();
+            } else {
+              var effUrl =
+                d && d.ok && isSafeHttpsUrl(d.mcp_url || d.oneclick_url)
+                  ? d.mcp_url || d.oneclick_url
+                  : targetUrl;
+              connectPrompt = buildChatGptConnectPrompt(kind, effUrl);
+            }
             copyText(connectPrompt, btn);
             showToast(
               "已复制一键配置提示词（请粘贴发给 ChatGPT Work 模式；含本机专属地址，仅限本人账号使用，请勿发往群聊或公开帖子）",
@@ -3976,21 +4646,6 @@
       });
     }
 
-    var PAT_ANTI_LEAK_TOAST =
-      "已复制专用密钥！严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue！仅限填入 ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件；如怀疑泄露请在已授权列表点击『断开』立即作废。";
-
-    function clearPatOnceResult(onlyIfClientId) {
-      var box = $("pat-once-result-box");
-      if (!box) return;
-      if (onlyIfClientId && box.getAttribute("data-client-id") !== onlyIfClientId) {
-        return;
-      }
-      box.style.display = "none";
-      box.removeAttribute("data-client-id");
-      if ($("pat-once-token-value")) $("pat-once-token-value").textContent = "";
-      if ($("pat-once-meta-text")) $("pat-once-meta-text").textContent = "";
-    }
-
     $("revoke-sessions-btn").addEventListener("click", function () {
       apiFetch("/api/studio/connection", { method: "POST", body: { action: "revoke_sessions" } }).then(function (d) {
         if (!d.ok) return showToast(d.error || "断开会话失败", true);
@@ -4021,55 +4676,12 @@
 
     if ($("mint-pat-btn")) {
       $("mint-pat-btn").addEventListener("click", function () {
-        var mBtn = $("mint-pat-btn");
-        var scopeSel = $("pat-scope-select");
-        var ttlSel = $("pat-ttl-select");
-        var lblInp = $("pat-label-input");
-        var wantReadonly = !scopeSel || scopeSel.value !== "readwrite";
-        var ttlDays = ttlSel ? parseInt(ttlSel.value, 10) || 30 : 30;
-        var labelVal = lblInp ? lblInp.value.trim() : "";
-
-        mBtn.disabled = true;
-        apiFetch("/api/studio/tokens/mint", {
-          method: "POST",
-          body: {
-            readonly: wantReadonly,
-            ttl_days: ttlDays,
-            label: labelVal,
-          },
-        }).then(function (d) {
-          mBtn.disabled = state.is_loopback === false;
-          if (!d || !d.ok || !d.minted_token || !d.minted_token.token) {
-            return showToast((d && (d.message || d.error)) || "生成专用密钥失败", true);
-          }
-          var minted = d.minted_token;
-          delete d.minted_token;
-          renderAll(d);
-          if (lblInp) lblInp.value = "";
-          var resBox = $("pat-once-result-box");
-          var tokValEl = $("pat-once-token-value");
-          var metaEl = $("pat-once-meta-text");
-          if (tokValEl) tokValEl.textContent = String(minted.token);
-          if (metaEl) {
-            var scopeDesc = minted.readonly ? "仅只读权限（限 /mcp/readonly）" : "工作区读写权限（允许 /mcp）";
-            metaEl.textContent =
-              "已签发：" +
-              (minted.platform || "专用密钥 (Sites / CLI)") +
-              " · " +
-              (minted.client_name || "") +
-              " ｜ " +
-              scopeDesc +
-              " ｜ 到期：" +
-              (minted.expires_at_text || "-");
-          }
-          if (resBox) {
-            resBox.setAttribute("data-client-id", String(minted.client_id || ""));
-            resBox.style.display = "block";
-          }
-          showToast(
-            "已生成专用密钥（仅显示一次）！严禁发进聊天对话框、微信群或公开 Issue，仅限填入 ChatGPT Sites 后台 Secrets 或本地 CLI 配置。",
-            true
-          );
+        submitPatMintFlow({
+          btnId: "mint-pat-btn",
+          scopeSelectId: "pat-scope-select",
+          ttlSelectId: "pat-ttl-select",
+          labelInputId: "pat-label-input",
+          oncePrefix: "pat-once",
         });
       });
     }
@@ -4086,7 +4698,398 @@
 
     if ($("dismiss-pat-result-btn")) {
       $("dismiss-pat-result-btn").addEventListener("click", function () {
-        clearPatOnceResult("");
+        clearPatOnceResult("", "pat-once");
+      });
+    }
+
+    // Settings -> Gateways Subchannels, Reconnect, Debug Drawers & Endpoint Secret (/u/<secret>)
+    document.querySelectorAll("[data-subchannel-reconnect]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var sub = btn.getAttribute("data-subchannel-reconnect");
+        if (!sub) return;
+        btn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "reconnect_subchannel", subchannel: sub },
+        })
+          .then(function (d) {
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "子通道重连失败", true);
+              return;
+            }
+            if (d.gateways || d.connection) renderAll(d);
+            showToast(d.message || "已触发 " + sub + " 独立重连", false);
+          })
+          .catch(function (e) {
+            showToast("重连失败：" + (e && e.message ? e.message : e), true);
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+    });
+
+    document.querySelectorAll("[data-subchannel-copy]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var u = btn.getAttribute("data-url") || "";
+        if (!u) return;
+        copyText(u, btn);
+        showToast("已复制连接地址（请仅用于本人登录的 AI 账号）", false);
+      });
+    });
+
+    if ($("instant-sub-trycf-switch")) {
+      $("instant-sub-trycf-switch").addEventListener("change", function () {
+        var cfSw = $("instant-sub-trycf-switch");
+        var en = Boolean(cfSw.checked);
+        cfSw.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "set_trycloudflare_backup", enabled: en },
+        })
+          .then(function (d) {
+            cfSw.disabled = false;
+            if (!d || !d.ok) {
+              cfSw.checked = !en;
+              showToast((d && (d.error || d.message)) || "切换备用通道失败", true);
+              return;
+            }
+            renderAll(d);
+            showToast(
+              d.message ||
+                (en ? "已开启 trycloudflare 备用通道（与 srv.us 并存）" : "已关闭 trycloudflare 备用通道"),
+              false
+            );
+          })
+          .catch(function (e) {
+            cfSw.disabled = false;
+            cfSw.checked = !en;
+            showToast("切换备用通道失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    document.querySelectorAll("[data-gw-reconnect]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var gid = btn.getAttribute("data-gw-reconnect");
+        if (!gid) return;
+        btn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "reconnect_gateway", gateway_id: gid },
+        })
+          .then(function (d) {
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "重连通道失败", true);
+              return;
+            }
+            if (d.gateways || d.connection) renderAll(d);
+            showToast(d.message || "已触发 " + gid + " 通道重连", false);
+          })
+          .catch(function (e) {
+            showToast("重连失败：" + (e && e.message ? e.message : e), true);
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+    });
+
+    document.querySelectorAll("[data-gw-debug]").forEach(function (el) {
+      var gid = el.getAttribute("data-gw-debug");
+      el.addEventListener("toggle", function () {
+        if (el.open && gid) loadGatewayDebug(gid);
+      });
+    });
+    document.querySelectorAll("[data-gw-debug-refresh]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var gid = btn.getAttribute("data-gw-debug-refresh");
+        if (gid) loadGatewayDebug(gid);
+      });
+    });
+
+    function bindTwoStepEndpointSecretBtn(btnId, actionName, armText, armHint, defaultLabel) {
+      var btn = $(btnId);
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        if (btn.getAttribute("data-confirm-armed") !== "1") {
+          btn.setAttribute("data-confirm-armed", "1");
+          btn.textContent = armText;
+          btn.classList.add("btn-danger");
+          showToast(armHint, false);
+          clearTimeout(endpointSecretConfirmTimers[btnId]);
+          endpointSecretConfirmTimers[btnId] = setTimeout(function () {
+            btn.removeAttribute("data-confirm-armed");
+            btn.textContent = defaultLabel;
+            btn.classList.remove("btn-danger");
+          }, 6000);
+          return;
+        }
+        clearTimeout(endpointSecretConfirmTimers[btnId]);
+        btn.removeAttribute("data-confirm-armed");
+        btn.textContent = defaultLabel;
+        btn.classList.remove("btn-danger");
+        btn.disabled = true;
+        var payload =
+          actionName === "rotate_endpoint_secret"
+            ? { action: "rotate_endpoint_secret", revoke_sessions: false }
+            : { action: "disable_endpoint_secret" };
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: payload,
+        })
+          .then(function (d) {
+            btn.disabled = false;
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "更新静态防扫描路径失败", true);
+              return;
+            }
+            renderAll(d);
+            showToast(
+              d.message ||
+                (actionName === "rotate_endpoint_secret"
+                  ? "已更新静态防扫描路径（/u/<secret>）"
+                  : "已恢复默认 /mcp 路径"),
+              false
+            );
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            showToast("操作失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    ["gw-rotate-endpoint-secret-btn", "auth-rotate-endpoint-secret-btn"].forEach(function (id) {
+      bindTwoStepEndpointSecretBtn(
+        id,
+        "rotate_endpoint_secret",
+        "再点确认更换",
+        "提示：开启或更换 /u/<secret> 会变更所有网关 URL，再次点击按钮确认执行。",
+        "开启 / 更换路径"
+      );
+    });
+    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
+      bindTwoStepEndpointSecretBtn(
+        id,
+        "disable_endpoint_secret",
+        "再点确认关闭",
+        "提示：关闭防扫描路径将恢复默认 /mcp，再次点击按钮确认执行。",
+        "关闭并恢复 /mcp"
+      );
+    });
+
+    // Settings -> Auth & Credentials Pane (`#settings-pane-auth`)
+    function copyAuthDynamicPairCode(triggerBtn) {
+      var codes = resolvePairCodes(state);
+      if (!codes.dynamicCode) return;
+      copyText(codes.dynamicCode, triggerBtn || $("auth-copy-pair-btn"));
+      showToast("已复制 6 位动态配对码：" + codes.dynamicCode, false);
+    }
+    function copyAuthConsentCode(triggerBtn) {
+      var codes = resolvePairCodes(state);
+      if (!codes.consentCode) return;
+      copyText(codes.consentCode, triggerBtn || $("auth-copy-verify-btn"));
+      showToast("已复制 4 位核对码：" + codes.consentCode, false);
+    }
+
+    if ($("auth-copy-pair-btn")) {
+      $("auth-copy-pair-btn").addEventListener("click", function () {
+        copyAuthDynamicPairCode($("auth-copy-pair-btn"));
+      });
+    }
+    if ($("auth-pair-code-val")) {
+      $("auth-pair-code-val").addEventListener("click", function () {
+        copyAuthDynamicPairCode($("auth-copy-pair-btn"));
+      });
+    }
+    if ($("auth-copy-verify-btn")) {
+      $("auth-copy-verify-btn").addEventListener("click", function () {
+        copyAuthConsentCode($("auth-copy-verify-btn"));
+      });
+    }
+    if ($("auth-verify-code-val")) {
+      $("auth-verify-code-val").addEventListener("click", function () {
+        copyAuthConsentCode($("auth-copy-verify-btn"));
+      });
+    }
+
+    if ($("auth-refresh-pair-btn")) {
+      $("auth-refresh-pair-btn").addEventListener("click", function () {
+        var rBtn = $("auth-refresh-pair-btn");
+        rBtn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "rotate_pair_code" },
+        })
+          .then(function (d) {
+            rBtn.disabled = false;
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "刷新配对码失败", true);
+              return;
+            }
+            if (d.gateways || d.workspaces) {
+              renderAll(d);
+            }
+            var nextCodes = resolvePairCodes(d);
+            var effDyn = nextCodes.dynamicCode || resolvePairCodes(state).dynamicCode;
+            var effVer = nextCodes.consentCode || resolvePairCodes(state).consentCode;
+            state.dynamic_pair_code = effDyn;
+            state.consent_pair_code = effVer;
+            state.pair_code = effVer;
+            state.connection = Object.assign({}, state.connection || {}, {
+              dynamic_pair_code: effDyn,
+              consent_pair_code: effVer,
+              pair_code: effVer,
+            });
+            syncPairCodeDom(effDyn, effVer);
+            showToast(d.message || "已刷新 6 位动态配对码与 4 位核对码", false);
+          })
+          .catch(function () {
+            rBtn.disabled = false;
+            showToast("刷新配对码失败，请确认本机服务在线", true);
+          });
+      });
+    }
+
+    if ($("auth-toggle-backup-btn")) {
+      $("auth-toggle-backup-btn").addEventListener("click", function () {
+        var tBtn = $("auth-toggle-backup-btn");
+        if (authBackupRevealed) {
+          authBackupPlain = "";
+          authBackupRevealed = false;
+          syncAuthBackupDisplay();
+          return;
+        }
+        tBtn.disabled = true;
+        revealConnectionPassword()
+          .then(function (res) {
+            tBtn.disabled = false;
+            if (!res.ok) {
+              showToast(res.error, true);
+              return;
+            }
+            authBackupPlain = res.password;
+            authBackupRevealed = true;
+            syncAuthBackupDisplay();
+          })
+          .catch(function () {
+            tBtn.disabled = false;
+            showToast("读取备用口令失败，请确认本机服务在线", true);
+          });
+      });
+    }
+
+    if ($("auth-copy-backup-btn")) {
+      $("auth-copy-backup-btn").addEventListener("click", function () {
+        var cBtn = $("auth-copy-backup-btn");
+        if (authBackupRevealed && authBackupPlain) {
+          copyText(authBackupPlain, cBtn);
+          showToast("已复制 20 位备用口令 · 请妥善保管，切勿发给他人或群聊", false);
+          return;
+        }
+        cBtn.disabled = true;
+        revealConnectionPassword()
+          .then(function (res) {
+            cBtn.disabled = false;
+            if (!res.ok) {
+              showToast(res.error, true);
+              return;
+            }
+            copyText(res.password, cBtn);
+            showToast("已复制 20 位备用口令 · 请妥善保管，切勿发给他人或群聊", false);
+          })
+          .catch(function () {
+            cBtn.disabled = false;
+            showToast("读取备用口令失败，请确认本机服务在线", true);
+          });
+      });
+    }
+
+    function executeRotateBackupPassword() {
+      var rotBtn = $("auth-rotate-backup-btn");
+      var cfmBtn = $("auth-confirm-rotate-backup-btn");
+      setAuthRotateConfirmOpen(false);
+      if (rotBtn) rotBtn.disabled = true;
+      if (cfmBtn) cfmBtn.disabled = true;
+      apiFetch("/api/studio/connection", {
+        method: "POST",
+        body: { action: "rotate_password", revoke_sessions: false },
+      })
+        .then(function (d) {
+          if (rotBtn) rotBtn.disabled = false;
+          if (cfmBtn) cfmBtn.disabled = false;
+          if (!d || !d.ok) {
+            showToast((d && (d.error || d.message)) || "重置备用口令失败", true);
+            return;
+          }
+          var nextPw = String(
+            d.connection_password || (d.connection && d.connection.connection_password) || ""
+          );
+          if (authBackupRevealed) {
+            if (nextPw) {
+              authBackupPlain = nextPw;
+            } else {
+              authBackupPlain = "";
+              authBackupRevealed = false;
+            }
+          } else {
+            authBackupPlain = "";
+          }
+          if (d.gateways || d.workspaces || d.connection) {
+            renderAll(d);
+          }
+          syncAuthBackupDisplay();
+          showToast(d.message || "已重置 20 位备用口令并加密保存", false);
+        })
+        .catch(function () {
+          if (rotBtn) rotBtn.disabled = false;
+          if (cfmBtn) cfmBtn.disabled = false;
+          showToast("重置备用口令失败，请确认本机服务在线", true);
+        });
+    }
+
+    if ($("auth-rotate-backup-btn")) {
+      $("auth-rotate-backup-btn").addEventListener("click", function () {
+        if (!authRotateConfirmArmed) {
+          setAuthRotateConfirmOpen(true);
+          return;
+        }
+        executeRotateBackupPassword();
+      });
+    }
+    if ($("auth-confirm-rotate-backup-btn")) {
+      $("auth-confirm-rotate-backup-btn").addEventListener("click", executeRotateBackupPassword);
+    }
+    if ($("auth-cancel-rotate-backup-btn")) {
+      $("auth-cancel-rotate-backup-btn").addEventListener("click", function () {
+        setAuthRotateConfirmOpen(false);
+      });
+    }
+
+    if ($("auth-mint-pat-btn")) {
+      $("auth-mint-pat-btn").addEventListener("click", function () {
+        submitPatMintFlow({
+          btnId: "auth-mint-pat-btn",
+          scopeSelectId: "auth-pat-scope-select",
+          ttlSelectId: "auth-pat-ttl-select",
+          labelInputId: "auth-pat-label-input",
+          oncePrefix: "auth-pat-once",
+        });
+      });
+    }
+    if ($("auth-copy-pat-token-btn")) {
+      $("auth-copy-pat-token-btn").addEventListener("click", function () {
+        var tokEl = $("auth-pat-once-token-value");
+        var rawTok = tokEl ? tokEl.textContent.trim() : "";
+        if (!rawTok) return;
+        copyText(rawTok, $("auth-copy-pat-token-btn"));
+        showToast(PAT_ANTI_LEAK_TOAST, true);
+      });
+    }
+    if ($("auth-dismiss-pat-result-btn")) {
+      $("auth-dismiss-pat-result-btn").addEventListener("click", function () {
+        clearPatOnceResult("", "auth-pat-once");
       });
     }
 
@@ -4611,6 +5614,8 @@
       { inp: "custom-url-input", btn: "save-channel-btn" },
       { inp: "skill-market-query-input", btn: "skill-market-search-btn" },
       { inp: "skill-vet-source-input", btn: "skill-vet-btn" },
+      { inp: "pat-label-input", btn: "mint-pat-btn" },
+      { inp: "auth-pat-label-input", btn: "auth-mint-pat-btn" },
     ].forEach(function (pair) {
       var inpEl = $(pair.inp);
       var btnEl = $(pair.btn);
@@ -4690,6 +5695,38 @@
         pollOnce();
       }, 220);
     }
+    var pendingStateSync = false;
+    function triggerFullStateSync() {
+      if (stateSyncInFlight) {
+        pendingStateSync = true;
+        return;
+      }
+      stateSyncInFlight = true;
+      pendingStateSync = false;
+      var syncStartedAt = Date.now();
+      apiFetch("/api/studio/state")
+        .then(function (fullDoc) {
+          stateSyncInFlight = false;
+          if (inFlightMutations > 0 || syncStartedAt < lastMutationAt) {
+            scheduleSettledPoll();
+            return;
+          }
+          if (fullDoc && fullDoc.ok) {
+            renderAll(fullDoc);
+          }
+          if (pendingStateSync) {
+            pendingStateSync = false;
+            triggerFullStateSync();
+          }
+        })
+        .catch(function () {
+          stateSyncInFlight = false;
+          if (pendingStateSync) {
+            pendingStateSync = false;
+            scheduleSettledPoll();
+          }
+        });
+    }
     function pollOnce() {
       if (state.locked) return;
       if (inFlightMutations > 0) {
@@ -4715,41 +5752,25 @@
           }
           if (!d || !d.ok) {
             if (d && d._httpStatus === 403 && d.locked) {
-              apiFetch("/api/studio/state").then(renderAll);
+              triggerFullStateSync();
               return;
             }
             throw new Error("poll_failed");
           }
           setStatusIndicator(d.status_kind || "online", d.status_text || "在线运行");
-          if (d.safety_mode && d.safety_mode !== state.safety_mode) {
-            state.safety_mode = d.safety_mode;
-            renderSafetyCards(d.safety_mode);
-            var wsFpBanner = $("workspace-fullpower-banner");
-            if (wsFpBanner) {
-              wsFpBanner.style.display = d.safety_mode === "full_power" ? "block" : "none";
-            }
-            apiFetch("/api/studio/state").then(renderAll);
-          }
 
-          var dynNow = d.dynamic_pair_code || "------";
-          if ($("dynamic-pair-code-box") && $("dynamic-pair-code-box").textContent !== dynNow) {
-            $("dynamic-pair-code-box").textContent = dynNow;
-          }
-          if ($("copy-dynamic-code-btn")) {
-            $("copy-dynamic-code-btn").disabled = !dynNow || dynNow === "------";
-          }
-
-          var latestCode = d.consent_pair_code || d.pair_code || "----";
-          var pBox = $("pair-code-box");
-          if (pBox && pBox.textContent !== latestCode) {
-            pBox.textContent = latestCode;
-          }
-          if ($("copy-pair-code-btn")) {
-            $("copy-pair-code-btn").disabled = !latestCode || latestCode === "----";
-          }
+          var pollCodes = resolvePairCodes(d);
+          var dynNow = pollCodes.dynamicCode || "------";
+          var latestCode = pollCodes.consentCode || "----";
+          syncPairCodeDom(pollCodes.dynamicCode, pollCodes.consentCode);
 
           var nextSessions = d.authorized_sessions || [];
           var sessCntNow = typeof d.authorized_sessions_count === "number" ? d.authorized_sessions_count : nextSessions.length;
+          var patCntNow = computePatCount(d, nextSessions);
+          state.pat_count = patCntNow;
+          if ($("auth-pat-count-val") && $("auth-pat-count-val").textContent !== String(patCntNow)) {
+            $("auth-pat-count-val").textContent = String(patCntNow);
+          }
           if ($("revoke-sessions-btn")) {
             $("revoke-sessions-btn").disabled = sessCntNow <= 0;
           }
@@ -4759,15 +5780,52 @@
             $("kill-all-tasks-btn").disabled = d.running_tasks_count <= 0;
           }
 
-          var nextSig = JSON.stringify({ s: nextSessions, m: d.safety_mode || state.safety_mode || "full_dev" });
+          if (d.env_locks !== undefined) {
+            state.env_locks = d.env_locks;
+            renderEnvLockBanners(state);
+          }
+
+          if (d.state_revision !== undefined && d.state_revision !== null) {
+            var nextRev = String(d.state_revision);
+            if (lastStateRevision === null) {
+              lastStateRevision = nextRev;
+            } else if (nextRev !== String(lastStateRevision)) {
+              triggerFullStateSync();
+              return;
+            }
+          }
+
+          if (d.safety_mode && d.safety_mode !== state.safety_mode) {
+            state.safety_mode = d.safety_mode;
+            renderSafetyCards(d.safety_mode);
+            var wsFpBanner = $("workspace-fullpower-banner");
+            if (wsFpBanner) {
+              wsFpBanner.style.display = d.safety_mode === "full_power" ? "block" : "none";
+            }
+            triggerFullStateSync();
+            return;
+          }
+
+          var nextSig = JSON.stringify({
+            s: nextSessions,
+            p: patCntNow,
+            m: d.safety_mode || state.safety_mode || "full_dev",
+          });
           if (nextSig !== lastSessionsSignature) {
             lastSessionsSignature = nextSig;
             if ($("sessions-count")) {
               $("sessions-count").textContent = String(sessCntNow);
             }
             renderAuthorizedSessions(nextSessions);
+            renderAuthPatList(
+              extractPatSessions({ authorized_sessions: nextSessions, pats: d.pats }),
+              state.is_loopback !== false
+            );
           }
 
+          state.dynamic_pair_code = pollCodes.dynamicCode;
+          state.consent_pair_code = pollCodes.consentCode;
+          state.pair_code = pollCodes.consentCode;
           state.tunnel_mode = d.tunnel_mode;
           state.effective_tunnel_mode = d.effective_tunnel_mode;
           state.public_https_ready = Boolean(d.public_https_ready);
@@ -4797,6 +5855,14 @@
             mcp_url: d.mcp_url,
             mcp_readonly_url: d.mcp_readonly_url,
             readonly_mcp_url: d.readonly_mcp_url,
+            endpoint_secret_enabled:
+              d.endpoint_secret_enabled !== undefined
+                ? Boolean(d.endpoint_secret_enabled)
+                : Boolean(state.connection && state.connection.endpoint_secret_enabled),
+            endpoint_secret_masked:
+              d.endpoint_secret_masked !== undefined
+                ? d.endpoint_secret_masked
+                : (state.connection && state.connection.endpoint_secret_masked) || "",
             skill_url: d.skill_url,
             srvus_fixed_active: Boolean(d.srvus_fixed_active),
             instant_fallback_active: Boolean(d.instant_fallback_active),
@@ -4807,9 +5873,12 @@
             pair_code: latestCode,
             consent_pair_code: latestCode,
             dynamic_pair_code: dynNow,
+            pat_count: patCntNow,
           });
           renderConnectionGuides(state.connection);
           updateConnectionCardsUI(d.tunnel_mode || "public_gateway", state.connection);
+          renderInstantSubchannels(state.connection, d);
+          renderEndpointSecretControls(state.connection, d);
           updateTabTelemetryBadges(d);
           syncIpWorkingPose(d);
           if (typeof syncOnboardingWizard === "function") syncOnboardingWizard(state);
@@ -5907,308 +6976,6 @@
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-lang"] });
   }
 
-  var _authBackupRevealed = false;
-
-  function renderTransparentGatewaysAndAuth(doc) {
-    if (!doc || typeof doc !== "object") return;
-    var conn = doc.connection && typeof doc.connection === "object" ? doc.connection : doc;
-    var gws = (conn && conn.gateways) || doc.gateways || {};
-    var instant = gws.instant || {};
-    var subs = instant.subchannels && typeof instant.subchannels === "object" ? instant.subchannels : {};
-
-    // 1. Subchannel srv.us (primary fixed)
-    var srv = subs.srv_us || {};
-    var srvSt = String(srv.status || (instant.srvus_fixed_active ? "ready" : (instant.enabled ? "connecting" : "disabled")));
-    var srvPill = $("sub-pill-srv_us");
-    if (srvPill) {
-      srvPill.className = "gw-status-pill is-" + srvSt;
-      srvPill.textContent = srvSt === "ready" ? "已连通" : srvSt === "error" ? "异常" : srvSt === "connecting" ? "连接中" : "未开启";
-    }
-    var srvUrl = String(srv.mcp_url || "").trim();
-    var srvUrlEl = $("sub-url-srv_us");
-    var srvCopyBtn = $("sub-copy-srv_us");
-    if (srvUrlEl) {
-      srvUrlEl.textContent = srvUrl || (srvSt === "error" ? "srv.us 暂未连通（可点击右侧重连或展开下方排查日志）" : "等待 srv.us 分配固定地址…");
-      srvUrlEl.className = srvUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
-    }
-    if (srvCopyBtn) {
-      srvCopyBtn.disabled = !srvUrl;
-      srvCopyBtn.setAttribute("data-url", srvUrl);
-    }
-    var srvErr = $("sub-err-srv_us");
-    if (srvErr) {
-      var srvErrTxt = String(srv.last_error || "").trim();
-      srvErr.style.display = srvErrTxt ? "block" : "none";
-      srvErr.textContent = srvErrTxt;
-    }
-
-    // 2. Subchannel trycloudflare (backup temporary)
-    var cf = subs.trycloudflare || {};
-    var cfEnabled = Boolean(cf.enabled || instant.trycloudflare_backup);
-    var cfSt = String(cf.status || (cfEnabled ? "connecting" : "disabled"));
-    var cfSw = $("instant-sub-trycf-switch");
-    if (cfSw) {
-      cfSw.checked = Boolean(instant.trycloudflare_backup || cf.enabled);
-      cfSw.setAttribute("aria-checked", cfSw.checked ? "true" : "false");
-    }
-    var cfPill = $("sub-pill-trycloudflare");
-    if (cfPill) {
-      cfPill.className = "gw-status-pill is-" + cfSt;
-      cfPill.textContent = cfSt === "ready" ? "已连通" : cfSt === "error" ? "异常" : cfSt === "connecting" ? "连接中" : "未开启";
-    }
-    var cfUrl = String(cf.mcp_url || "").trim();
-    var cfUrlEl = $("sub-url-trycloudflare");
-    var cfCopyBtn = $("sub-copy-trycloudflare");
-    if (cfUrlEl) {
-      cfUrlEl.textContent = cfUrl || (cfEnabled ? "正在建立 trycloudflare 临时通道…" : "未开启（需要时打开上方开关即可与 srv.us 同时显示两个 URL）");
-      cfUrlEl.className = cfUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
-    }
-    if (cfCopyBtn) {
-      cfCopyBtn.disabled = !cfUrl;
-      cfCopyBtn.setAttribute("data-url", cfUrl);
-    }
-    var cfErr = $("sub-err-trycloudflare");
-    if (cfErr) {
-      var cfErrTxt = String(cf.last_error || "").trim();
-      cfErr.style.display = cfErrTxt ? "block" : "none";
-      cfErr.textContent = cfErrTxt;
-    }
-
-    // 3. Endpoint secret (/u/<secret>) status in both Gateways & Auth panes
-    var epOn = Boolean(conn.endpoint_secret_enabled || doc.endpoint_secret_enabled);
-    var epMask = String(conn.endpoint_secret_masked || doc.endpoint_secret_masked || "");
-    var epLabel = epOn ? ("已开启（/u/" + (epMask || "••••") + "/mcp）") : "未开启（默认 /mcp）";
-    ["gw-endpoint-secret-status-pill", "auth-endpoint-secret-pill"].forEach(function (id) {
-      var el = $(id);
-      if (el) {
-        el.textContent = epLabel;
-        el.className = epOn ? "tag tag-ok" : "tag tag-muted";
-      }
-    });
-    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
-      var el = $(id);
-      if (el) el.style.display = epOn ? "inline-flex" : "none";
-    });
-
-    // 4. Auth pane live values (pair code, verify code, backup token, PAT count)
-    var pairEl = $("auth-pair-code-val");
-    if (pairEl) pairEl.textContent = String(doc.pair_code || conn.pair_code || "-");
-    var verEl = $("auth-verify-code-val");
-    if (verEl) verEl.textContent = String(doc.verify_code || conn.verify_code || "-");
-    var bkEl = $("auth-backup-token-val");
-    var bkRaw = String(doc.auth_token || conn.auth_token || "");
-    if (bkEl) {
-      bkEl.textContent = _authBackupRevealed && bkRaw ? bkRaw : "••••••••••••••••••••";
-    }
-    var patEl = $("auth-pat-count-val");
-    if (patEl) {
-      var pats = Array.isArray(doc.pats) ? doc.pats : (Array.isArray(doc.personal_access_tokens) ? doc.personal_access_tokens : []);
-      patEl.textContent = String(doc.pat_count != null ? doc.pat_count : pats.length);
-    }
-  }
-
-  function loadGatewayDebug(gid) {
-    var logEl = $("gw-debug-log-" + gid);
-    if (logEl) logEl.textContent = "正在拉取脱敏实时日志…";
-    apiFetch("/api/studio/gateway-debug", { method: "GET" })
-      .then(function (data) {
-        if (!data || !data.gateways) return;
-        var g = data.gateways[gid] || {};
-        var eng = $("gw-debug-engine-" + gid);
-        if (eng) eng.textContent = String(g.effective_mode || g.status || "-");
-        var fb = $("gw-debug-fallback-" + gid);
-        if (fb) fb.textContent = g.fallback_active ? "是（已降级临时通道）" : "否";
-        var err = $("gw-debug-error-" + gid);
-        if (err) err.textContent = String(g.last_error || "无");
-        var src = $("gw-debug-source-" + gid);
-        if (src) src.textContent = "日志来源：" + String(g.log_source || "-");
-        if (logEl) {
-          var lines = Array.isArray(g.log_tail) ? g.log_tail : [];
-          logEl.textContent = lines.length ? lines.join("\n") : "（当前暂无相关日志记录）";
-        }
-      })
-      .catch(function (e) {
-        if (logEl) logEl.textContent = "拉取调试日志失败：" + (e && e.message ? e.message : String(e));
-      });
-  }
-
-  function bindTransparentGatewaysAndAuth() {
-    // Subchannel reconnect buttons (srv_us / trycloudflare)
-    document.querySelectorAll("[data-subchannel-reconnect]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var sub = btn.getAttribute("data-subchannel-reconnect");
-        if (!sub) return;
-        btn.disabled = true;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: JSON.stringify({ action: "reconnect_subchannel", subchannel: sub })
-        })
-          .then(function (d) {
-            showToast("已触发 " + sub + " 独立重连", false);
-            if (d && d.state) renderAll(d.state);
-            else if (typeof refreshState === "function") refreshState();
-          })
-          .catch(function (e) {
-            showToast("重连失败：" + (e && e.message ? e.message : e), true);
-          })
-          .finally(function () { btn.disabled = false; });
-      });
-    });
-
-    // Subchannel copy buttons
-    document.querySelectorAll("[data-subchannel-copy]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var u = btn.getAttribute("data-url") || "";
-        if (!u) return;
-        if (typeof copyText === "function") copyText(u);
-        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u);
-        showToast("已复制连接地址（请仅用于本人登录的 AI 账号）", false);
-      });
-    });
-
-    // Backup trycloudflare toggle switch
-    var cfSw = $("instant-sub-trycf-switch");
-    if (cfSw) {
-      cfSw.addEventListener("change", function () {
-        var en = Boolean(cfSw.checked);
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: JSON.stringify({ action: "set_trycloudflare_backup", enabled: en })
-        })
-          .then(function (d) {
-            showToast(en ? "已开启 trycloudflare 备用通道（与 srv.us 并存）" : "已关闭 trycloudflare 备用通道", false);
-            if (d && d.state) renderAll(d.state);
-            else if (typeof refreshState === "function") refreshState();
-          })
-          .catch(function (e) {
-            cfSw.checked = !en;
-            showToast("切换备用通道失败：" + (e && e.message ? e.message : e), true);
-          });
-      });
-    }
-
-    // Per-gateway reconnect buttons
-    document.querySelectorAll("[data-gw-reconnect]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var gid = btn.getAttribute("data-gw-reconnect");
-        if (!gid) return;
-        btn.disabled = true;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: JSON.stringify({ action: "reconnect_gateway", gateway_id: gid })
-        })
-          .then(function (d) {
-            showToast("已触发 " + gid + " 通道重连", false);
-            if (d && d.state) renderAll(d.state);
-            else if (typeof refreshState === "function") refreshState();
-          })
-          .catch(function (e) {
-            showToast("重连失败：" + (e && e.message ? e.message : e), true);
-          })
-          .finally(function () { btn.disabled = false; });
-      });
-    });
-
-    // Debug drawers auto-load & manual refresh
-    document.querySelectorAll("[data-gw-debug]").forEach(function (el) {
-      var gid = el.getAttribute("data-gw-debug");
-      el.addEventListener("toggle", function () {
-        if (el.open && gid) loadGatewayDebug(gid);
-      });
-    });
-    document.querySelectorAll("[data-gw-debug-refresh]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var gid = btn.getAttribute("data-gw-debug-refresh");
-        if (gid) loadGatewayDebug(gid);
-      });
-    });
-
-    // Endpoint secret (/u/<secret>) rotate & disable buttons in both Gateways & Auth panes
-    ["gw-rotate-endpoint-secret-btn", "auth-rotate-endpoint-secret-btn"].forEach(function (id) {
-      var btn = $(id);
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        if (!window.confirm("开启或更换静态防扫描路径（/u/<secret>）会改变所有网关 URL，已绑定的 AI 客户端需同步更新一次。确认继续？")) return;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: JSON.stringify({ action: "rotate_endpoint_secret", revoke_sessions: false })
-        })
-          .then(function (d) {
-            showToast("已更新静态防扫描路径（/u/<secret>）", false);
-            if (d && d.state) renderAll(d.state);
-            else if (typeof refreshState === "function") refreshState();
-          })
-          .catch(function (e) {
-            showToast("操作失败：" + (e && e.message ? e.message : e), true);
-          });
-      });
-    });
-    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
-      var btn = $(id);
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        if (!window.confirm("关闭防扫描路径并恢复默认 /mcp 地址，已绑定旧 /u/<secret> 的客户端需同步更新。确认继续？")) return;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: JSON.stringify({ action: "disable_endpoint_secret" })
-        })
-          .then(function (d) {
-            showToast("已恢复默认 /mcp 路径", false);
-            if (d && d.state) renderAll(d.state);
-            else if (typeof refreshState === "function") refreshState();
-          })
-          .catch(function (e) {
-            showToast("操作失败：" + (e && e.message ? e.message : e), true);
-          });
-      });
-    });
-
-    // Auth pane actions
-    var copyPairBtn = $("auth-copy-pair-btn");
-    if (copyPairBtn) {
-      copyPairBtn.addEventListener("click", function () {
-        var val = ($("auth-pair-code-val") && $("auth-pair-code-val").textContent || "").trim();
-        if (!val || val === "-") return;
-        if (typeof copyText === "function") copyText(val);
-        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(val);
-        showToast("已复制 6 位动态配对码", false);
-      });
-    }
-    var refPairBtn = $("auth-refresh-pair-btn");
-    if (refPairBtn) {
-      refPairBtn.addEventListener("click", function () {
-        var origBtn = $("refresh-pair-code-btn") || $("rotate-pair-btn");
-        if (origBtn) origBtn.click();
-        else if (typeof refreshState === "function") refreshState();
-      });
-    }
-    var togBkBtn = $("auth-toggle-backup-btn");
-    if (togBkBtn) {
-      togBkBtn.addEventListener("click", function () {
-        _authBackupRevealed = !_authBackupRevealed;
-        renderTransparentGatewaysAndAuth(state);
-      });
-    }
-    var copyBkBtn = $("auth-copy-backup-btn");
-    if (copyBkBtn) {
-      copyBkBtn.addEventListener("click", function () {
-        var raw = String((state && state.auth_token) || (state && state.connection && state.connection.auth_token) || "");
-        if (!raw) { showToast("当前会话未返回明文口令", true); return; }
-        if (typeof copyText === "function") copyText(raw);
-        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(raw);
-        showToast("已复制 20 位备用口令（请妥善保管）", false);
-      });
-    }
-    var patBtn = $("auth-open-pat-modal-btn");
-    if (patBtn) {
-      patBtn.addEventListener("click", function () {
-        var orig = $("open-pat-modal-btn") || $("pat-manage-btn") || $("manage-pats-btn");
-        if (orig) orig.click();
-        else showToast("请在主控台安全区打开专用密钥管理弹窗", false);
-      });
-    }
-  }
-
   function boot() {
     registerConnCheckI18n();
     bindConnCheckLangObserver();
@@ -6222,7 +6989,6 @@
       } catch (e) {}
     }
     bindEvents();
-    bindTransparentGatewaysAndAuth();
     // Honor URL hash #settings/<category> or #onboarding on initial load
     var h = String(window.location.hash || "");
     if (h.indexOf("#settings") === 0) {

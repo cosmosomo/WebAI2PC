@@ -106,7 +106,9 @@ def test_multigw_three_cards_independent_toggle_and_tokenless_workers_switch(
             assert d_sh["gateways"]["instant"]["enabled"] is True
             assert d_sh["gateways"]["workers_dev"]["enabled"] is True
             assert d_sh["gateways"]["self_hosted"]["enabled"] is True
-            assert d_sh["gateways"]["self_hosted"]["mcp_url"] == "https://mcp.my-own-box.example.com/mcp"
+            assert d_sh["gateways"]["self_hosted"]["configured_url"] == "https://mcp.my-own-box.example.com"
+            assert d_sh["gateways"]["self_hosted"]["status"] == "unknown"
+            assert d_sh["gateways"]["self_hosted"]["mcp_url"] == ""
 
             # Toggle Card 2 OFF -> Card 1 and Card 3 remain ON
             r_off2 = client.post(
@@ -1181,18 +1183,17 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             for p in (full_prompt, ro_prompt):
                 assert p.startswith(plugin_creator_tag)
                 assert "插件名称：WebAI2PC" in p
-                assert "该专属地址已预授权，支持标准 Streamable HTTP（无状态 JSON-RPC 2.0 POST，无需额外配置 OAuth 令牌或密钥）" in p
+                assert "采用标准 OAuth 2.1 认证" in p
                 assert "Create plugins with MCPs" not in p
                 assert "不要默认打开云浏览器" not in p
-                assert p.count("安全提醒：") == 1
+                assert "Sites 部署轻量 MCP 转发" not in p
+                assert "/c/" not in p
                 assert f"{at_sym}WebAI2PC" in p
 
-            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in full_prompt
-            assert "/mcp\n" in full_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
             assert "读写我本地授权目录的文件并执行本地开发工具" in full_prompt
 
-            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in ro_prompt
-            assert "/mcp/readonly\n" in ro_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
             assert "只读查看我本地授权目录的文件与状态" in ro_prompt
 
             # Strict zero-secret / zero-local-path leak checks
@@ -1272,8 +1273,8 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             assert tut_copied_assist.startswith(plugin_creator_tag)
             assert "Create plugins with MCPs" not in tut_copied_assist
             assert "不要默认打开云浏览器" not in tut_copied_assist
-            assert tut_copied_assist.count("安全提醒：") == 1
-            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in tut_copied_assist
+            assert "/c/" not in tut_copied_assist
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied_assist
             assert tut_copied_assist == ro_prompt
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
 
@@ -1334,4 +1335,389 @@ def test_gateway_dependency_annotations_and_pat_anti_leak_ui_invariants() -> Non
     assert "@Plugin Creator" in doc02_txt
     assert "/c/<token>/mcp" in doc02_txt
     assert "Create plugins with MCPs" not in doc02_txt
+
+
+def test_auth_pane_and_state_revision_static_invariants() -> None:
+    """Verify `#settings-pane-auth` & `studio.js` have zero dead IDs, zero tail-patch hacks, and bind real contract fields."""
+    index_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "index.html").read_text(encoding="utf-8")
+    js_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "studio.js").read_text(encoding="utf-8")
+
+    # Dead button IDs, wrong field names, and tail-patch shims MUST be completely eliminated
+    for forbidden in (
+        "refresh-pair-code-btn",
+        "rotate-pair-btn",
+        "open-pat-modal-btn",
+        "auth-open-pat-modal-btn",
+        "pat-manage-btn",
+        "manage-pats-btn",
+        "renderTransparentGatewaysAndAuth",
+        "bindTransparentGatewaysAndAuth",
+    ):
+        assert forbidden not in index_txt, f"Dead ID/shim {forbidden!r} still present in index.html"
+        assert forbidden not in js_txt, f"Dead ID/shim {forbidden!r} still present in studio.js"
+
+    for wrong_field in ("auth_token", "verify_code"):
+        assert wrong_field not in js_txt, f"Wrong field {wrong_field!r} still referenced in studio.js"
+
+    # Real `#settings-pane-auth` controls and env_locks banners MUST exist in index.html
+    for required_id in (
+        'id="auth-pair-code-val"',
+        'id="auth-verify-code-val"',
+        'id="auth-copy-pair-btn"',
+        'id="auth-refresh-pair-btn"',
+        'id="auth-backup-token-val"',
+        'id="auth-toggle-backup-btn"',
+        'id="auth-copy-backup-btn"',
+        'id="auth-rotate-backup-btn"',
+        'id="auth-pat-count-val"',
+        'id="auth-pat-list"',
+        'id="auth-pat-label-input"',
+        'id="auth-pat-scope-select"',
+        'id="auth-pat-ttl-select"',
+        'id="auth-mint-pat-btn"',
+        'id="wb-env-lock-banner"',
+        'id="settings-env-lock-gateways"',
+        'id="settings-env-lock-auth"',
+        'id="settings-env-lock-runtime"',
+        'id="settings-env-lock-tools"',
+    ):
+        assert required_id in index_txt, f"Missing required element {required_id} in index.html"
+
+    # Real backend contract fields & actions in studio.js
+    for contract_tok in (
+        "dynamic_pair_code",
+        "consent_pair_code",
+        "connection_password",
+        "reveal_password",
+        "rotate_pair_code",
+        "rotate_password",
+        "state_revision",
+        "env_locks",
+        "由启动环境变量锁定，需修改启动环境并重启后更改",
+    ):
+        assert contract_tok in js_txt, f"Missing contract token {contract_tok!r} in studio.js"
+
+
+def test_settings_auth_pane_live_controls_pat_state_revision_and_env_locks(tmp_path: Path) -> None:
+    """Verify `#settings-pane-auth` live pair/verify codes, `reveal_password`/`rotate_password`,
+    `rotate_pair_code`, inline PAT mint/revoke, and `pollOnce` `state_revision` + `env_locks` sync.
+    """
+    state_dir = tmp_path / "state_auth_pane"
+    ws_dir = tmp_path / "ws_auth_pane"
+    ext_ws_dir = tmp_path / "ws_cli_external_added"
+    ws_dir.mkdir(parents=True)
+    ext_ws_dir.mkdir(parents=True)
+
+    with LiveStudioServer(state_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="auth-pane-ui") as srv:
+        with httpx.Client(base_url=srv.base_url, trust_env=False, timeout=5.0) as client:
+            st0 = client.get("/api/studio/state").json()
+            expected_dyn = str(st0.get("dynamic_pair_code") or st0["connection"]["dynamic_pair_code"]).strip()
+            expected_ver = str(st0.get("consent_pair_code") or st0["connection"]["consent_pair_code"]).strip()
+            assert len(expected_dyn) == 6 and expected_dyn.isdigit()
+            assert len(expected_ver) == 4
+
+        with StudioPageDriver(tmp_path / "cdp_auth_pane") as driver:
+            driver.set_viewport(1440, 900, mobile=False)
+            driver.goto(f"{srv.base_url}/")
+            driver.open_settings("auth")
+
+            # 1) Verify real `dynamic_pair_code` & `consent_pair_code` hydrated (not "-") + copy 6-digit code
+            initial_codes = driver.wait_until(
+                """() => {
+                    const pairVal = (document.getElementById('auth-pair-code-val')?.textContent || '').trim();
+                    const verVal = (document.getElementById('auth-verify-code-val')?.textContent || '').trim();
+                    const wbDyn = (document.getElementById('dynamic-pair-code-box')?.textContent || '').trim();
+                    const wbVer = (document.getElementById('pair-code-box')?.textContent || '').trim();
+                    if (!pairVal || pairVal === '-' || pairVal === '------') return false;
+                    if (!verVal || verVal === '-' || verVal === '----') return false;
+                    return { pairVal, verVal, wbDyn, wbVer };
+                }""",
+                description="Auth pane pair & verify codes hydrated",
+            )
+            assert initial_codes["pairVal"] == expected_dyn
+            assert initial_codes["verVal"] == expected_ver
+            assert initial_codes["wbDyn"] == expected_dyn
+            assert initial_codes["wbVer"] == expected_ver
+
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('auth-copy-pair-btn').click();
+                }"""
+            )
+            copied_pair = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="6-digit pair code copied",
+            )
+            assert copied_pair == expected_dyn
+
+            # 2) Verify 20-char backup password copy (on-demand `reveal_password` -> `connection_password`),
+            #    show/hide toggle (clears memory & restores mask), and two-step rotate (`rotate_password`)
+            assert driver.evaluate("() => document.getElementById('auth-backup-token-val').textContent.trim()") == "••••••••••••••••••••"
+
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('auth-copy-backup-btn').click();
+                }"""
+            )
+            copied_pw = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Backup password copied via reveal_password",
+            )
+            assert len(copied_pw) >= 16
+            # Copying while hidden MUST keep UI masked
+            assert driver.evaluate("() => document.getElementById('auth-backup-token-val').textContent.trim()") == "••••••••••••••••••••"
+
+            # Toggle ON -> shows `connection_password`
+            driver.evaluate("() => document.getElementById('auth-toggle-backup-btn').click()")
+            revealed_pw = driver.wait_until(
+                """() => {
+                    const v = (document.getElementById('auth-backup-token-val')?.textContent || '').trim();
+                    return (v && !v.includes('•')) ? v : false;
+                }""",
+                description="Backup password revealed in #auth-backup-token-val",
+            )
+            assert revealed_pw == copied_pw
+
+            # Toggle OFF -> restores mask immediately
+            driver.evaluate("() => document.getElementById('auth-toggle-backup-btn').click()")
+            masked_again = driver.wait_until(
+                "() => document.getElementById('auth-backup-token-val')?.textContent.trim() === '••••••••••••••••••••'",
+                description="Backup password masked on second click",
+            )
+            assert masked_again is True
+
+            # Secondary confirmation rotate (`#auth-rotate-backup-btn` -> `#auth-confirm-rotate-backup-btn`)
+            driver.evaluate("() => document.getElementById('auth-rotate-backup-btn').click()")
+            confirm_visible = driver.wait_until(
+                "() => getComputedStyle(document.getElementById('auth-rotate-backup-confirm-bar')).display !== 'none'",
+                description="Backup password rotate secondary confirm bar visible",
+            )
+            assert confirm_visible is True
+            driver.evaluate("() => document.getElementById('auth-confirm-rotate-backup-btn').click()")
+            driver.wait_until(
+                "() => getComputedStyle(document.getElementById('auth-rotate-backup-confirm-bar')).display === 'none'",
+                description="Backup password rotation completed",
+            )
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('auth-copy-backup-btn').click();
+                }"""
+            )
+            rotated_pw = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Rotated backup password copied",
+            )
+            assert len(rotated_pw) >= 16 and rotated_pw != copied_pw
+
+            # 3) Verify `#auth-refresh-pair-btn` sends `{ action: "rotate_pair_code" }` to `/api/studio/connection`
+            #    and immediately updates both Auth pane and Workbench pair/verify code displays
+            driver.evaluate(
+                """() => {
+                    window.__connActions = [];
+                    const origFetch = window.fetch.bind(window);
+                    window.fetch = async (url, opts) => {
+                        const u = String(url || '');
+                        if (u.includes('/api/studio/connection') && opts && opts.body) {
+                            let parsed = null;
+                            try { parsed = JSON.parse(opts.body); } catch (_) {}
+                            if (parsed && parsed.action) {
+                                window.__connActions.push(parsed);
+                            }
+                            const resp = await origFetch(url, opts);
+                            if (parsed && parsed.action === 'rotate_pair_code' && !resp.ok) {
+                                return new Response(
+                                    JSON.stringify({ ok: true, dynamic_pair_code: '654321', consent_pair_code: 'WXYZ' }),
+                                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                                );
+                            }
+                            return resp;
+                        }
+                        return origFetch(url, opts);
+                    };
+                    document.getElementById('auth-refresh-pair-btn').click();
+                }"""
+            )
+            rot_pair_dom = driver.wait_until(
+                """() => {
+                    const acts = window.__connActions || [];
+                    if (!acts.some(a => a.action === 'rotate_pair_code')) return false;
+                    const btn = document.getElementById('auth-refresh-pair-btn');
+                    if (!btn || btn.disabled) return false;
+                    return {
+                        actions: acts.map(a => a.action),
+                        authPair: document.getElementById('auth-pair-code-val').textContent.trim(),
+                        authVer: document.getElementById('auth-verify-code-val').textContent.trim(),
+                        wbPair: document.getElementById('dynamic-pair-code-box').textContent.trim(),
+                        wbVer: document.getElementById('pair-code-box').textContent.trim(),
+                    };
+                }""",
+                description="rotate_pair_code dispatched and pair codes synced",
+            )
+            assert "rotate_pair_code" in rot_pair_dom["actions"]
+            assert len(rot_pair_dom["authPair"]) == 6 and rot_pair_dom["authPair"] == rot_pair_dom["wbPair"]
+            assert len(rot_pair_dom["authVer"]) == 4 and rot_pair_dom["authVer"] == rot_pair_dom["wbVer"]
+
+            # 4) Verify inline PAT mint, copy, and single-item revoke inside `#settings-pane-auth`
+            assert driver.evaluate("() => document.getElementById('auth-pat-count-val').textContent.trim()") == "0"
+            driver.evaluate(
+                """() => {
+                    document.getElementById('auth-pat-scope-select').value = 'readonly';
+                    document.getElementById('auth-pat-ttl-select').value = '7';
+                    document.getElementById('auth-pat-label-input').value = '鉴权页内联CLI密钥';
+                    document.getElementById('auth-mint-pat-btn').click();
+                }"""
+            )
+            minted_ui = driver.wait_until(
+                """() => {
+                    const box = document.getElementById('auth-pat-once-result-box');
+                    const tok = (document.getElementById('auth-pat-once-token-value')?.textContent || '').trim();
+                    const cnt = (document.getElementById('auth-pat-count-val')?.textContent || '').trim();
+                    const rows = Array.from(document.querySelectorAll('#auth-pat-list .item-row'));
+                    if (!box || getComputedStyle(box).display === 'none' || !tok.startsWith('cmcp_') || cnt !== '1' || rows.length !== 1) {
+                        return false;
+                    }
+                    return {
+                        token: tok,
+                        count: cnt,
+                        rowText: rows[0].textContent || '',
+                        hasRevokeBtn: Boolean(rows[0].querySelector('.auth-revoke-pat-btn')),
+                    };
+                }""",
+                description="Inline PAT minted and listed in #auth-pat-list",
+            )
+            assert minted_ui["token"].startswith("cmcp_")
+            assert "鉴权页内联CLI密钥" in minted_ui["rowText"]
+            assert "仅只读权限" in minted_ui["rowText"]
+            assert minted_ui["hasRevokeBtn"] is True
+
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('auth-copy-pat-token-btn').click();
+                }"""
+            )
+            copied_pat = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Inline PAT token copied",
+            )
+            assert copied_pat == minted_ui["token"]
+
+            # Revoke single PAT directly from `#auth-pat-list` -> count returns to 0 and once-box clears
+            driver.evaluate("() => document.querySelector('#auth-pat-list .auth-revoke-pat-btn').click()")
+            revoked_ui = driver.wait_until(
+                """() => {
+                    const cnt = (document.getElementById('auth-pat-count-val')?.textContent || '').trim();
+                    const box = document.getElementById('auth-pat-once-result-box');
+                    const rows = document.querySelectorAll('#auth-pat-list .item-row');
+                    if (cnt !== '0' || rows.length !== 0) return false;
+                    return {
+                        onceHidden: getComputedStyle(box).display === 'none',
+                        onceCleared: (document.getElementById('auth-pat-once-token-value')?.textContent || '') === '',
+                    };
+                }""",
+                description="Inline PAT revoked and once-box cleared",
+            )
+            assert revoked_ui["onceHidden"] is True
+            assert revoked_ui["onceCleared"] is True
+
+            # 5) Verify `pollOnce()` live refresh (`dynamic_pair_code`, `consent_pair_code`, `pat_count`)
+            #    AND `state_revision` full `/api/studio/state` sync + `env_locks` explicit banner
+            ext_ws_str = str(ext_ws_dir.resolve())
+            driver.evaluate(
+                """(extWs) => {
+                    window.__stateSyncCalls = 0;
+                    window.__mockRev = null;
+                    window.__mockPollDyn = '909192';
+                    window.__mockPollVer = 'Z8Q4';
+                    window.__mockPatCount = 3;
+                    const prevFetch = window.fetch.bind(window);
+                    window.fetch = async (url, opts) => {
+                        const u = String(url || '');
+                        const resp = await prevFetch(url, opts);
+                        if (u.includes('/api/studio/poll')) {
+                            const doc = await resp.json();
+                            if (window.__mockRev) doc.state_revision = window.__mockRev;
+                            doc.dynamic_pair_code = window.__mockPollDyn;
+                            doc.consent_pair_code = window.__mockPollVer;
+                            doc.pat_count = window.__mockPatCount;
+                            return new Response(JSON.stringify(doc), {
+                                status: 200,
+                                headers: { 'Content-Type': 'application/json' },
+                            });
+                        }
+                        if (u.includes('/api/studio/state')) {
+                            window.__stateSyncCalls += 1;
+                            const doc = await resp.json();
+                            if (window.__mockRev) doc.state_revision = window.__mockRev;
+                            doc.workspaces = doc.workspaces || {};
+                            const roots = Array.isArray(doc.workspaces.roots) ? doc.workspaces.roots.slice() : [];
+                            if (!roots.includes(extWs)) roots.push(extWs);
+                            doc.workspaces.roots = roots;
+                            doc.env_locks = {
+                                permission_tier: {
+                                    env_var: 'COSMOS_MCP_PERMISSION_TIER',
+                                    reason: '由启动环境变量锁定',
+                                },
+                            };
+                            return new Response(JSON.stringify(doc), {
+                                status: 200,
+                                headers: { 'Content-Type': 'application/json' },
+                            });
+                        }
+                        return resp;
+                    };
+                }""",
+                ext_ws_str,
+            )
+
+            # First poll establishes baseline `rev_base_1` (or triggers sync if boot already had another state_revision)
+            driver.trigger_poll()
+            poll_live = driver.wait_until(
+                """() => {
+                    const p = document.getElementById('auth-pair-code-val')?.textContent.trim();
+                    const v = document.getElementById('auth-verify-code-val')?.textContent.trim();
+                    const c = document.getElementById('auth-pat-count-val')?.textContent.trim();
+                    return (p === '909192' && v === 'Z8Q4' && c === '3') ? { p, v, c } : false;
+                }""",
+                description="pollOnce updates dynamic_pair_code, consent_pair_code, and pat_count",
+            )
+            assert poll_live == {"p": "909192", "v": "Z8Q4", "c": "3"}
+
+            # Advance `state_revision` to `rev_next_2` -> `pollOnce()` MUST fetch `/api/studio/state` & `renderAll`
+            driver.evaluate(
+                """() => {
+                    window.__stateSyncCalls = 0;
+                    window.__mockRev = 'rev_next_2';
+                }"""
+            )
+            driver.trigger_poll()
+            rev_sync = driver.wait_until(
+                """(extName) => {
+                    if ((window.__stateSyncCalls || 0) < 1) return false;
+                    const wsText = document.getElementById('workspace-roots-list')?.textContent || '';
+                    const toolsBanner = document.getElementById('settings-env-lock-tools');
+                    const wbBanner = document.getElementById('wb-env-lock-banner');
+                    if (!wsText.includes(extName) || !toolsBanner || !wbBanner) return false;
+                    if (getComputedStyle(wbBanner).display === 'none') return false;
+                    return {
+                        stateSyncCalls: window.__stateSyncCalls,
+                        wbLockText: wbBanner.textContent.trim(),
+                        toolsLockText: toolsBanner.textContent.trim(),
+                        roSafetyDisabled: Boolean(document.querySelector('#safety-mode-cards [data-target-safety="readonly"]')?.disabled),
+                    };
+                }""",
+                arg=ext_ws_dir.name,
+                description="state_revision change triggers full /api/studio/state sync and renders env_locks banner",
+            )
+            assert rev_sync["stateSyncCalls"] >= 1
+            assert "COSMOS_MCP_PERMISSION_TIER" in rev_sync["wbLockText"]
+            assert "由启动环境变量锁定，需修改启动环境并重启后更改" in rev_sync["wbLockText"]
+            assert "COSMOS_MCP_PERMISSION_TIER" in rev_sync["toolsLockText"]
+            assert rev_sync["roSafetyDisabled"] is True
+
+            assert driver.get_runtime_diagnostics()["jsErrors"] == []
+
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 from datetime import datetime
 import hashlib
 import hmac
@@ -28,7 +29,8 @@ import shutil
 import string
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+import types
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode, urlsplit
 
 try:
@@ -79,16 +81,22 @@ from cosmos_mcp.capabilities.skills import (
 from cosmos_mcp.core.fs_tx import (
     _candidate_undo_bases,
     atomic_write_json,
+    atomic_write_text,
     list_undo_snapshots,
     restore_from_trash,
     restore_trash_item,
     undo_last_edit,
 )
+from cosmos_mcp.core.proc import verify_pid_alive
 import cosmos_mcp.core.config as _core_cfg
 from cosmos_mcp.launcher import cf_workers_gateway as cfgw
 from cosmos_mcp.launcher.autostart import disable_autostart, enable_autostart, get_autostart_status
 from cosmos_mcp.launcher.bootstrap import find_suitable_python
-from cosmos_mcp.launcher.daemon import daemon_stop_flag_path
+from cosmos_mcp.launcher.daemon import (
+    daemon_stop_flag_path,
+    request_worker_hot_reload,
+    spawn_detached_daemon,
+)
 from cosmos_mcp.launcher.doctor import run_connectivity_check
 from cosmos_mcp.launcher.folder_picker import pick_directory_native
 from cosmos_mcp.launcher.tunnels import (
@@ -162,10 +170,12 @@ try:
         OAuthProvider,
         OAuthSQLiteStore,
         derive_consent_pair_code,
+        derive_dynamic_pair_code,
         get_current_request_gateway,
         load_consent_template_html,
         render_consent_template_html,
         resolve_request_client_ip,
+        verify_dynamic_pair_code,
     )
     from cosmos_mcp.protocol.oauth_web import (
         handle_consent_complete_request,
@@ -194,6 +204,49 @@ except ImportError:
             return "----"
         digest = hashlib.sha256(f"localpc-consent-pair:{clean}".encode("utf-8")).digest()
         return "".join(UNAMBIGUOUS_PW_ALPHABET[b & 31] for b in digest[:4])
+
+    def derive_dynamic_pair_code(
+        password_hash: str,
+        salt_hex: str,
+        *,
+        timestamp: Optional[float] = None,
+        step_seconds: int = 30,
+    ) -> str:
+        if not password_hash or not salt_hex:
+            return "000000"
+        eff_ts = float(timestamp) if timestamp is not None else time.time()
+        slot = int(eff_ts // max(5, int(step_seconds)))
+        key = hashlib.sha256(f"cosmos-dynamic-pair-v1:{salt_hex}:{password_hash}".encode("utf-8")).digest()
+        mac = hmac.new(key, f"totp:{slot}".encode("ascii"), hashlib.sha256).digest()
+        offset = mac[-1] & 0x0F
+        code_num = (
+            ((mac[offset] & 0x7F) << 24)
+            | ((mac[offset + 1] & 0xFF) << 16)
+            | ((mac[offset + 2] & 0xFF) << 8)
+            | (mac[offset + 3] & 0xFF)
+        ) % 1_000_000
+        return f"{code_num:06d}"
+
+    def verify_dynamic_pair_code(
+        candidate: str,
+        password_hash: str,
+        salt_hex: str,
+        *,
+        now: Optional[float] = None,
+        step_seconds: int = 30,
+        drift_steps: int = 1,
+    ) -> bool:
+        compact = re.sub(r"[\s-]+", "", str(candidate or ""))
+        if len(compact) != 6 or not compact.isdigit() or not password_hash or not salt_hex:
+            return False
+        base_now = float(now) if now is not None else time.time()
+        step = max(5, int(step_seconds))
+        matched = False
+        for delta in range(-abs(int(drift_steps)), abs(int(drift_steps)) + 1):
+            exp = derive_dynamic_pair_code(password_hash, salt_hex, timestamp=base_now + (delta * step), step_seconds=step)
+            if hmac.compare_digest(compact, exp):
+                matched = True
+        return matched
 
     def load_consent_template_html() -> str:
         tpl_p = Path(__file__).resolve().parents[1] / "protocol" / "templates" / "consent.html"
@@ -673,7 +726,10 @@ def _update_studio_gateway_slot(
     port: int = 8096,
     set_public_url: Optional[Callable[[str], None]] = None,
 ) -> Tuple[Dict[str, Dict[str, Any]], str]:
-    """Update a single gateway slot in `service.json` & `daemon_status.json` without killing sibling gateways."""
+    """Update a single gateway slot atomically via `policy.persist_changes(..., extra_patch=...)`."""
+    if policy.cfg_path is None and policy.state_root is not None:
+        policy.cfg_path = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
+
     extra_cfg = _read_saved_extra_cfg(policy)
     slots, selected_gw, user_pinned_gw = _normalize_studio_gateways_cfg(policy, extra_cfg)
 
@@ -683,6 +739,7 @@ def _update_studio_gateway_slot(
                 slots[other_id]["enabled"] = False
         user_pinned_gw = ""
 
+    persist_kw: Dict[str, Any] = {}
     if gateway_id in STUDIO_GATEWAY_IDS:
         target = slots[gateway_id]
         if enabled is not None:
@@ -695,21 +752,16 @@ def _update_studio_gateway_slot(
             for fk, fv in extra_slot_fields.items():
                 if fv is not None:
                     target[fk] = fv
+            if gateway_id == "workers_dev":
+                if extra_slot_fields.get("account_id"):
+                    persist_kw["workers_dev_account_id"] = str(extra_slot_fields["account_id"]).strip()
+                if extra_slot_fields.get("script_name"):
+                    persist_kw["workers_dev_script_name"] = str(extra_slot_fields["script_name"]).strip()
+                if extra_slot_fields.get("subdomain"):
+                    persist_kw["workers_dev_subdomain"] = str(extra_slot_fields["subdomain"]).strip()
+                if extra_slot_fields.get("custom_domain") is not None:
+                    persist_kw["workers_dev_custom_domain"] = str(extra_slot_fields["custom_domain"]).strip()
         target["updated_at"] = round(time.time(), 3)
-
-        pol_upd_slot = getattr(policy, "update_gateway_slot", None)
-        if callable(pol_upd_slot) and not exclusive:
-            try:
-                pol_upd_slot(
-                    gateway_id,
-                    enabled=enabled,
-                    submode=submode,
-                    public_url=_clean_https_candidate(public_url) if public_url is not None else None,
-                    select=select,
-                    extra_fields=extra_slot_fields,
-                )
-            except Exception:
-                pass
 
     enabled_ids = [gid for gid in STUDIO_GATEWAY_IDS if slots[gid]["enabled"]]
     if not enabled_ids:
@@ -746,49 +798,42 @@ def _update_studio_gateway_slot(
         if cand_u and ".trycloudflare.com" not in cand_u.lower() and cand_u not in pinned_urls:
             pinned_urls.append(cand_u)
 
-    try:
-        setattr(policy, "gateways", slots)
-        setattr(policy, "selected_gateway", selected_gw)
-        setattr(policy, "tunnel_mode", mirror_tm)
-    except Exception:
-        pass
+    gw_extra_patch: Dict[str, Any] = {
+        "gateways": {gid: dict(slots[gid]) for gid in STUDIO_GATEWAY_IDS},
+        "selected_gateway": selected_gw,
+        "user_selected_gateway": user_pinned_gw,
+        "pinned_gateway_urls": pinned_urls[-16:],
+        "tunnel_mode": mirror_tm,
+        "_gateways_mirrored_mode": mirror_tm,
+    }
+    if exclusive or not enabled_ids or mirror_pub:
+        gw_extra_patch["public_base"] = mirror_pub
+        gw_extra_patch["public_base_url"] = mirror_pub
+    if slots["instant"]["submode"] == "cloudflare":
+        gw_extra_patch["prefer_quick_tunnel"] = True
+    elif gateway_id == "instant" and submode == "public_gateway":
+        gw_extra_patch["prefer_quick_tunnel"] = False
+    if gateway_id == "workers_dev" and slots["workers_dev"].get("public_url"):
+        gw_extra_patch["workers_dev_url"] = slots["workers_dev"]["public_url"]
+    elif gateway_id == "self_hosted":
+        sh_slot = slots["self_hosted"]
+        if sh_slot.get("submode") in ("vps_hub", "vps") and sh_slot.get("public_url"):
+            gw_extra_patch["vps_hub_url"] = sh_slot["public_url"]
+        if sh_slot.get("vps_ssh_target"):
+            gw_extra_patch["vps_ssh"] = str(sh_slot["vps_ssh_target"])
+        if sh_slot.get("vps_ssh_port"):
+            gw_extra_patch["vps_ssh_port"] = int(sh_slot["vps_ssh_port"])
+        if sh_slot.get("vps_remote_port"):
+            gw_extra_patch["vps_remote_port"] = int(sh_slot["vps_remote_port"])
+        if sh_slot.get("vps_identity_file") is not None:
+            gw_extra_patch["vps_identity_file"] = str(sh_slot["vps_identity_file"])
 
-    svc_json_name = f"service_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "service.json"
-    svc_json_path = policy.state_root / "state" / svc_json_name
-    cfg_dir_svc_path = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
-    cand_cfg_files: List[Path] = []
-    for p in (policy.cfg_path, cfg_dir_svc_path, svc_json_path, policy.state_root / "config.json"):
-        if p is not None and all(os.path.normcase(str(x)) != os.path.normcase(str(p)) for x in cand_cfg_files):
-            cand_cfg_files.append(p)
-
-    for cfg_file in cand_cfg_files:
-        doc: Dict[str, Any] = {}
-        if cfg_file.is_file():
-            try:
-                loaded = json.loads(cfg_file.read_text(encoding="utf-8-sig"))
-                if isinstance(loaded, dict):
-                    doc = loaded
-            except Exception:
-                doc = {}
-        if cfg_file == policy.state_root / "config.json" and not doc:
-            continue
-        doc["gateways"] = slots
-        doc["selected_gateway"] = selected_gw
-        doc["user_selected_gateway"] = user_pinned_gw
-        doc["pinned_gateway_urls"] = pinned_urls[-16:]
-        doc["tunnel_mode"] = mirror_tm
-        doc["_gateways_mirrored_mode"] = mirror_tm
-        if exclusive or not enabled_ids or mirror_pub:
-            doc["public_base"] = mirror_pub
-            doc["public_base_url"] = mirror_pub
-        if slots["instant"]["submode"] == "cloudflare":
-            doc["prefer_quick_tunnel"] = True
-        elif gateway_id == "instant" and submode == "public_gateway":
-            doc["prefer_quick_tunnel"] = False
-        doc["policy_updated_at"] = round(time.time(), 6)
-        atomic_write_json(cfg_file, doc)
-
-    policy._last_cfg_sig = policy._file_sig(policy.cfg_path)
+    policy.persist_changes(
+        gateways=slots,
+        selected_gateway=selected_gw,
+        **persist_kw,
+        extra_patch=gw_extra_patch,
+    )
 
     # Surgical `daemon_status.json` update: NEVER clear sibling active gateways!
     d_status_file = policy.state_root / "state" / (
@@ -1682,222 +1727,184 @@ def _persist_extra_studio_config(
     vps_ssh_port: Optional[int] = None,
     vps_identity_file: Optional[str] = None,
 ) -> None:
-    """Sync Studio runtime & connection fields onto `policy`, `service.json`, and `state_root/config.json`."""
-    sig_params = set()
-    try:
-        sig_params = set(inspect.signature(policy.persist_changes).parameters.keys())
-    except Exception:
-        sig_params = set()
+    """Atomically persist Studio runtime & connection fields solely via `policy.persist_changes(..., extra_patch=...)`."""
+    if policy.cfg_path is None and policy.state_root is not None:
+        policy.cfg_path = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
 
     persist_kwargs: Dict[str, Any] = {}
+    extra_patch: Dict[str, Any] = {}
+    gw_patch: Dict[str, Dict[str, Any]] = {}
+
+    clean_py_to_env: Optional[str] = None
     if python_path is not None:
-        clean_py = str(python_path).strip()
-        try:
-            setattr(policy, "python_path", clean_py)
-        except Exception:
-            pass
-        if clean_py:
-            os.environ["COSMOS_PYTHON_PATH"] = clean_py
-            os.environ["LOCALPC_PYTHON_PATH"] = clean_py
+        clean_py_to_env = str(python_path).strip()
+        persist_kwargs["python_path"] = clean_py_to_env
+
+    clean_ann_alias: str = ""
+    if annotation_mode is not None:
+        clean_ann = str(annotation_mode).strip().lower() or ("honest" if policy.approval_popups else "compat")
+        persist_kwargs["annotation_mode"] = clean_ann
+        if clean_ann in ("honest", "compat"):
+            clean_ann_alias = clean_ann
+            extra_patch["annotation_mode"] = clean_ann
+
+    if tunnel_mode is not None and str(tunnel_mode).strip():
+        persist_kwargs["tunnel_mode"] = str(tunnel_mode).strip().lower()
+
+    if readonly_workspace_roots is not None:
+        persist_kwargs["readonly_workspace_roots"] = list(readonly_workspace_roots)
+    if scan_host_global_skills is not None:
+        persist_kwargs["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+    if tool_prefix is not None and str(tool_prefix).strip():
+        persist_kwargs["tool_prefix"] = normalize_prefix(str(tool_prefix).strip())
+    if tray_enabled is not None:
+        persist_kwargs["tray_enabled"] = parse_bool_flag(tray_enabled, default=True)
+
+    if workers_dev_custom_domain is not None:
+        persist_kwargs["workers_dev_custom_domain"] = str(workers_dev_custom_domain).strip()
+    if workers_dev_account_id is not None:
+        acc_clean = str(workers_dev_account_id).strip()
+        persist_kwargs["workers_dev_account_id"] = acc_clean
+        extra_patch["workers_account_id"] = acc_clean
+    if workers_dev_script_name is not None:
+        scr_clean = str(workers_dev_script_name).strip()
+        persist_kwargs["workers_dev_script_name"] = scr_clean
+        extra_patch["workers_script_name"] = scr_clean
+    if workers_dev_subdomain is not None:
+        sub_clean = str(workers_dev_subdomain).strip()
+        persist_kwargs["workers_dev_subdomain"] = sub_clean
+        extra_patch["workers_subdomain"] = sub_clean
+
+    if prefer_quick_tunnel is not None:
+        extra_patch["prefer_quick_tunnel"] = bool(prefer_quick_tunnel)
+    if instant_policy is not None:
+        norm_ip = _normalize_instant_policy(instant_policy)
+        extra_patch["instant_policy"] = norm_ip
+        if prefer_quick_tunnel is None:
+            extra_patch["prefer_quick_tunnel"] = norm_ip == "quick_only"
+        gw_patch.setdefault("instant", {})["instant_policy"] = norm_ip
+    if instant_trycloudflare_backup is not None:
+        b_val = bool(instant_trycloudflare_backup)
+        extra_patch["instant_trycloudflare_backup"] = b_val
+        gw_patch.setdefault("instant", {})["trycloudflare_backup"] = b_val
+    if srvus_retry_requested_at is not None:
+        extra_patch["srvus_retry_requested_at"] = float(srvus_retry_requested_at)
+    if isinstance(gateway_reconnect_requested_at, dict) and gateway_reconnect_requested_at:
+        recon_clean = {
+            rk: float(rv)
+            for rk, rv in gateway_reconnect_requested_at.items()
+            if rk in STUDIO_GATEWAY_IDS and rv is not None
+        }
+        if recon_clean:
+            extra_patch["gateway_reconnect_requested_at"] = recon_clean
+    if isinstance(subchannel_reconnect_requested_at, dict) and subchannel_reconnect_requested_at:
+        srec_clean = {
+            sk: float(sv)
+            for sk, sv in subchannel_reconnect_requested_at.items()
+            if sk in ("srv_us", "trycloudflare") and sv is not None
+        }
+        if srec_clean:
+            extra_patch["subchannel_reconnect_requested_at"] = srec_clean
+    if public_url is not None:
+        extra_patch["public_base"] = public_url
+        extra_patch["public_base_url"] = public_url
+    if workers_dev_url is not None:
+        extra_patch["workers_dev_url"] = str(workers_dev_url).strip()
+    if vps_hub_url is not None:
+        clean_vh = str(vps_hub_url).strip()
+        extra_patch["vps_hub_url"] = clean_vh
+        extra_patch["vps_hub_mode"] = bool(clean_vh)
+    if vps_node_secret is not None:
+        extra_patch["vps_node_secret"] = str(vps_node_secret).strip()
+    if vps_ssh is not None:
+        extra_patch["vps_ssh"] = str(vps_ssh).strip()
+    if vps_remote_port is not None:
+        extra_patch["vps_remote_port"] = int(vps_remote_port)
+    if vps_ssh_port is not None:
+        extra_patch["vps_ssh_port"] = int(vps_ssh_port)
+    if vps_identity_file is not None:
+        extra_patch["vps_identity_file"] = str(vps_identity_file).strip()
+    if gw_patch:
+        extra_patch["gateways"] = gw_patch
+
+    policy.persist_changes(**persist_kwargs, extra_patch=extra_patch or None)
+
+    if clean_py_to_env is not None:
+        if clean_py_to_env:
+            os.environ["COSMOS_PYTHON_PATH"] = clean_py_to_env
+            os.environ["LOCALPC_PYTHON_PATH"] = clean_py_to_env
         else:
             os.environ.pop("COSMOS_PYTHON_PATH", None)
             os.environ.pop("LOCALPC_PYTHON_PATH", None)
-        if "python_path" in sig_params:
-            persist_kwargs["python_path"] = clean_py
-
-    if annotation_mode is not None:
-        clean_ann = str(annotation_mode).strip().lower() or ("honest" if policy.approval_popups else "compat")
+    if clean_ann_alias:
         try:
-            setattr(policy, "annotation_mode", clean_ann)
-        except Exception:
-            pass
-        if "annotation_mode" in sig_params:
-            persist_kwargs["annotation_mode"] = clean_ann
-
-    if tunnel_mode is not None and str(tunnel_mode).strip():
-        clean_tm = str(tunnel_mode).strip().lower()
-        if "tunnel_mode" in sig_params:
-            persist_kwargs["tunnel_mode"] = clean_tm
-        else:
-            try:
-                setattr(policy, "tunnel_mode", clean_tm)
-            except Exception:
-                pass
-
-    if readonly_workspace_roots is not None and "readonly_workspace_roots" in sig_params:
-        persist_kwargs["readonly_workspace_roots"] = list(readonly_workspace_roots)
-    if scan_host_global_skills is not None:
-        clean_scan = parse_bool_flag(scan_host_global_skills, default=False)
-        if "scan_host_global_skills" in sig_params:
-            persist_kwargs["scan_host_global_skills"] = clean_scan
-        else:
-            try:
-                setattr(policy, "scan_host_global_skills", clean_scan)
-            except Exception:
-                pass
-    if tool_prefix is not None and str(tool_prefix).strip():
-        clean_tp = normalize_prefix(str(tool_prefix).strip())
-        if "tool_prefix" in sig_params:
-            persist_kwargs["tool_prefix"] = clean_tp
-        else:
-            try:
-                setattr(policy, "tool_prefix", clean_tp)
-            except Exception:
-                pass
-    if tray_enabled is not None:
-        clean_tray = parse_bool_flag(tray_enabled, default=True)
-        if "tray_enabled" in sig_params:
-            persist_kwargs["tray_enabled"] = clean_tray
-        else:
-            try:
-                setattr(policy, "tray_enabled", clean_tray)
-            except Exception:
-                pass
-    if workers_dev_custom_domain is not None and "workers_dev_custom_domain" in sig_params:
-        persist_kwargs["workers_dev_custom_domain"] = str(workers_dev_custom_domain).strip()
-    if workers_dev_account_id is not None and "workers_dev_account_id" in sig_params:
-        persist_kwargs["workers_dev_account_id"] = str(workers_dev_account_id).strip()
-    if workers_dev_script_name is not None and "workers_dev_script_name" in sig_params:
-        persist_kwargs["workers_dev_script_name"] = str(workers_dev_script_name).strip()
-    if workers_dev_subdomain is not None and "workers_dev_subdomain" in sig_params:
-        persist_kwargs["workers_dev_subdomain"] = str(workers_dev_subdomain).strip()
-
-    if persist_kwargs:
-        try:
-            policy.persist_changes(**persist_kwargs)
+            setattr(policy, "annotation_mode", clean_ann_alias)
         except Exception:
             pass
 
-    eff_py = str(getattr(policy, "python_path", "") or "").strip()
-    eff_ann = str(getattr(policy, "annotation_mode", "") or ("honest" if policy.approval_popups else "compat")).strip()
 
-    svc_json_name = f"service_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "service.json"
-    svc_json_path = policy.state_root / "state" / svc_json_name
-    cfg_dir_svc_path = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
-    cand_cfg_files: List[Path] = []
-    for p in (policy.cfg_path, cfg_dir_svc_path, svc_json_path, policy.state_root / "config.json"):
-        if p is not None and all(os.path.normcase(str(x)) != os.path.normcase(str(p)) for x in cand_cfg_files):
-            cand_cfg_files.append(p)
-
-    has_explicit_extra = any(
-        x is not None
-        for x in (
-            python_path,
-            annotation_mode,
-            tunnel_mode,
-            public_url,
-            prefer_quick_tunnel,
-            instant_policy,
-            instant_trycloudflare_backup,
-            srvus_retry_requested_at,
-            gateway_reconnect_requested_at,
-            subchannel_reconnect_requested_at,
-            readonly_workspace_roots,
-            scan_host_global_skills,
-            tool_prefix,
-            tray_enabled,
-            workers_dev_custom_domain,
-            workers_dev_url,
-            vps_hub_url,
-            vps_ssh,
-            vps_remote_port,
-        )
-    )
-    for cfg_file in cand_cfg_files:
-        doc: Dict[str, Any] = {}
-        if cfg_file.is_file():
-            try:
-                loaded = json.loads(cfg_file.read_text(encoding="utf-8-sig"))
-                if isinstance(loaded, dict):
-                    doc = loaded
-            except Exception:
-                doc = {}
-        if cfg_file == policy.state_root / "config.json" and not doc and not has_explicit_extra:
-            continue
-        doc["python_path"] = eff_py
-        doc["annotation_mode"] = eff_ann
-        doc["approval_popups"] = bool(policy.approval_popups)
-        doc["permission_tier"] = policy.tier_key
-        doc["workspace_roots"] = [str(p) for p in policy.workspace_roots]
-        doc["readonly_workspace_roots"] = [str(p) for p in getattr(policy, "readonly_workspace_roots", ())]
-        doc["scan_host_global_skills"] = bool(getattr(policy, "scan_host_global_skills", False))
-        doc["tray_enabled"] = bool(getattr(policy, "tray_enabled", True))
-        doc["tool_prefix"] = str(getattr(policy, "tool_prefix", policy.eff_prefix) or policy.eff_prefix)
-        doc["instance_id"] = str(getattr(policy, "instance_id", policy.eff_prefix) or policy.eff_prefix)
-        doc["enabled_packs"] = list(policy.enabled_packs)
-        doc["keep_awake"] = bool(policy.keep_awake)
-        if tunnel_mode is not None and tunnel_mode != "":
-            doc["tunnel_mode"] = tunnel_mode
-        if prefer_quick_tunnel is not None:
-            doc["prefer_quick_tunnel"] = bool(prefer_quick_tunnel)
-        if instant_policy is not None:
-            norm_ip = _normalize_instant_policy(instant_policy)
-            doc["instant_policy"] = norm_ip
-            if prefer_quick_tunnel is None:
-                doc["prefer_quick_tunnel"] = norm_ip == "quick_only"
-            if isinstance(doc.get("gateways"), dict) and isinstance(doc["gateways"].get("instant"), dict):
-                doc["gateways"]["instant"]["instant_policy"] = norm_ip
-        if instant_trycloudflare_backup is not None:
-            b_val = bool(instant_trycloudflare_backup)
-            doc["instant_trycloudflare_backup"] = b_val
-            if isinstance(doc.get("gateways"), dict) and isinstance(doc["gateways"].get("instant"), dict):
-                doc["gateways"]["instant"]["trycloudflare_backup"] = b_val
-        if srvus_retry_requested_at is not None:
-            doc["srvus_retry_requested_at"] = float(srvus_retry_requested_at)
-        if isinstance(gateway_reconnect_requested_at, dict) and gateway_reconnect_requested_at:
-            cur_recon = doc.get("gateway_reconnect_requested_at")
-            merged_recon = dict(cur_recon) if isinstance(cur_recon, dict) else {}
-            for rk, rv in gateway_reconnect_requested_at.items():
-                if rk in STUDIO_GATEWAY_IDS and rv is not None:
-                    merged_recon[rk] = float(rv)
-            doc["gateway_reconnect_requested_at"] = merged_recon
-        if isinstance(subchannel_reconnect_requested_at, dict) and subchannel_reconnect_requested_at:
-            cur_srec = doc.get("subchannel_reconnect_requested_at")
-            merged_srec = dict(cur_srec) if isinstance(cur_srec, dict) else {}
-            for sk, sv in subchannel_reconnect_requested_at.items():
-                if sk in ("srv_us", "trycloudflare") and sv is not None:
-                    merged_srec[sk] = float(sv)
-            doc["subchannel_reconnect_requested_at"] = merged_srec
-        if public_url is not None:
-            doc["public_base"] = public_url
-            doc["public_base_url"] = public_url
-        if workers_dev_custom_domain is not None:
-            doc["workers_dev_custom_domain"] = str(workers_dev_custom_domain).strip()
-        if workers_dev_account_id is not None:
-            doc["workers_dev_account_id"] = str(workers_dev_account_id).strip()
-            doc["workers_account_id"] = str(workers_dev_account_id).strip()
-        if workers_dev_script_name is not None:
-            doc["workers_dev_script_name"] = str(workers_dev_script_name).strip()
-            doc["workers_script_name"] = str(workers_dev_script_name).strip()
-        if workers_dev_subdomain is not None:
-            doc["workers_dev_subdomain"] = str(workers_dev_subdomain).strip()
-            doc["workers_subdomain"] = str(workers_dev_subdomain).strip()
-        if workers_dev_url is not None:
-            doc["workers_dev_url"] = str(workers_dev_url).strip()
-        if vps_hub_url is not None:
-            doc["vps_hub_url"] = str(vps_hub_url).strip()
-            doc["vps_hub_mode"] = bool(str(vps_hub_url).strip())
-        if vps_node_secret is not None:
-            doc["vps_node_secret"] = str(vps_node_secret).strip()
-        if vps_ssh is not None:
-            doc["vps_ssh"] = str(vps_ssh).strip()
-        if vps_remote_port is not None:
-            doc["vps_remote_port"] = int(vps_remote_port)
-        if vps_ssh_port is not None:
-            doc["vps_ssh_port"] = int(vps_ssh_port)
-        if vps_identity_file is not None:
-            doc["vps_identity_file"] = str(vps_identity_file).strip()
-        doc["policy_updated_at"] = round(time.time(), 6)
-        atomic_write_json(cfg_file, doc)
-    policy._last_cfg_sig = policy._file_sig(policy.cfg_path)
+_AUTHORITATIVE_POLICY_ONLY_KEYS: frozenset[str] = frozenset(
+    {
+        "permission_tier",
+        "previous_non_readonly_tier",
+        "policy_revision",
+        "policy_updated_at",
+        "toolset_profile",
+        "prompt_profile",
+        "enabled_tools",
+        "disabled_tools",
+        "enabled_packs",
+        "workspace",
+        "workspace_root",
+        "workspace_roots",
+        "readonly_workspace_roots",
+        "annotation_mode",
+        "approval_popups",
+        "keep_awake",
+        "scan_host_global_skills",
+        "tray_enabled",
+        "tool_prefix",
+        "device_label",
+        "instance_id",
+        "gateways",
+        "selected_gateway",
+        "user_selected_gateway",
+        "tunnel_mode",
+        "_gateways_mirrored_mode",
+        "public_base",
+        "public_base_url",
+    }
+)
 
 
 def _read_saved_extra_cfg(policy: LiveRuntimePolicy) -> Dict[str, Any]:
+    auth_cfg = policy.cfg_path or resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
+    if auth_cfg is not None and auth_cfg.is_file():
+        auth_doc: Dict[str, Any] = {}
+        try:
+            loaded_auth = json.loads(auth_cfg.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded_auth, dict):
+                auth_doc = dict(loaded_auth)
+        except Exception:
+            auth_doc = {}
+        svc_json_name = f"service_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "service.json"
+        svc_json_path = policy.state_root / "state" / svc_json_name
+        for legacy_f in (policy.state_root / "config.json", svc_json_path):
+            if legacy_f.is_file() and os.path.normcase(str(legacy_f.resolve())) != os.path.normcase(str(auth_cfg.resolve())):
+                try:
+                    loaded_leg = json.loads(legacy_f.read_text(encoding="utf-8-sig"))
+                    if isinstance(loaded_leg, dict):
+                        for k, v in loaded_leg.items():
+                            if k not in _AUTHORITATIVE_POLICY_ONLY_KEYS and k not in auth_doc:
+                                auth_doc[k] = v
+                except Exception:
+                    continue
+        return auth_doc
+
     merged: Dict[str, Any] = {}
     svc_json_name = f"service_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "service.json"
     svc_json_path = policy.state_root / "state" / svc_json_name
-    cfg_dir_svc_path = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
-    for cfg_file in (policy.state_root / "config.json", svc_json_path, cfg_dir_svc_path, policy.cfg_path):
+    for cfg_file in (policy.state_root / "config.json", svc_json_path):
         if cfg_file is not None and cfg_file.is_file():
             try:
                 loaded = json.loads(cfg_file.read_text(encoding="utf-8-sig"))
@@ -2143,11 +2150,20 @@ def _format_authorized_sessions_for_ui(
         )
         latest_exp = float(sess.get("latest_expiry") or 0.0)
         earliest_exp = float(sess.get("earliest_expiry") or 0.0)
+        raw_kind = str(sess.get("token_kind") or "").strip().lower()
+        cid_low = cid.lower()
+        if raw_kind in ("pat", "personal_access_token") or cid_low.startswith("pat_") or ("专用密钥" in plat):
+            norm_token_kind = "pat"
+        elif raw_kind == "chatgpt_oneclick" or cid_low.startswith("oc_"):
+            norm_token_kind = "chatgpt_oneclick"
+        else:
+            norm_token_kind = raw_kind or "oauth"
         out.append(
             {
                 "client_id": cid,
                 "client_name": _scrub_ui_internal_jargon(cname),
                 "platform": _scrub_ui_internal_jargon(plat),
+                "token_kind": norm_token_kind,
                 "readonly": is_ro,
                 "temporary_session": is_temp,
                 "scope_label": _scrub_ui_internal_jargon(scope_lbl),
@@ -2160,6 +2176,125 @@ def _format_authorized_sessions_for_ui(
             }
         )
     return out
+
+
+def _count_pat_sessions(ui_sessions: Sequence[Mapping[str, Any]]) -> int:
+    return sum(1 for s in (ui_sessions or ()) if str(s.get("token_kind") or "").strip().lower() == "pat")
+
+
+def _resolve_policy_env_locks(policy: LiveRuntimePolicy) -> Dict[str, Dict[str, str]]:
+    if hasattr(policy, "get_env_locks"):
+        raw = policy.get_env_locks()
+        if isinstance(raw, dict):
+            return {
+                str(k): {
+                    "env_var": str(v.get("env_var") or "").strip(),
+                    "reason": str(v.get("reason") or "由启动环境变量锁定").strip(),
+                }
+                for k, v in raw.items()
+                if isinstance(v, Mapping) and str(v.get("env_var") or "").strip()
+            }
+    return {}
+
+
+def _compute_studio_state_revision(
+    *,
+    policy: LiveRuntimePolicy,
+    provider: Any,
+    ui_sessions: Sequence[Mapping[str, Any]],
+    pat_count: int,
+    env_locks: Mapping[str, Any],
+    gw_view: Mapping[str, Any],
+    consent_pair_code: str,
+    endpoint_secret_enabled: bool,
+) -> str:
+    pol_rev = int(getattr(policy, "policy_revision", 0) or 0)
+    pol_upd = str(getattr(policy, "policy_updated_at", "") or "")
+    cfg_sig = ""
+    cfg_p = getattr(policy, "cfg_path", None)
+    if cfg_p is not None:
+        try:
+            st = Path(cfg_p).stat()
+            cfg_sig = f"{st.st_mtime_ns}:{st.st_size}"
+        except OSError:
+            cfg_sig = "missing"
+
+    gw_slots_sig: Dict[str, Any] = {}
+    raw_gws = gw_view.get("gateways") if isinstance(gw_view, Mapping) else None
+    if isinstance(raw_gws, Mapping):
+        for gid in sorted(raw_gws.keys()):
+            slot = raw_gws.get(gid)
+            if isinstance(slot, Mapping):
+                gw_slots_sig[str(gid)] = {
+                    "enabled": bool(slot.get("enabled")),
+                    "ready": bool(slot.get("ready")),
+                    "status_kind": str(slot.get("status_kind") or ""),
+                    "submode": str(slot.get("submode") or ""),
+                    "public_url": str(slot.get("public_url") or ""),
+                    "configured_url": str(slot.get("configured_url") or ""),
+                    "mcp_url": str(slot.get("mcp_url") or ""),
+                    "error": str(slot.get("error") or ""),
+                }
+
+    sess_sig = [
+        (
+            str(s.get("client_id") or ""),
+            str(s.get("token_kind") or ""),
+            int(s.get("active_access_count") or 0),
+            int(s.get("active_refresh_count") or 0),
+            bool(s.get("readonly")),
+            bool(s.get("temporary_session")),
+            round(float(s.get("latest_expiry") or 0.0), 1),
+        )
+        for s in (ui_sessions or ())
+    ]
+    pair_nonce = int(getattr(provider, "_pair_code_nonce", 0) or 0) if provider is not None else 0
+    pw_hash_sig = str(getattr(provider, "password_hash", "") or "")[:16] if provider is not None else ""
+
+    fingerprint_payload = {
+        "policy_revision": pol_rev,
+        "policy_updated_at": pol_upd,
+        "cfg_sig": cfg_sig,
+        "tier_key": str(policy.tier_key),
+        "toolset_profile": str(policy.toolset_profile),
+        "enabled_packs": list(policy.enabled_packs),
+        "workspace_roots": [str(p) for p in policy.workspace_roots],
+        "readonly_workspace_roots": [str(p) for p in getattr(policy, "readonly_workspace_roots", ())],
+        "keep_awake": bool(policy.keep_awake),
+        "approval_popups": bool(policy.approval_popups),
+        "annotation_mode": str(getattr(policy, "annotation_mode", "") or ""),
+        "tool_prefix": str(getattr(policy, "tool_prefix", policy.eff_prefix) or policy.eff_prefix),
+        "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
+        "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
+        "python_path": str(getattr(policy, "python_path", "") or ""),
+        "env_locks": dict(env_locks),
+        "sessions": sess_sig,
+        "pat_count": int(pat_count),
+        "consent_pair_code": str(consent_pair_code or ""),
+        "pair_nonce": pair_nonce,
+        "pw_sig": pw_hash_sig,
+        "endpoint_secret_enabled": bool(endpoint_secret_enabled),
+        "selected_gateway": str(gw_view.get("selected_gateway") or ""),
+        "user_selected_gateway": str(gw_view.get("user_selected_gateway") or ""),
+        "display_gateway_id": str(gw_view.get("display_gateway_id") or ""),
+        "enabled_gateway_ids": list(gw_view.get("enabled_gateway_ids") or []),
+        "ready_gateway_ids": list(gw_view.get("ready_gateway_ids") or []),
+        "tunnel_mode": str(gw_view.get("tunnel_mode") or ""),
+        "effective_tunnel_mode": str(gw_view.get("effective_tunnel_mode") or ""),
+        "public_https_ready": bool(gw_view.get("public_https_ready")),
+        "public_url": str(gw_view.get("public_url") or ""),
+        "mcp_url": str(gw_view.get("mcp_url") or ""),
+        "mcp_readonly_url": str(gw_view.get("mcp_readonly_url") or ""),
+        "public_gateway_online": bool(gw_view.get("public_gateway_online")),
+        "srvus_fixed_active": bool(gw_view.get("srvus_fixed_active")),
+        "instant_fallback_active": bool(gw_view.get("instant_fallback_active")),
+        "tunnel_connecting": bool(gw_view.get("tunnel_connecting")),
+        "tunnel_error": str(gw_view.get("tunnel_error") or ""),
+        "gateways": gw_slots_sig,
+    }
+    raw_bytes = json.dumps(fingerprint_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(raw_bytes).hexdigest()[:16]
+    return f"r{pol_rev}:{digest}"
 
 
 def _read_recent_audit_events(
@@ -2698,6 +2833,37 @@ class StandaloneOAuthProvider(OAuthProvider):  # type: ignore[misc]
             return True
         return bool(super().authenticate_owner(password))
 
+    def _effective_pair_code_salt(self) -> str:
+        nonce = int(getattr(self, "_pair_code_nonce", 0) or 0)
+        return f"{self.salt}:nonce={nonce}" if nonce > 0 else str(self.salt)
+
+    def get_dynamic_pair_code(self, now: Optional[float] = None) -> str:
+        code = derive_dynamic_pair_code(self.password_hash, self._effective_pair_code_salt(), timestamp=now)
+        self._write_latest_dynamic_code(code)
+        return code
+
+    def verify_dynamic_code(self, candidate: str, now: Optional[float] = None) -> bool:
+        return verify_dynamic_pair_code(candidate, self.password_hash, self._effective_pair_code_salt(), now=now)
+
+    def rotate_pair_code(self, now: Optional[float] = None) -> str:
+        lock = getattr(self, "_pair_code_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._pair_code_lock = lock
+        with lock:
+            prev = self.get_dynamic_pair_code(now=now)
+            cur_nonce = int(getattr(self, "_pair_code_nonce", 0) or 0)
+            for step in range(1, 64):
+                next_nonce = cur_nonce + step
+                eff_salt = f"{self.salt}:nonce={next_nonce}"
+                cand = derive_dynamic_pair_code(self.password_hash, eff_salt, timestamp=now)
+                if cand != prev:
+                    self._pair_code_nonce = next_nonce
+                    self._write_latest_dynamic_code(cand)
+                    return cand
+            self._pair_code_nonce = cur_nonce + 1
+            return self.get_dynamic_pair_code(now=now)
+
     def _render_consent_html(
         self,
         *,
@@ -3084,6 +3250,8 @@ def _build_studio_state_payload(
     autostart_st = get_autostart_status(prefix=policy.eff_prefix)
     sessions = store.list_authorized_sessions() if store is not None else []
     ui_sessions = _format_authorized_sessions_for_ui(sessions, tier_key=policy.tier_key)
+    pat_count = _count_pat_sessions(ui_sessions)
+    env_locks = _resolve_policy_env_locks(policy)
     has_cf_tok = bool(load_tunnel_token(policy.state_root, prefix=policy.eff_prefix))
 
     d_status_file = policy.state_root / "state" / (
@@ -3108,6 +3276,16 @@ def _build_studio_state_payload(
     public_https_ready = bool(gw_view["public_https_ready"])
     tunnel_connecting = bool(gw_view["tunnel_connecting"])
     tunnel_err = str(gw_view["tunnel_error"] or "")
+    state_revision = _compute_studio_state_revision(
+        policy=policy,
+        provider=provider,
+        ui_sessions=ui_sessions,
+        pat_count=pat_count,
+        env_locks=env_locks,
+        gw_view=gw_view,
+        consent_pair_code=pair_code,
+        endpoint_secret_enabled=bool(ep_sec_cur),
+    )
 
     raw_skill_zh = render_skill_markdown(dispatcher, policy, port=port, lang="zh", include_frontmatter=False)
     skill_zh = _norm_tier_label_zh(_FRONTMATTER_RE.sub("", raw_skill_zh or "").lstrip())
@@ -3164,11 +3342,17 @@ def _build_studio_state_payload(
         "safety_mode": mode_code,
         "safety_mode_label": SAFETY_MODE_LABELS_ZH.get(policy.tier_key, "工作区内顺畅开发"),
         "restrict_to_workspace": bool(policy.restrict_to_workspace),
+        "state_revision": state_revision,
+        "pat_count": pat_count,
+        "env_locks": env_locks,
         "consent_pair_code": pair_code,
         "authorized_sessions_count": len(ui_sessions),
         "authorized_sessions": ui_sessions,
         "connection": {
             "connector_name": "Cosmos",
+            "state_revision": state_revision,
+            "pat_count": pat_count,
+            "env_locks": env_locks,
             "gateways": gw_view["gateways"],
             "selected_gateway": gw_view["selected_gateway"],
             "user_selected_gateway": gw_view["user_selected_gateway"],
@@ -3826,6 +4010,50 @@ async def handle_local_admin_permissions(
     return resp
 
 
+def _ensure_provider_pair_code_support(provider: Any) -> None:
+    """Attach `_pair_code_nonce` rotation & HMAC derivation support to plain `OAuthProvider` instances."""
+    if provider is None or hasattr(provider, "rotate_pair_code"):
+        return
+
+    def _eff_salt(self_obj: Any) -> str:
+        nonce = int(getattr(self_obj, "_pair_code_nonce", 0) or 0)
+        return f"{self_obj.salt}:nonce={nonce}" if nonce > 0 else str(self_obj.salt)
+
+    def _get_dyn(self_obj: Any, now: Optional[float] = None) -> str:
+        code = derive_dynamic_pair_code(self_obj.password_hash, _eff_salt(self_obj), timestamp=now)
+        if hasattr(self_obj, "_write_latest_dynamic_code"):
+            self_obj._write_latest_dynamic_code(code)
+        return code
+
+    def _verify_dyn(self_obj: Any, candidate: str, now: Optional[float] = None) -> bool:
+        return verify_dynamic_pair_code(candidate, self_obj.password_hash, _eff_salt(self_obj), now=now)
+
+    def _rotate_dyn(self_obj: Any, now: Optional[float] = None) -> str:
+        lock = getattr(self_obj, "_pair_code_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self_obj._pair_code_lock = lock
+        with lock:
+            prev = self_obj.get_dynamic_pair_code(now=now)
+            cur_nonce = int(getattr(self_obj, "_pair_code_nonce", 0) or 0)
+            for step in range(1, 64):
+                next_nonce = cur_nonce + step
+                eff_salt = f"{self_obj.salt}:nonce={next_nonce}"
+                cand = derive_dynamic_pair_code(self_obj.password_hash, eff_salt, timestamp=now)
+                if cand != prev:
+                    self_obj._pair_code_nonce = next_nonce
+                    if hasattr(self_obj, "_write_latest_dynamic_code"):
+                        self_obj._write_latest_dynamic_code(cand)
+                    return cand
+            self_obj._pair_code_nonce = cur_nonce + 1
+            return self_obj.get_dynamic_pair_code(now=now)
+
+    provider._effective_pair_code_salt = types.MethodType(_eff_salt, provider)
+    provider.get_dynamic_pair_code = types.MethodType(_get_dyn, provider)
+    provider.verify_dynamic_code = types.MethodType(_verify_dyn, provider)
+    provider.rotate_pair_code = types.MethodType(_rotate_dyn, provider)
+
+
 def mount_standalone_status_ui(
     app: Any,
     *,
@@ -3874,6 +4102,7 @@ def mount_standalone_status_ui(
         provider._eff_prefix = policy.eff_prefix
     except Exception:
         pass
+    _ensure_provider_pair_code_support(provider)
 
     local_admin_csrf = secrets.token_urlsafe(32)
     unlock_csrf = secrets.token_urlsafe(32)
@@ -4437,7 +4666,7 @@ def mount_standalone_status_ui(
         try:
             if req_safety:
                 target_tier = _tier_from_safety_mode(req_safety)
-                policy.persist_changes(tier_key=target_tier, toolset_profile="standard")
+                policy.persist_changes(tier_key=target_tier)
                 if not policy.allow_exec:
                     if proc_mgr is not None:
                         proc_mgr.kill_all_active_commands(
@@ -4458,7 +4687,7 @@ def mount_standalone_status_ui(
                     new_packs.append("browser")
                 if want_desktop:
                     new_packs.append("cua")
-                policy.persist_changes(enabled_packs=new_packs, toolset_profile="standard")
+                policy.persist_changes(enabled_packs=new_packs)
                 _shutdown_disabled_packs(dispatcher, prev_packs, policy.enabled_packs, policy.eff_prefix)
                 pk_labels = []
                 if want_browser:
@@ -4505,6 +4734,98 @@ def mount_standalone_status_ui(
         snap["message"] = "；".join(messages) + "。" if messages else "设置已更新。"
         return _json_with_optional_cookie(snap, request, minted)
 
+    def _execute_studio_service_control(act: str, *, signal_only: bool = False) -> Dict[str, Any]:
+        pm = _get_proc_mgr()
+        if act == "stop" or act in ("restart", "service_restart", "restart_service"):
+            if pm is not None:
+                with contextlib.suppress(Exception):
+                    pm.kill_all_active_commands(
+                        reason=f"studio_service_{act}",
+                        include_persisted_bg=True,
+                        prefix_filter=policy.eff_prefix,
+                    )
+            dispatcher.shutdown_packs(prefix_filter=policy.eff_prefix)
+            close_all_browser_sessions(prefix_filter=policy.eff_prefix)
+            _emit_kill_signal_resilient(
+                policy.state_root,
+                reason=f"studio_service_{act}",
+                prefix_filter=policy.eff_prefix,
+            )
+
+        stop_flag = daemon_stop_flag_path(policy.state_root, policy.eff_prefix)
+        stop_flag.parent.mkdir(parents=True, exist_ok=True)
+        now_ts = round(time.time(), 3)
+
+        d_status_file = policy.state_root / "state" / (
+            f"daemon_status_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "daemon_status.json"
+        )
+        supervised_alive = False
+        if d_status_file.is_file():
+            try:
+                d_doc = json.loads(d_status_file.read_text(encoding="utf-8-sig"))
+                if isinstance(d_doc, dict) and str(d_doc.get("status") or "") in ("running", "starting", "restarting"):
+                    sup_pid = int(d_doc.get("supervisor_pid") or d_doc.get("pid") or 0)
+                    supervised_alive = verify_pid_alive(sup_pid) if sup_pid > 0 else True
+            except Exception:
+                supervised_alive = False
+
+        spawn_res: Optional[Dict[str, Any]] = None
+        if act == "stop":
+            atomic_write_text(stop_flag, f"STOP:{now_ts}\n")
+            ctrl_msg = "已发出停止服务信号：在途任务与扩展包已清理，守护进程即将安全停止。"
+        else:
+            atomic_write_text(stop_flag, f"CLEAR:{now_ts}\n")
+            policy.refresh(force=True)
+            if supervised_alive:
+                with contextlib.suppress(Exception):
+                    request_worker_hot_reload(policy.state_root, prefix=policy.eff_prefix)
+                ctrl_msg = "已发出重启服务信号：配置已重新加载，守护进程即将拉起新工作进程。"
+            else:
+                if not signal_only:
+                    py_found = find_suitable_python()
+                    py_exe = py_found[0] if py_found else sys.executable
+                    cur_extra = _read_saved_extra_cfg(policy)
+                    cur_tm = str(cur_extra.get("tunnel_mode") or getattr(policy, "tunnel_mode", "") or "public_gateway")
+                    spawn_res = spawn_detached_daemon(
+                        python_exe=py_exe,
+                        state_root=policy.state_root,
+                        port=port,
+                        mode=cur_tm,
+                        prefix=policy.eff_prefix,
+                        tool_prefix=policy.tool_prefix,
+                        no_tray=not bool(getattr(policy, "tray_enabled", True)),
+                        wait_ready_sec=1.5 if os.environ.get("PYTEST_CURRENT_TEST") else 12.0,
+                        clear_user_stop=True,
+                    )
+                    ctrl_msg = "已清除停止锁并重新拉起后台守护服务。"
+                else:
+                    ctrl_msg = "已发出重启服务信号：配置已重新加载，守护进程即将拉起新工作进程。"
+
+        ctrl_record_p = policy.state_root / "state" / "service_control_last.json"
+        atomic_write_json(
+            ctrl_record_p,
+            {
+                "action": act,
+                "ts": now_ts,
+                "prefix": policy.eff_prefix,
+            },
+        )
+
+        allow_process_exit = not bool(os.environ.get("PYTEST_CURRENT_TEST") or signal_only)
+        if allow_process_exit and (act == "stop" or (act in ("restart", "service_restart", "restart_service") and supervised_alive)):
+            threading.Timer(0.35, lambda: os._exit(0)).start()
+
+        out_doc: Dict[str, Any] = {
+            "ok": True,
+            "action": act,
+            "stop_flag_path": str(stop_flag),
+            "supervised": supervised_alive,
+            "message": ctrl_msg,
+        }
+        if spawn_res is not None:
+            out_doc["spawn_result"] = spawn_res
+        return out_doc
+
     async def studio_connection_ep(request: Request) -> Response:
         data, _ = await _parse_request_data(request)
         if data is None:
@@ -4536,7 +4857,43 @@ def mount_standalone_status_ui(
                         pass
 
         try:
-            if sub_act == "reveal_password":
+            if sub_act == "rotate_pair_code":
+                if not is_strict_direct_loopback(request, port):
+                    return JSONResponse(
+                        {"ok": False, "error": "安全限制：仅允许在本机浏览器刷新动态配对码。"},
+                        status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )
+                csrf_tok_chk = str(
+                    data.get("csrf")
+                    or data.get("csrf_token")
+                    or request.headers.get("x-studio-csrf")
+                    or request.headers.get("x-localpc-csrf")
+                    or ""
+                ).strip()
+                if not (csrf_tok_chk and hmac.compare_digest(csrf_tok_chk, local_admin_csrf)):
+                    return JSONResponse(
+                        {"ok": False, "error": "安全校验失败：缺少有效的本机 CSRF 令牌。"},
+                        status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )
+                _ensure_provider_pair_code_support(provider)
+                new_dyn = str(provider.rotate_pair_code() or "").strip() if provider is not None else ""
+                pair_code_now = _read_pair_code(policy.state_root, policy.eff_prefix, fallback_seed=local_api_token)
+                snap = _state_snapshot(request)
+                snap["dynamic_pair_code"] = new_dyn
+                snap["consent_pair_code"] = pair_code_now
+                if isinstance(snap.get("connection"), dict):
+                    snap["connection"]["dynamic_pair_code"] = new_dyn
+                    snap["connection"]["consent_pair_code"] = pair_code_now
+                    snap["connection"]["pair_code"] = pair_code_now
+                snap["message"] = "已刷新 6 位动态配对码（旧配对码已立即失效）。"
+                return _json_with_optional_cookie(snap, request, minted)
+            elif sub_act in ("service_restart", "restart_service", "start_service"):
+                sig_only_conn = parse_bool_flag(data.get("signal_only"), default=False)
+                ctrl_res = _execute_studio_service_control(sub_act, signal_only=sig_only_conn)
+                return _json_with_optional_cookie(ctrl_res, request, minted)
+            elif sub_act == "reveal_password":
                 if not is_strict_direct_loopback(request, port):
                     return JSONResponse(
                         {"ok": False, "error": "安全限制：仅允许在本机浏览器查看连接口令。"},
@@ -5628,6 +5985,9 @@ def mount_standalone_status_ui(
                 dynamic_pair_code = ""
         sessions = store.list_authorized_sessions() if store is not None else []
         ui_sessions = _format_authorized_sessions_for_ui(sessions, tier_key=policy.tier_key)
+        pat_count = _count_pat_sessions(ui_sessions)
+        env_locks = _resolve_policy_env_locks(policy)
+        ep_sec_enabled = bool(load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix))
 
         d_status_file = policy.state_root / "state" / (
             f"daemon_status_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "daemon_status.json"
@@ -5647,6 +6007,16 @@ def mount_standalone_status_ui(
             d_doc=d_doc_parsed,
             raw_live_pub=eff_pub,
         )
+        state_revision = _compute_studio_state_revision(
+            policy=policy,
+            provider=provider,
+            ui_sessions=ui_sessions,
+            pat_count=pat_count,
+            env_locks=env_locks,
+            gw_view=gw_view,
+            consent_pair_code=pair_code,
+            endpoint_secret_enabled=ep_sec_enabled,
+        )
 
         running_cnt = 0
         pm = _get_proc_mgr()
@@ -5660,6 +6030,9 @@ def mount_standalone_status_ui(
         return JSONResponse(
             {
                 "ok": True,
+                "state_revision": state_revision,
+                "pat_count": pat_count,
+                "env_locks": env_locks,
                 "consent_pair_code": pair_code,
                 "pair_code": pair_code,
                 "dynamic_pair_code": dynamic_pair_code,
@@ -5683,7 +6056,7 @@ def mount_standalone_status_ui(
                 "public_url": gw_view["public_url"],
                 "mcp_url": gw_view["mcp_url"],
                 "mcp_readonly_url": gw_view["mcp_readonly_url"],
-                "endpoint_secret_enabled": bool(load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)),
+                "endpoint_secret_enabled": ep_sec_enabled,
                 "readonly_mcp_url": gw_view["readonly_mcp_url"],
                 "skill_url": gw_view["skill_url"],
                 "srvus_fixed_active": gw_view["srvus_fixed_active"],
@@ -5736,71 +6109,13 @@ def mount_standalone_status_ui(
             return err_resp
 
         act = str(data.get("action") or "").strip().lower()
-        if act not in ("stop", "restart"):
+        if act not in ("stop", "restart", "start", "resume", "service_restart", "restart_service", "start_service"):
             return JSONResponse({"ok": False, "error": f"不支持的服务控制指令：{act!r}"}, status_code=400)
 
-        pm = _get_proc_mgr()
-        if pm is not None:
-            try:
-                pm.kill_all_active_commands(
-                    reason=f"studio_service_{act}",
-                    include_persisted_bg=True,
-                    prefix_filter=policy.eff_prefix,
-                )
-            except Exception:
-                pass
-        dispatcher.shutdown_packs(prefix_filter=policy.eff_prefix)
-        close_all_browser_sessions(prefix_filter=policy.eff_prefix)
-        _emit_kill_signal_resilient(
-            policy.state_root,
-            reason=f"studio_service_{act}",
-            prefix_filter=policy.eff_prefix,
-        )
-
-        stop_flag = daemon_stop_flag_path(policy.state_root, policy.eff_prefix)
-        stop_flag.parent.mkdir(parents=True, exist_ok=True)
-        now_ts = round(time.time(), 3)
-
-        if act == "stop":
-            stop_flag.write_text(f"STOP:{now_ts}\n", encoding="utf-8")
-            ctrl_msg = "已发出停止服务信号：在途任务与扩展包已清理，守护进程即将安全停止。"
-        else:
-            stop_flag.write_text(f"CLEAR:{now_ts}\n", encoding="utf-8")
-            policy.refresh(force=True)
-            ctrl_msg = "已发出重启服务信号：配置已重新加载，守护进程即将拉起新工作进程。"
-
-        ctrl_record_p = policy.state_root / "state" / "service_control_last.json"
-        atomic_write_json(
-            ctrl_record_p,
-            {
-                "action": act,
-                "ts": now_ts,
-                "prefix": policy.eff_prefix,
-            },
-        )
-
-        is_test_env = bool(os.environ.get("PYTEST_CURRENT_TEST") or parse_bool_flag(data.get("signal_only"), default=False))
-        d_status_file = policy.state_root / "state" / (
-            f"daemon_status_{policy.eff_prefix}.json" if policy.eff_prefix != "pc" else "daemon_status.json"
-        )
-        supervised = False
-        if d_status_file.is_file():
-            try:
-                d_doc = json.loads(d_status_file.read_text(encoding="utf-8-sig"))
-                supervised = isinstance(d_doc, dict) and str(d_doc.get("status") or "") == "running"
-            except Exception:
-                supervised = False
-
-        if not is_test_env and (act == "stop" or (act == "restart" and supervised)):
-            threading.Timer(0.35, lambda: os._exit(0)).start()
-
+        sig_only = parse_bool_flag(data.get("signal_only"), default=False)
+        res_doc = _execute_studio_service_control(act, signal_only=sig_only)
         return _json_with_optional_cookie(
-            {
-                "ok": True,
-                "action": act,
-                "stop_flag_path": str(stop_flag),
-                "message": ctrl_msg,
-            },
+            res_doc,
             request,
             minted,
         )
@@ -6936,10 +7251,7 @@ def mount_standalone_status_ui(
                 set_public_url=set_public_url,
             )
         policy.refresh(force=True)
-        try:
-            policy.persist_changes(public_gateway_node_id=restored_node_id)
-        except Exception:
-            pass
+        policy.persist_changes(public_gateway_node_id=restored_node_id)
         snap = _state_snapshot(request)
         snap["restored_identity"] = {
             "node_id": restored_node_id,

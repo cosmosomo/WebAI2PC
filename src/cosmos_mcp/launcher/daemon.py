@@ -1593,25 +1593,24 @@ class StandaloneSupervisorLoop:
             pass
 
     def _read_cfg_doc(self) -> Dict[str, Any]:
-        svc_name = f"service_{self.prefix}.json" if self.prefix != "pc" else "service.json"
-        candidates: List[tuple[float, Dict[str, Any]]] = []
-        for cand_p in (service_cfg_path(self.state_root, self.prefix), self.state_root / "state" / svc_name):
-            if not cand_p.is_file():
-                continue
+        auth_cfg = service_cfg_path(self.state_root, self.prefix)
+        if auth_cfg.is_file():
             try:
-                doc = json.loads(cand_p.read_text(encoding="utf-8-sig"))
+                doc = json.loads(auth_cfg.read_text(encoding="utf-8-sig"))
                 if isinstance(doc, dict):
-                    stamp = float(doc.get("policy_updated_at") or cand_p.stat().st_mtime)
-                    candidates.append((stamp, doc))
+                    return doc
             except Exception:
-                continue
-        if not candidates:
-            return {}
-        candidates.sort(key=lambda item: item[0])
-        merged: Dict[str, Any] = {}
-        for _, d in candidates:
-            merged.update(d)
-        return merged
+                pass
+        svc_name = f"service_{self.prefix}.json" if self.prefix != "pc" else "service.json"
+        fallback_p = self.state_root / "state" / svc_name
+        if fallback_p.is_file():
+            try:
+                doc_fb = json.loads(fallback_p.read_text(encoding="utf-8-sig"))
+                if isinstance(doc_fb, dict):
+                    return doc_fb
+            except Exception:
+                pass
+        return {}
 
     def _should_stop(self) -> bool:
         return _is_stop_active(self.state_root, self.prefix)
@@ -4155,6 +4154,15 @@ class StandaloneSupervisorLoop:
         return proc
 
     def run_forever(self) -> int:
+        if self._should_stop():
+            self._log(
+                "supervisor start skipped because persistent user STOP lock is active (prefix=%s)",
+                self.prefix,
+            )
+            with contextlib.suppress(Exception):
+                self._sup_logger.removeHandler(self._sup_log_handler)
+                self._sup_log_handler.close()
+            return 0
         if self._should_enforce_singleton() and not self._singleton_lock.acquire():
             self.singleton_conflict = True
             self._log(

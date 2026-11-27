@@ -65,11 +65,12 @@ from cosmos_mcp.launcher.daemon import (
     CREATE_BREAKAWAY_FROM_JOB,
     CREATE_NEW_PROCESS_GROUP,
     DETACHED_PROCESS,
+    _is_stop_active,
     daemon_status_path,
     detect_running_instance,
     probe_local_healthz,
     request_worker_hot_reload,
-     sanitize_daemon_inherited_env,
+    sanitize_daemon_inherited_env,
     service_cfg_path,
     spawn_detached_daemon,
     stop_daemon,
@@ -1223,9 +1224,10 @@ def _execute_handoff_and_watchdog(
                 cfg_doc = loaded_c
     no_tray = not bool(cfg_doc.get("tray_enabled", True))
 
+    was_user_stopped = _is_stop_active(st_root, eff_p)
     if restart_mode == "worker_hot_reload" and sup_alive:
         request_worker_hot_reload(st_root, prefix=eff_p)
-    else:
+    elif not was_user_stopped:
         stop_daemon(st_root, prefix=eff_p, timeout_sec=6.0)
         spawn_detached_daemon(
             python_exe=runtime_python,
@@ -1234,6 +1236,7 @@ def _execute_handoff_and_watchdog(
             prefix=eff_p,
             no_tray=no_tray,
             wait_ready_sec=min(8.0, max(2.0, float(health_timeout_sec))),
+            clear_user_stop=True,
         )
 
     failure_reason = ""
@@ -1306,7 +1309,7 @@ def _execute_handoff_and_watchdog(
     sup_tok_now = post_doc.get("supervisor_create_token") or sup_tok
     if sup_pid_now > 0 and verify_pid_alive(sup_pid_now, sup_tok_now)[0]:
         request_worker_hot_reload(st_root, prefix=eff_p)
-    else:
+    elif not was_user_stopped:
         stop_daemon(st_root, prefix=eff_p, timeout_sec=4.0)
         spawn_detached_daemon(
             python_exe=runtime_python,
@@ -1315,6 +1318,7 @@ def _execute_handoff_and_watchdog(
             prefix=eff_p,
             no_tray=no_tray,
             wait_ready_sec=10.0,
+            clear_user_stop=True,
         )
 
     rollback_hz: Optional[Dict[str, Any]] = None

@@ -738,6 +738,7 @@
             </div>
 
             <!-- Live Permission Setting Box (visually distinct from view tabs) -->
+            <div id="wb-env-lock-banner" class="callout callout-warn env-lock-banner" style="display:none;margin-bottom:8px;font-size:12.5px;" role="status"></div>
             <div class="wb-safety-setting-box">
               <div class="wb-safety-setting-label-row">
                 <span class="wb-safety-setting-title">
@@ -936,6 +937,8 @@
                   <button type="button" class="btn btn-tonal btn-sm" id="settings-conn-check-btn">检查连通性</button>
                 </div>
               </div>
+
+              <div id="settings-env-lock-gateways" class="callout callout-warn env-lock-banner" style="display:none;margin-bottom:12px;font-size:12.5px;" role="status"></div>
 
               <div id="settings-conn-check-panel" class="conn-check-panel" style="display:none;margin-bottom:14px;" role="region" aria-label="网关设置连通性诊断">
                 <div class="conn-check-head">
@@ -1342,6 +1345,8 @@
                 </div>
               </div>
 
+              <div id="settings-env-lock-auth" class="callout callout-warn env-lock-banner" style="display:none;margin-bottom:12px;font-size:12.5px;" role="status"></div>
+
               <div class="settings-group">
                 <div class="settings-group-title">1. 同机回环一键免密（<code>127.0.0.1</code> OAuth 授权桥）</div>
                 <div class="settings-row-stack">
@@ -1357,11 +1362,12 @@
                 <div class="settings-row-stack">
                   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
                     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                      <span>6 位配对码：<strong style="font-family:monospace;font-size:15px;" id="auth-pair-code-val">-</strong></span>
-                      <span>4 位核对码：<strong style="font-family:monospace;font-size:15px;" id="auth-verify-code-val">-</strong></span>
+                      <span>6 位配对码：<strong style="font-family:monospace;font-size:15px;" id="auth-pair-code-val" class="clickable-code" title="点击复制 6 位动态配对码">------</strong></span>
+                      <span>4 位核对码：<strong style="font-family:monospace;font-size:15px;" id="auth-verify-code-val" class="clickable-code" title="点击复制 4 位核对码">----</strong></span>
                     </div>
                     <div class="ws-actions">
                       <button type="button" class="btn btn-tonal btn-sm" id="auth-copy-pair-btn">复制 6 位配对码</button>
+                      <button type="button" class="btn btn-sm" id="auth-copy-verify-btn">复制核对码</button>
                       <button type="button" class="btn btn-sm" id="auth-refresh-pair-btn">刷新配对码</button>
                     </div>
                   </div>
@@ -1379,19 +1385,51 @@
                     <div class="ws-actions">
                       <button type="button" class="btn btn-sm" id="auth-toggle-backup-btn">显示 / 隐藏</button>
                       <button type="button" class="btn btn-tonal btn-sm" id="auth-copy-backup-btn">复制备用口令</button>
+                      <button type="button" class="btn btn-sm" id="auth-rotate-backup-btn">重置备用口令</button>
+                    </div>
+                  </div>
+                  <div id="auth-rotate-backup-confirm-bar" class="callout callout-warn" style="display:none;margin-top:8px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;">
+                    <span>确认重新生成 20 位备用口令？旧口令将立即失效（已连接的网页会话不会中断）。</span>
+                    <div class="ws-actions">
+                      <button type="button" class="btn btn-danger btn-sm" id="auth-confirm-rotate-backup-btn">确认重置</button>
+                      <button type="button" class="btn btn-sm" id="auth-cancel-rotate-backup-btn">取消</button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div class="settings-group">
+              <div class="settings-group" id="auth-pat-group">
                 <div class="settings-group-title">4. 可吊销专用密钥（PAT <code>cmcp_*</code>，受限工作区 / CLI 专用）</div>
-                <div class="settings-row-stack">
+                <div class="settings-row-stack" style="display:flex;flex-direction:column;gap:10px;">
                   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-                    <span style="font-size:12.5px;color:var(--muted);">当前已签发专用密钥：<strong id="auth-pat-count-val">0</strong> 条（可在下方随时单条新建或吊销，不影响其他会话）。</span>
-                    <div class="ws-actions">
-                      <button type="button" class="btn btn-tonal btn-sm" id="auth-open-pat-modal-btn">管理 / 新建专用密钥</button>
+                    <span style="font-size:12.5px;color:var(--muted);">当前已签发专用密钥：<strong id="auth-pat-count-val">0</strong> 条（本地仅存 SHA-256 哈希，随时可单条吊销，不影响其他会话）。</span>
+                    <span class="tag tag-muted">仅本机 127.0.0.1 可签发</span>
+                  </div>
+                  <ul class="item-list compact-session-list" id="auth-pat-list" style="margin:0;max-height:180px;overflow-y:auto;"></ul>
+                  <div class="pat-form-row" id="auth-pat-mint-form">
+                    <select id="auth-pat-scope-select" aria-label="专用密钥权限范围">
+                      <option value="readonly" selected>仅只读（推荐 · 限 /mcp/readonly）</option>
+                      <option value="readwrite">工作区读写（允许 /mcp）</option>
+                    </select>
+                    <select id="auth-pat-ttl-select" aria-label="专用密钥有效天数">
+                      <option value="7">有效期 7 天</option>
+                      <option value="30" selected>有效期 30 天</option>
+                      <option value="90">有效期 90 天</option>
+                    </select>
+                    <input type="text" id="auth-pat-label-input" class="flex-input" maxlength="60" placeholder="备注名称（选填，如 私有 Sites 助手 / 本地 CLI）">
+                    <button type="button" class="btn btn-tonal btn-sm" id="auth-mint-pat-btn">新建专用密钥</button>
+                  </div>
+                  <div id="auth-pat-loopback-only-hint" class="item-meta" style="display:none;color:var(--danger);">当前非本机 127.0.0.1 直连访问，已禁止签发专用密钥。</div>
+                  <div id="auth-pat-once-result-box" class="pat-once-result" style="display:none;" role="alert">
+                    <div class="pat-danger-alert">
+                      <strong>防外发安全红线：</strong>严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue！仅限填入 ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件；关闭本提示后不再显示明文，如怀疑泄露请在上方列表点击『吊销』立即作废。
                     </div>
+                    <div class="copy-row" style="margin-top:8px;">
+                      <div class="mono-value" id="auth-pat-once-token-value" style="font-size:12.5px;"></div>
+                      <button type="button" class="btn btn-primary btn-sm" id="auth-copy-pat-token-btn">复制专用密钥</button>
+                      <button type="button" class="btn btn-sm" id="auth-dismiss-pat-result-btn">关闭并擦除明文</button>
+                    </div>
+                    <div class="item-meta" id="auth-pat-once-meta-text" style="margin-top:6px;"></div>
                   </div>
                 </div>
               </div>
@@ -1427,6 +1465,8 @@
                 <h2 class="settings-pane-title">环境与系统</h2>
                 <p class="settings-pane-desc">配置默认 Python / Conda 解释器、开机与防休眠选项，以及本地后台服务控制。</p>
               </div>
+
+              <div id="settings-env-lock-runtime" class="callout callout-warn env-lock-banner" style="display:none;margin-bottom:12px;font-size:12.5px;" role="status"></div>
 
               <div class="settings-group">
                 <div class="settings-group-title">默认 Python / Conda 解释器</div>
@@ -1503,6 +1543,8 @@
                 <h2 class="settings-pane-title">工具与扩展</h2>
                 <p class="settings-pane-desc">控制确认策略、可选扩展包、多机工具前缀与 16 项内置核心工具清单。</p>
               </div>
+
+              <div id="settings-env-lock-tools" class="callout callout-warn env-lock-banner" style="display:none;margin-bottom:12px;font-size:12.5px;" role="status"></div>
 
               <div class="settings-group">
                 <div class="settings-group-title">安全确认与扩展包</div>

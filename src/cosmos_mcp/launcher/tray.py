@@ -31,7 +31,7 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 import webbrowser
 
-from cosmos_mcp.core.fs_tx import atomic_write_json, atomic_write_text
+from cosmos_mcp.core.fs_tx import atomic_write_json, atomic_write_text, get_file_lock
 from cosmos_mcp.core.proc import CREATE_NO_WINDOW
 
 # Visual palette (R, G, B)
@@ -55,6 +55,7 @@ MENU_ID_TOGGLE_READONLY = 1003
 MENU_ID_REVOKE_ALL = 1004
 MENU_ID_STOP_EXIT = 1005
 MENU_ID_COPY_WAKE_PROMPT = 1006
+MENU_ID_START_RESUME = 1007
 
 DEFAULT_WAKE_CONNECTOR_NAME = "Cosmos"
 DEFAULT_WAKE_PROMPT_SUFFIX = "帮我看看当前工作目录里有哪些文件"
@@ -558,6 +559,7 @@ def build_tray_menu_items(snapshot: Mapping[str, Any]) -> List[Tuple[int, int, s
     """Construct right-click popup menu tuples `(uFlags, uIDNewItem, lpNewItem)` with ZERO I/O."""
     port = int(snapshot.get("port") or 8096)
     _, label_zh, _ = resolve_tray_visual_state(snapshot)
+    status_str = str(snapshot.get("status") or "running").strip().lower()
     tier = str(snapshot.get("permission_tier") or "tier3_workspace_dev").strip().lower()
     prev_tier = str(snapshot.get("previous_non_readonly_tier") or "tier3_workspace_dev").strip().lower()
     restore_labels = {
@@ -576,7 +578,7 @@ def build_tray_menu_items(snapshot: Mapping[str, Any]) -> List[Tuple[int, int, s
     copy_flags = MF_STRING if copy_ready else (MF_STRING | MF_GRAYED)
     copy_label = "复制 MCP 连接地址" if copy_ready else "正在建立加密连接…"
 
-    return [
+    items: List[Tuple[int, int, str]] = [
         (MF_STRING | MF_GRAYED, MENU_ID_HEADER, f"Cosmos MCP (:{port} · {label_zh})"),
         (MF_SEPARATOR, 0, ""),
         (MF_STRING, MENU_ID_OPEN_STUDIO, "打开控制台面板"),
@@ -586,8 +588,11 @@ def build_tray_menu_items(snapshot: Mapping[str, Any]) -> List[Tuple[int, int, s
         (MF_STRING, MENU_ID_TOGGLE_READONLY, toggle_label),
         (MF_STRING, MENU_ID_REVOKE_ALL, "断开全部已授权连接"),
         (MF_SEPARATOR, 0, ""),
-        (MF_STRING, MENU_ID_STOP_EXIT, "停止服务并退出"),
     ]
+    if status_str == "stopped":
+        items.append((MF_STRING, MENU_ID_START_RESUME, "启动后台服务"))
+    items.append((MF_STRING, MENU_ID_STOP_EXIT, "停止服务并退出"))
+    return items
 
 
 def copy_text_to_win32_clipboard(text: str) -> bool:
@@ -665,38 +670,50 @@ def apply_tray_permission_toggle(state_root: Path, prefix: str = "pc", current_t
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    candidates: List[Tuple[float, Dict[str, Any]]] = []
-    for p_cand in (state_svc_path, cfg_path):
-        if p_cand.is_file():
-            try:
-                loaded = json.loads(p_cand.read_text(encoding="utf-8-sig"))
-                if isinstance(loaded, dict):
-                    stamp = float(loaded.get("policy_updated_at") or p_cand.stat().st_mtime)
-                    candidates.append((stamp, loaded))
-            except Exception:
-                continue
-    candidates.sort(key=lambda item: item[0])
-    merged_doc: Dict[str, Any] = {}
-    for _, d_item in candidates:
-        merged_doc.update(d_item)
-
     non_ro_tiers = ("tier2_workspace_edit", "tier3_workspace_dev", "tier4_full_power")
-    cur_tier = (current_tier or str(merged_doc.get("permission_tier") or "tier3_workspace_dev")).strip().lower()
-    saved_prev = str(merged_doc.get("previous_non_readonly_tier") or "").strip().lower()
-    if cur_tier == "tier1_readonly":
-        target_tier = saved_prev if saved_prev in non_ro_tiers else "tier3_workspace_dev"
-        eff_prev_non_ro = target_tier
-    else:
-        eff_prev_non_ro = cur_tier if cur_tier in non_ro_tiers else "tier3_workspace_dev"
-        target_tier = "tier1_readonly"
+    with get_file_lock(cfg_path):
+        doc: Dict[str, Any] = {}
+        if cfg_path.is_file():
+            raw_txt = cfg_path.read_text(encoding="utf-8-sig")
+            if raw_txt.strip():
+                loaded = json.loads(raw_txt)
+                if isinstance(loaded, dict):
+                    doc = dict(loaded)
 
-    now_ts = round(time.time(), 6)
-    merged_doc["permission_tier"] = target_tier
-    merged_doc["previous_non_readonly_tier"] = eff_prev_non_ro
-    merged_doc["policy_updated_at"] = now_ts
+        cur_tier = (current_tier or str(doc.get("permission_tier") or "tier3_workspace_dev")).strip().lower()
+        saved_prev = str(doc.get("previous_non_readonly_tier") or "").strip().lower()
+        if cur_tier == "tier1_readonly":
+            target_tier = saved_prev if saved_prev in non_ro_tiers else "tier3_workspace_dev"
+            eff_prev_non_ro = target_tier
+        else:
+            eff_prev_non_ro = cur_tier if cur_tier in non_ro_tiers else "tier3_workspace_dev"
+            target_tier = "tier1_readonly"
 
-    atomic_write_json(cfg_path, merged_doc)
-    atomic_write_json(state_svc_path, merged_doc)
+        now_ts = round(time.time(), 6)
+        next_rev = int(doc.get("policy_revision") or 0) + 1
+        doc["permission_tier"] = target_tier
+        doc["previous_non_readonly_tier"] = eff_prev_non_ro
+        doc["policy_updated_at"] = now_ts
+        doc["policy_revision"] = next_rev
+
+        atomic_write_json(cfg_path, doc)
+        if state_svc_path.is_file():
+            atomic_write_json(state_svc_path, doc)
+        root_cfg_path = st_root / "config.json"
+        if eff_p == "pc" and root_cfg_path.is_file():
+            root_doc: Dict[str, Any] = {}
+            try:
+                loaded_root = json.loads(root_cfg_path.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded_root, dict):
+                    root_doc = dict(loaded_root)
+            except Exception:
+                root_doc = {}
+            root_doc["permission_tier"] = target_tier
+            root_doc["previous_non_readonly_tier"] = eff_prev_non_ro
+            root_doc["policy_updated_at"] = now_ts
+            root_doc["policy_revision"] = next_rev
+            atomic_write_json(root_cfg_path, root_doc)
+
     atomic_write_json(
         state_dir / "kill_signal.json",
         {
@@ -711,7 +728,30 @@ def apply_tray_permission_toggle(state_root: Path, prefix: str = "pc", current_t
         "ok": True,
         "permission_tier": target_tier,
         "previous_non_readonly_tier": eff_prev_non_ro,
+        "policy_revision": next_rev,
     }
+
+
+def apply_tray_start_or_resume_daemon(
+    state_root: Path,
+    *,
+    prefix: str = "pc",
+    port: int = 8096,
+    python_exe: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Explicitly clear user `STOP` lock and spawn/resume detached daemon from tray click (`clear_user_stop=True`)."""
+    from cosmos_mcp.launcher.daemon import spawn_detached_daemon
+
+    st_root = Path(state_root).expanduser().resolve()
+    eff_p = _norm_prefix(prefix)
+    eff_py = str(python_exe or sys.executable)
+    return spawn_detached_daemon(
+        python_exe=eff_py,
+        state_root=st_root,
+        port=int(port),
+        prefix=eff_p,
+        clear_user_stop=True,
+    )
 
 
 def apply_tray_revoke_all_tokens(state_root: Path, prefix: str = "pc") -> Dict[str, Any]:
@@ -918,6 +958,12 @@ class WindowsSystemTrayController:
         if cmd_id == MENU_ID_REVOKE_ALL:
             res = apply_tray_revoke_all_tokens(self.state_root, prefix=self.prefix)
             return {"ok": True, "action": "revoke_all", **res}
+
+        if cmd_id is not None and cmd_id == MENU_ID_START_RESUME:
+            res = apply_tray_start_or_resume_daemon(self.state_root, prefix=self.prefix, port=port_val)
+            if res.get("ok"):
+                self.update_snapshot({"status": "starting", "server_alive": True, "last_error": ""})
+            return {"ok": bool(res.get("ok")), "action": "start_resume", **res}
 
         if cmd_id == MENU_ID_STOP_EXIT:
             res = apply_tray_stop_daemon_flag(self.state_root, prefix=self.prefix)

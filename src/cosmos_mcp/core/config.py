@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import contextlib
 import ctypes
 import hashlib
 import hmac
@@ -568,13 +569,7 @@ def resolve_service_cfg_path(state_root: Path, eff_prefix: str = "pc") -> Path:
     norm_p = normalize_prefix(eff_prefix)
     if norm_p != "pc":
         return state_root / "config" / f"service_{norm_p}.json"
-    svc_path = state_root / "config" / "service.json"
-    if svc_path.is_file():
-        return svc_path
-    legacy_root_cfg = state_root / "config.json"
-    if legacy_root_cfg.is_file():
-        return legacy_root_cfg
-    return svc_path
+    return state_root / "config" / "service.json"
 
 
 def conn_info_filename_for_prefix(eff_prefix: str = "pc") -> str:
@@ -2179,6 +2174,13 @@ def ensure_initialized(
                 saved_cfg = loaded
         except Exception:
             saved_cfg = {}
+    elif eff_prefix == "pc" and (state_root / "config.json").is_file():
+        try:
+            loaded_legacy = json.loads((state_root / "config.json").read_text(encoding="utf-8-sig"))
+            if isinstance(loaded_legacy, dict):
+                saved_cfg = loaded_legacy
+        except Exception:
+            saved_cfg = {}
 
     eff_tool_prefix = _resolve_safe_tool_prefix(
         tool_prefix if (tool_prefix and str(tool_prefix).strip()) else saved_cfg.get("tool_prefix"),
@@ -2537,8 +2539,7 @@ class LiveRuntimePolicy:
             else resolve_state_root(product_root=product_root)
         )
         if cfg_path is None and state_root is not None:
-            cand_cfg = resolve_service_cfg_path(self.state_root, self.eff_prefix)
-            self.cfg_path: Optional[Path] = cand_cfg if cand_cfg.is_file() else None
+            self.cfg_path: Optional[Path] = resolve_service_cfg_path(self.state_root, self.eff_prefix)
         else:
             self.cfg_path = cfg_path
         self.auth_path: Optional[Path] = auth_path
@@ -2557,6 +2558,18 @@ class LiveRuntimePolicy:
                     file_cfg = loaded
             except Exception:
                 file_cfg = {}
+        elif (
+            self.cfg_path is not None
+            and not self.cfg_path.is_file()
+            and self.eff_prefix == "pc"
+            and (self.state_root / "config.json").is_file()
+        ):
+            try:
+                loaded_legacy = json.loads((self.state_root / "config.json").read_text(encoding="utf-8-sig"))
+                if isinstance(loaded_legacy, dict):
+                    file_cfg = loaded_legacy
+            except Exception:
+                file_cfg = {}
 
         raw_tp = tool_prefix if (tool_prefix and str(tool_prefix).strip()) else file_cfg.get("tool_prefix")
         self.tool_prefix: str = _resolve_safe_tool_prefix(raw_tp, fallback=self.eff_prefix)
@@ -2566,35 +2579,54 @@ class LiveRuntimePolicy:
 
         dotenv_vals = load_safe_state_dotenv(self.state_root)
 
-        def _env_or_dotenv(*names: str) -> str:
+        def _env_or_dotenv_with_source(*names: str) -> Tuple[str, str]:
             for nm in names:
                 ev = os.environ.get(nm)
                 if ev is not None and str(ev).strip() != "":
-                    return str(ev).strip()
+                    return str(ev).strip(), nm
             for nm in names:
                 dv = dotenv_vals.get(nm)
                 if dv is not None and str(dv).strip() != "":
-                    return str(dv).strip()
-            return ""
+                    return str(dv).strip(), nm
+            return "", ""
 
         self._startup_env_locks: set[str] = set()
-        env_tier_val = _env_or_dotenv("COSMOS_PERMISSION_TIER", "LOCALPC_PERMISSION_TIER")
+        self._startup_env_lock_details: Dict[str, Dict[str, str]] = {}
+        env_tier_val, env_tier_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_PERMISSION_TIER", "COSMOS_PERMISSION_TIER", "LOCALPC_PERMISSION_TIER"
+        )
         if env_tier_val:
             self._startup_env_locks.add("tier_key")
-        eff_tier_raw = tier_key or env_tier_val or str(file_cfg.get("permission_tier") or DEFAULT_TIER)
+            self._startup_env_lock_details["permission_tier"] = {
+                "env_var": env_tier_var,
+                "reason": "由启动环境变量锁定",
+            }
+        eff_tier_raw = env_tier_val or tier_key or str(file_cfg.get("permission_tier") or DEFAULT_TIER)
         self.tier_key: str = normalize_tier(eff_tier_raw)
         self.tier_cfg: Dict[str, Any] = dict(PERMISSION_TIERS[self.tier_key])
 
-        env_ws_roots = _env_or_dotenv("COSMOS_WORKSPACE_ROOTS", "LOCALPC_WORKSPACE_ROOTS")
-        env_ws_single = _env_or_dotenv("COSMOS_MCP_WORKSPACE", "COSMOS_WORKSPACE", "LOCALPC_MCP_WORKSPACE", "LOCALPC_WORKSPACE")
+        env_ws_roots, env_ws_roots_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_WORKSPACE_ROOTS", "COSMOS_WORKSPACE_ROOTS", "LOCALPC_WORKSPACE_ROOTS"
+        )
+        env_ws_single, env_ws_single_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_WORKSPACE", "COSMOS_WORKSPACE", "LOCALPC_MCP_WORKSPACE", "LOCALPC_WORKSPACE"
+        )
         if env_ws_roots or env_ws_single:
             self._startup_env_locks.add("workspace_roots")
+            self._startup_env_lock_details["workspace_roots"] = {
+                "env_var": env_ws_roots_var or env_ws_single_var,
+                "reason": "由启动环境变量锁定",
+            }
         raw_roots = (
-            workspace_roots
-            if workspace_roots is not None
-            else (env_ws_roots if env_ws_roots else file_cfg.get("workspace_roots"))
+            env_ws_roots
+            if env_ws_roots
+            else (workspace_roots if workspace_roots is not None else file_cfg.get("workspace_roots"))
         )
-        raw_legacy_ws = workspace or env_ws_single or str(file_cfg.get("workspace") or file_cfg.get("workspace_root") or "")
+        raw_legacy_ws = (
+            env_ws_single
+            or workspace
+            or str(file_cfg.get("workspace") or file_cfg.get("workspace_root") or "")
+        )
         self.workspace_roots: Tuple[Path, ...] = normalize_workspace_roots(raw_roots, legacy_workspace=raw_legacy_ws)
         raw_ro_roots = (
             readonly_workspace_roots
@@ -2603,27 +2635,57 @@ class LiveRuntimePolicy:
         )
         self.readonly_workspace_roots: Tuple[Path, ...] = normalize_readonly_workspace_roots(raw_ro_roots, self.workspace_roots)
 
-        env_ts = _env_or_dotenv("COSMOS_TOOLSET_PROFILE", "LOCALPC_TOOLSET_PROFILE")
-        env_pr = _env_or_dotenv("COSMOS_PROMPT_PROFILE", "LOCALPC_PROMPT_PROFILE")
-        env_en = _env_or_dotenv("COSMOS_ENABLED_TOOLS", "LOCALPC_ENABLED_TOOLS")
-        env_dis = _env_or_dotenv("COSMOS_DISABLED_TOOLS", "LOCALPC_DISABLED_TOOLS")
-        env_packs = _env_or_dotenv("COSMOS_ENABLED_PACKS", "LOCALPC_ENABLED_PACKS")
+        env_ts, env_ts_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_TOOLSET_PROFILE", "COSMOS_TOOLSET_PROFILE", "LOCALPC_TOOLSET_PROFILE"
+        )
+        env_pr, env_pr_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_PROMPT_PROFILE", "COSMOS_PROMPT_PROFILE", "LOCALPC_PROMPT_PROFILE"
+        )
+        env_en, env_en_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_ENABLED_TOOLS", "COSMOS_ENABLED_TOOLS", "LOCALPC_ENABLED_TOOLS"
+        )
+        env_dis, env_dis_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_DISABLED_TOOLS", "COSMOS_DISABLED_TOOLS", "LOCALPC_DISABLED_TOOLS"
+        )
+        env_packs, env_packs_var = _env_or_dotenv_with_source(
+            "COSMOS_MCP_ENABLED_PACKS", "COSMOS_ENABLED_PACKS", "LOCALPC_ENABLED_PACKS"
+        )
         if env_ts:
             self._startup_env_locks.add("toolset_profile")
+            self._startup_env_lock_details["toolset_profile"] = {
+                "env_var": env_ts_var,
+                "reason": "由启动环境变量锁定",
+            }
         if env_pr:
             self._startup_env_locks.add("prompt_profile")
+            self._startup_env_lock_details["prompt_profile"] = {
+                "env_var": env_pr_var,
+                "reason": "由启动环境变量锁定",
+            }
         if env_en:
             self._startup_env_locks.add("enabled_tools")
+            self._startup_env_lock_details["enabled_tools"] = {
+                "env_var": env_en_var,
+                "reason": "由启动环境变量锁定",
+            }
         if env_dis:
             self._startup_env_locks.add("disabled_tools")
+            self._startup_env_lock_details["disabled_tools"] = {
+                "env_var": env_dis_var,
+                "reason": "由启动环境变量锁定",
+            }
         if env_packs:
             self._startup_env_locks.add("enabled_packs")
+            self._startup_env_lock_details["enabled_packs"] = {
+                "env_var": env_packs_var,
+                "reason": "由启动环境变量锁定",
+            }
 
-        raw_ts = toolset_profile or env_ts or str(file_cfg.get("toolset_profile") or "")
-        raw_pr = prompt_profile or env_pr or str(file_cfg.get("prompt_profile") or "")
-        raw_en = enabled_tools if enabled_tools is not None else (env_en or file_cfg.get("enabled_tools"))
-        raw_dis = disabled_tools if disabled_tools is not None else (env_dis or file_cfg.get("disabled_tools"))
-        raw_packs = enabled_packs if enabled_packs is not None else (env_packs or file_cfg.get("enabled_packs"))
+        raw_ts = env_ts or toolset_profile or str(file_cfg.get("toolset_profile") or "")
+        raw_pr = env_pr or prompt_profile or str(file_cfg.get("prompt_profile") or "")
+        raw_en = env_en if env_en else (enabled_tools if enabled_tools is not None else file_cfg.get("enabled_tools"))
+        raw_dis = env_dis if env_dis else (disabled_tools if disabled_tools is not None else file_cfg.get("disabled_tools"))
+        raw_packs = env_packs if env_packs else (enabled_packs if enabled_packs is not None else file_cfg.get("enabled_packs"))
 
         self.toolset_profile: str = normalize_toolset_profile(raw_ts, default=DEFAULT_TOOLSET_PROFILE)
         self.prompt_profile: str = normalize_prompt_profile(raw_pr, default=DEFAULT_PROMPT_PROFILE)
@@ -2721,6 +2783,14 @@ class LiveRuntimePolicy:
 
         self.tier_epoch: int = 0
         self.workspace_epoch: int = 0
+        try:
+            self.policy_revision: int = max(0, int(file_cfg.get("policy_revision") or 0))
+        except (TypeError, ValueError):
+            self.policy_revision = 0
+        try:
+            self.policy_updated_at: float = float(file_cfg.get("policy_updated_at") or 0.0)
+        except (TypeError, ValueError):
+            self.policy_updated_at = 0.0
         self._auth_listeners: List[Callable[[Dict[str, Any]], None]] = []
         self._policy_listeners: List[Callable[["LiveRuntimePolicy"], None]] = []
         self._last_cfg_sig: Optional[Tuple[int, int]] = self._file_sig(self.cfg_path)
@@ -2834,6 +2904,63 @@ class LiveRuntimePolicy:
             keep_awake=self.keep_awake,
         )
 
+    def get_env_locks(self) -> Dict[str, Dict[str, str]]:
+        """Return startup environment-locked policy fields (`{field: {'env_var': ..., 'reason': ...}}`)."""
+        with self._lock:
+            raw_locks = getattr(self, "_startup_env_locks", set()) or set()
+            if not raw_locks:
+                return {}
+            details = getattr(self, "_startup_env_lock_details", {}) or {}
+            default_vars = {
+                "permission_tier": "COSMOS_MCP_PERMISSION_TIER",
+                "workspace_roots": "COSMOS_MCP_WORKSPACE_ROOTS",
+                "toolset_profile": "COSMOS_MCP_TOOLSET_PROFILE",
+                "prompt_profile": "COSMOS_MCP_PROMPT_PROFILE",
+                "enabled_tools": "COSMOS_MCP_ENABLED_TOOLS",
+                "disabled_tools": "COSMOS_MCP_DISABLED_TOOLS",
+                "enabled_packs": "COSMOS_MCP_ENABLED_PACKS",
+            }
+            out: Dict[str, Dict[str, str]] = {}
+            for lk in sorted(raw_locks):
+                pub_key = "permission_tier" if lk == "tier_key" else str(lk)
+                det = details.get(pub_key)
+                if isinstance(det, Mapping) and det.get("env_var"):
+                    out[pub_key] = {
+                        "env_var": str(det["env_var"]),
+                        "reason": str(det.get("reason") or "由启动环境变量锁定"),
+                    }
+                else:
+                    out[pub_key] = {
+                        "env_var": default_vars.get(pub_key, f"COSMOS_MCP_{pub_key.upper()}"),
+                        "reason": "由启动环境变量锁定",
+                    }
+            return out
+
+    def _sync_secondary_config_projections_locked(self, authoritative_doc: Mapping[str, Any]) -> None:
+        """One-way project authoritative `self.cfg_path` doc onto legacy `state/service.json` & existing `config.json`.
+
+        MUST ONLY be called inside `with get_file_lock(self.cfg_path):`. Never reads secondary files back into
+        authoritative policy state and never swallows disk write errors.
+        """
+        if self.cfg_path is None:
+            return
+        auth_norm = os.path.normcase(str(self.cfg_path.resolve()))
+        svc_name = f"service_{self.eff_prefix}.json" if self.eff_prefix != "pc" else "service.json"
+        state_svc = self.state_root / "state" / svc_name
+        if state_svc.is_file() and os.path.normcase(str(state_svc.resolve())) != auth_norm:
+            atomic_write_json(state_svc, dict(authoritative_doc))
+        root_cfg = self.state_root / "config.json"
+        if self.eff_prefix == "pc" and root_cfg.is_file() and os.path.normcase(str(root_cfg.resolve())) != auth_norm:
+            root_doc: Dict[str, Any] = {}
+            try:
+                loaded_r = json.loads(root_cfg.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded_r, dict):
+                    root_doc = dict(loaded_r)
+            except Exception:
+                root_doc = {}
+            root_doc.update(dict(authoritative_doc))
+            atomic_write_json(root_cfg, root_doc)
+
     def to_status_dict(
         self,
         *,
@@ -2847,6 +2974,9 @@ class LiveRuntimePolicy:
                 "permission_tier": self.tier_key,
                 "short_tier": self.short_tier_code,
                 "permission_label": self.dynamic_tier_label(tool_count=tool_count),
+                "policy_revision": int(getattr(self, "policy_revision", 0) or 0),
+                "policy_updated_at": float(getattr(self, "policy_updated_at", 0.0) or 0.0),
+                "env_locks": self.get_env_locks(),
                 "toolset_profile": self.toolset_profile,
                 "prompt_profile": self.prompt_profile,
                 "instance_id": self.instance_id,
@@ -3085,61 +3215,75 @@ class LiveRuntimePolicy:
             self.pinned_gateway_urls = tuple(collect_pinned_gateway_urls(self.gateways, merged_pin_src))
 
             if persist and self.cfg_path is not None:
-                cur_doc["gateways"] = {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS}
-                cur_doc["selected_gateway"] = self.selected_gateway
-                cur_doc["tunnel_mode"] = self.tunnel_mode
-                cur_doc["_gateways_mirrored_mode"] = self.tunnel_mode
-                cur_doc["pinned_gateway_urls"] = list(self.pinned_gateway_urls)
-                if gw_id == "workers_dev":
-                    if slot.get("public_url"):
-                        cur_doc["workers_dev_url"] = slot["public_url"]
-                    cur_doc["workers_dev_account_id"] = self.workers_dev_account_id
-                    cur_doc["workers_dev_script_name"] = self.workers_dev_script_name
-                    cur_doc["workers_dev_subdomain"] = self.workers_dev_subdomain
-                    cur_doc["workers_dev_custom_domain"] = self.workers_dev_custom_domain
-                elif gw_id == "self_hosted":
-                    if slot.get("submode") in ("vps_hub", "vps") and slot.get("public_url"):
-                        cur_doc["vps_hub_url"] = slot["public_url"]
-                    if slot.get("vps_ssh_target"):
-                        cur_doc["vps_ssh"] = str(slot["vps_ssh_target"])
-                    if slot.get("vps_ssh_port"):
-                        cur_doc["vps_ssh_port"] = int(slot["vps_ssh_port"])
-                    if slot.get("vps_remote_port"):
-                        cur_doc["vps_remote_port"] = int(slot["vps_remote_port"])
-                    if slot.get("vps_identity_file") is not None:
-                        cur_doc["vps_identity_file"] = str(slot["vps_identity_file"])
+                with get_file_lock(self.cfg_path):
+                    if self.cfg_path.is_file():
+                        try:
+                            latest_loaded = json.loads(self.cfg_path.read_text(encoding="utf-8-sig"))
+                            if isinstance(latest_loaded, dict):
+                                cur_doc = latest_loaded
+                        except Exception:
+                            pass
+                    cur_doc["gateways"] = {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS}
+                    cur_doc["selected_gateway"] = self.selected_gateway
+                    cur_doc["tunnel_mode"] = self.tunnel_mode
+                    cur_doc["_gateways_mirrored_mode"] = self.tunnel_mode
+                    cur_doc["pinned_gateway_urls"] = list(self.pinned_gateway_urls)
+                    if gw_id == "workers_dev":
+                        if slot.get("public_url"):
+                            cur_doc["workers_dev_url"] = slot["public_url"]
+                        cur_doc["workers_dev_account_id"] = self.workers_dev_account_id
+                        cur_doc["workers_dev_script_name"] = self.workers_dev_script_name
+                        cur_doc["workers_dev_subdomain"] = self.workers_dev_subdomain
+                        cur_doc["workers_dev_custom_domain"] = self.workers_dev_custom_domain
+                    elif gw_id == "self_hosted":
+                        if slot.get("submode") in ("vps_hub", "vps") and slot.get("public_url"):
+                            cur_doc["vps_hub_url"] = slot["public_url"]
+                        if slot.get("vps_ssh_target"):
+                            cur_doc["vps_ssh"] = str(slot["vps_ssh_target"])
+                        if slot.get("vps_ssh_port"):
+                            cur_doc["vps_ssh_port"] = int(slot["vps_ssh_port"])
+                        if slot.get("vps_remote_port"):
+                            cur_doc["vps_remote_port"] = int(slot["vps_remote_port"])
+                        if slot.get("vps_identity_file") is not None:
+                            cur_doc["vps_identity_file"] = str(slot["vps_identity_file"])
 
-                if not en_ids:
-                    cur_doc["public_base"] = ""
-                    if "public_base_url" in cur_doc:
-                        cur_doc["public_base_url"] = ""
-                else:
-                    existing_top = _clean_public_https_url(cur_doc.get("public_base") or cur_doc.get("public_base_url"))
-                    sel_url = _clean_public_https_url(self.gateways[self.selected_gateway].get("public_url"))
-                    any_en_url = next(
-                        (
+                    if not en_ids:
+                        cur_doc["public_base"] = ""
+                        if "public_base_url" in cur_doc:
+                            cur_doc["public_base_url"] = ""
+                    else:
+                        existing_top = _clean_public_https_url(cur_doc.get("public_base") or cur_doc.get("public_base_url"))
+                        sel_url = _clean_public_https_url(self.gateways[self.selected_gateway].get("public_url"))
+                        any_en_url = next(
+                            (
+                                _clean_public_https_url(self.gateways[eid].get("public_url"))
+                                for eid in en_ids
+                                if _clean_public_https_url(self.gateways[eid].get("public_url"))
+                            ),
+                            "",
+                        )
+                        # Never overwrite an active ready slot's public_base with an empty URL from a newly enabled secondary slot
+                        enabled_urls = {
                             _clean_public_https_url(self.gateways[eid].get("public_url"))
                             for eid in en_ids
                             if _clean_public_https_url(self.gateways[eid].get("public_url"))
-                        ),
-                        "",
-                    )
-                    # Never overwrite an active ready slot's public_base with an empty URL from a newly enabled secondary slot
-                    enabled_urls = {
-                        _clean_public_https_url(self.gateways[eid].get("public_url"))
-                        for eid in en_ids
-                        if _clean_public_https_url(self.gateways[eid].get("public_url"))
-                    }
-                    if sel_url and (gw_id == self.selected_gateway or not existing_top or existing_top not in enabled_urls):
-                        cur_doc["public_base"] = sel_url
-                        cur_doc["public_base_url"] = sel_url
-                    elif (not existing_top or existing_top not in enabled_urls) and any_en_url:
-                        cur_doc["public_base"] = any_en_url
-                        cur_doc["public_base_url"] = any_en_url
+                        }
+                        if sel_url and (gw_id == self.selected_gateway or not existing_top or existing_top not in enabled_urls):
+                            cur_doc["public_base"] = sel_url
+                            cur_doc["public_base_url"] = sel_url
+                        elif (not existing_top or existing_top not in enabled_urls) and any_en_url:
+                            cur_doc["public_base"] = any_en_url
+                            cur_doc["public_base_url"] = any_en_url
 
-                cur_doc["policy_updated_at"] = round(time.time(), 6)
-                atomic_write_json(self.cfg_path, cur_doc)
-                self._last_cfg_sig = self._file_sig(self.cfg_path)
+                    now_ts = round(time.time(), 6)
+                    next_rev = int(cur_doc.get("policy_revision") or 0) + 1
+                    cur_doc["policy_revision"] = next_rev
+                    cur_doc["policy_updated_at"] = now_ts
+                    atomic_write_json(self.cfg_path, cur_doc)
+                    self._sync_secondary_config_projections_locked(cur_doc)
+                    self.policy_revision = next_rev
+                    self.policy_updated_at = now_ts
+                    self._last_cfg_sig = self._file_sig(self.cfg_path)
 
             self._notify_policy_listeners()
             return {
@@ -3225,6 +3369,8 @@ class LiveRuntimePolicy:
             "tier_cfg": dict(self.tier_cfg),
             "previous_non_readonly_tier": self.previous_non_readonly_tier,
             "tier_epoch": self.tier_epoch,
+            "policy_revision": int(getattr(self, "policy_revision", 0) or 0),
+            "policy_updated_at": float(getattr(self, "policy_updated_at", 0.0) or 0.0),
             "workspace_roots": self.workspace_roots,
             "readonly_workspace_roots": self.readonly_workspace_roots,
             "workspace_epoch": self.workspace_epoch,
@@ -3259,6 +3405,8 @@ class LiveRuntimePolicy:
         self.tier_cfg = dict(snap["tier_cfg"])
         self.previous_non_readonly_tier = snap["previous_non_readonly_tier"]
         self.tier_epoch = snap["tier_epoch"]
+        self.policy_revision = int(snap.get("policy_revision") or 0)
+        self.policy_updated_at = float(snap.get("policy_updated_at") or 0.0)
         self.workspace_roots = snap["workspace_roots"]
         self.readonly_workspace_roots = snap["readonly_workspace_roots"]
         self.workspace_epoch = snap["workspace_epoch"]
@@ -3405,9 +3553,17 @@ class LiveRuntimePolicy:
         workers_dev_script_name: Optional[str] = None,
         workers_dev_subdomain: Optional[str] = None,
         workers_dev_custom_domain: Optional[str] = None,
+        extra_patch: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Validate every requested field upfront (zero memory/guard/disk side effects) and return a mutation plan."""
         plan: Dict[str, Any] = {}
+
+        if extra_patch is not None:
+            if not isinstance(extra_patch, Mapping):
+                raise ValueError(f"Invalid extra_patch type: {type(extra_patch).__name__} (expected mapping).")
+            plan["extra_patch"] = dict(extra_patch)
+            if not tier_key and extra_patch.get("permission_tier"):
+                tier_key = str(extra_patch["permission_tier"])
 
         if tool_prefix is not None and str(tool_prefix).strip():
             plan["tool_prefix"] = normalize_prefix(str(tool_prefix))
@@ -3754,6 +3910,40 @@ class LiveRuntimePolicy:
             self.tunnel_mode = next_tm
             self.pinned_gateway_urls = next_pinned
 
+        extra_p = plan.get("extra_patch")
+        if isinstance(extra_p, Mapping):
+            ep_gws = extra_p.get("gateways")
+            if isinstance(ep_gws, Mapping):
+                for gid, g_sub in ep_gws.items():
+                    if gid in GATEWAY_IDS and isinstance(g_sub, Mapping):
+                        slot_m = dict(self.gateways.get(gid) or {})
+                        for fk, fv in g_sub.items():
+                            if fv is not None:
+                                slot_m[fk] = fv
+                        self.gateways[gid] = slot_m
+            if extra_p.get("selected_gateway") in GATEWAY_IDS:
+                self.selected_gateway = str(extra_p["selected_gateway"])
+            if extra_p.get("tunnel_mode"):
+                self.tunnel_mode = str(extra_p["tunnel_mode"])
+            if isinstance(extra_p.get("pinned_gateway_urls"), (list, tuple)):
+                self.pinned_gateway_urls = tuple(str(x) for x in extra_p["pinned_gateway_urls"] if str(x).strip())
+
+        if merged_doc is not None:
+            if isinstance(merged_doc.get("gateways"), Mapping):
+                for gid, g_disk in merged_doc["gateways"].items():
+                    if gid in GATEWAY_IDS and isinstance(g_disk, Mapping):
+                        slot_m = dict(self.gateways.get(gid) or {})
+                        for fk, fv in g_disk.items():
+                            if fv is not None:
+                                slot_m[fk] = fv
+                        self.gateways[gid] = slot_m
+            if "policy_revision" in merged_doc:
+                with contextlib.suppress(TypeError, ValueError):
+                    self.policy_revision = max(0, int(merged_doc["policy_revision"]))
+            if "policy_updated_at" in merged_doc:
+                with contextlib.suppress(TypeError, ValueError):
+                    self.policy_updated_at = float(merged_doc["policy_updated_at"])
+
         return conn_info_dirty, keep_awake_changed_to, workspace_changed
 
     def apply_direct(
@@ -3785,6 +3975,7 @@ class LiveRuntimePolicy:
         workers_dev_script_name: Optional[str] = None,
         workers_dev_subdomain: Optional[str] = None,
         workers_dev_custom_domain: Optional[str] = None,
+        extra_patch: Optional[Mapping[str, Any]] = None,
         _notify_listeners: bool = True,
     ) -> Tuple[str, Dict[str, Any], str]:
         with self._lock:
@@ -3815,6 +4006,7 @@ class LiveRuntimePolicy:
                 workers_dev_script_name=workers_dev_script_name,
                 workers_dev_subdomain=workers_dev_subdomain,
                 workers_dev_custom_domain=workers_dev_custom_domain,
+                extra_patch=extra_patch,
             )
             prev_snap = self._capture_state_snapshot()
             try:
@@ -3822,6 +4014,8 @@ class LiveRuntimePolicy:
                     for root_p in plan["workspace_roots"]:
                         root_p.mkdir(parents=True, exist_ok=True)
                 conn_info_dirty, keep_awake_changed_to, workspace_changed = self._apply_plan_to_memory(plan)
+                self.policy_revision = int(getattr(self, "policy_revision", 0) or 0) + 1
+                self.policy_updated_at = round(time.time(), 6)
                 self._notify_workspace_hook()
             except BaseException:
                 self._restore_state_snapshot(prev_snap)
@@ -3867,6 +4061,7 @@ class LiveRuntimePolicy:
         workers_dev_script_name: Optional[str] = None,
         workers_dev_subdomain: Optional[str] = None,
         workers_dev_custom_domain: Optional[str] = None,
+        extra_patch: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[str, Dict[str, Any], str]:
         """Validate upfront, atomically patch-merge & persist under CrossProcessFileLock, then commit memory & guard."""
         with self._lock:
@@ -3897,6 +4092,7 @@ class LiveRuntimePolicy:
                 workers_dev_script_name=workers_dev_script_name,
                 workers_dev_subdomain=workers_dev_subdomain,
                 workers_dev_custom_domain=workers_dev_custom_domain,
+                extra_patch=extra_patch,
             )
 
             if self.cfg_path is None:
@@ -3927,6 +4123,7 @@ class LiveRuntimePolicy:
                     workers_dev_script_name=workers_dev_script_name,
                     workers_dev_subdomain=workers_dev_subdomain,
                     workers_dev_custom_domain=workers_dev_custom_domain,
+                    extra_patch=extra_patch,
                 )
 
             conn_info_dirty = False
@@ -4066,22 +4263,59 @@ class LiveRuntimePolicy:
                     merged_doc["_gateways_mirrored_mode"] = next_tm
                     merged_doc["pinned_gateway_urls"] = list(collect_pinned_gateway_urls(next_gws, merged_doc))
 
-                merged_doc["policy_updated_at"] = round(time.time(), 6)
+                if "extra_patch" in plan and isinstance(plan["extra_patch"], Mapping):
+                    for ek, ev in plan["extra_patch"].items():
+                        if ev is None:
+                            continue
+                        if ek == "gateways" and isinstance(ev, Mapping):
+                            if not isinstance(merged_doc.get("gateways"), dict):
+                                init_gws, _ = normalize_gateways_config(dict(merged_doc))
+                                merged_doc["gateways"] = {gid: dict(init_gws[gid]) for gid in GATEWAY_IDS}
+                            for gid, g_subpatch in ev.items():
+                                if isinstance(g_subpatch, Mapping):
+                                    slot_d = dict(merged_doc["gateways"].get(gid) or {})
+                                    for fk, fv in g_subpatch.items():
+                                        if fv is not None:
+                                            slot_d[fk] = fv
+                                    merged_doc["gateways"][gid] = slot_d
+                                else:
+                                    merged_doc["gateways"][gid] = g_subpatch
+                        elif ek in ("gateway_reconnect_requested_at", "subchannel_reconnect_requested_at") and isinstance(ev, Mapping):
+                            cur_map = merged_doc.get(ek)
+                            next_map = dict(cur_map) if isinstance(cur_map, Mapping) else {}
+                            for sk, sv in ev.items():
+                                if sv is not None:
+                                    next_map[str(sk)] = sv
+                            merged_doc[ek] = next_map
+                        else:
+                            merged_doc[ek] = ev
+
+                next_rev = int(merged_doc.get("policy_revision") or 0) + 1
+                now_ts = round(time.time(), 6)
+                merged_doc["policy_revision"] = next_rev
+                merged_doc["policy_updated_at"] = now_ts
 
                 # Durability BEFORE in-memory & guard privilege mutation (A2)
                 atomic_write_json(self.cfg_path, merged_doc)
-
-                prev_snap = self._capture_state_snapshot()
                 try:
-                    if "workspace_roots" in plan:
-                        for root_p in plan["workspace_roots"]:
-                            root_p.mkdir(parents=True, exist_ok=True)
-                    conn_info_dirty, keep_awake_changed_to, workspace_changed = self._apply_plan_to_memory(
-                        plan, merged_doc=merged_doc if had_file else None
-                    )
-                    self._notify_workspace_hook()
+                    self._sync_secondary_config_projections_locked(merged_doc)
+                    prev_snap = self._capture_state_snapshot()
+                    try:
+                        if "workspace_roots" in plan:
+                            for root_p in plan["workspace_roots"]:
+                                root_p.mkdir(parents=True, exist_ok=True)
+                        conn_info_dirty, keep_awake_changed_to, workspace_changed = self._apply_plan_to_memory(
+                            plan, merged_doc=merged_doc if had_file else {
+                                "policy_revision": next_rev,
+                                "policy_updated_at": now_ts,
+                                **({"gateways": merged_doc["gateways"]} if "gateways" in merged_doc else {}),
+                            }
+                        )
+                        self._notify_workspace_hook()
+                    except BaseException:
+                        self._restore_state_snapshot(prev_snap)
+                        raise
                 except BaseException:
-                    self._restore_state_snapshot(prev_snap)
                     try:
                         if had_file and pre_write_bytes is not None:
                             atomic_write_text(self.cfg_path, pre_write_bytes.decode("utf-8"))
@@ -4182,6 +4416,11 @@ class LiveRuntimePolicy:
             if "workers_dev_custom_domain" in merged and merged["workers_dev_custom_domain"] is not None
             else None
         )
+        extra_patch_val = (
+            merged["extra_patch"]
+            if "extra_patch" in merged and isinstance(merged["extra_patch"], Mapping)
+            else None
+        )
 
         fn = self.persist_changes if persist else self.apply_direct
         fn(
@@ -4211,6 +4450,7 @@ class LiveRuntimePolicy:
             workers_dev_script_name=wd_scr_val,
             workers_dev_subdomain=wd_sub_val,
             workers_dev_custom_domain=wd_dom_val,
+            extra_patch=extra_patch_val,
         )
         return self.to_status_dict()
 
@@ -4331,6 +4571,12 @@ class LiveRuntimePolicy:
                             if new_ka != self.keep_awake:
                                 self.keep_awake = new_ka
                                 self._safe_apply_keep_awake(new_ka)
+                        if "policy_revision" in raw_cfg:
+                            with contextlib.suppress(TypeError, ValueError):
+                                self.policy_revision = max(0, int(raw_cfg["policy_revision"]))
+                        if "policy_updated_at" in raw_cfg:
+                            with contextlib.suppress(TypeError, ValueError):
+                                self.policy_updated_at = float(raw_cfg["policy_updated_at"])
                         self._last_cfg_sig = self._file_sig(self.cfg_path)
                         if conn_info_dirty:
                             self._sync_conn_info_prefix_text()
