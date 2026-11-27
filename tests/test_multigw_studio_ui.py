@@ -1311,3 +1311,60 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied_assist
             assert tut_copied_assist == ro_prompt
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
+
+
+def test_gateway_dependency_annotations_and_pat_anti_leak_ui_invariants() -> None:
+    """Verify clear plain-Chinese dependency callouts across Cards 1..3 and revocable PAT anti-leak UI guards."""
+    index_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "index.html").read_text(encoding="utf-8")
+    js_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "studio.js").read_text(encoding="utf-8")
+    doc02_txt = (REPO_ROOT / "docs" / "02_网页版ChatGPT工作区与个人只读接入教程.md").read_text(encoding="utf-8")
+
+    # Card 1 (`instant`): srv.us SSH port 22 direct + trycloudflare `cloudflared` binary dependency
+    assert 'id="card1-dep-note"' in index_txt
+    for kw1 in ("*.srv.us", "ssh", "22", "*.trycloudflare.com", "cloudflared", "GitHub Releases"):
+        assert kw1 in index_txt, f"Missing Card 1 dependency keyword: {kw1}"
+
+    # Card 2 (`workers_dev`): stdlib 443 WSS (zero Node/wrangler/cloudflared), 100,000/day, 125s, proxy for *.workers.dev, NO_PROXY loopback, Active Zone custom domain
+    assert 'id="card2-dep-note"' in index_txt
+    for kw2 in (
+        "443 WSS",
+        "无需安装",
+        "wrangler",
+        "100,000",
+        "125",
+        "*.workers.dev",
+        "DNS 污染",
+        "系统 HTTP/HTTPS 代理",
+        "NO_PROXY",
+        "127.0.0.1,localhost,::1",
+        "Active Zone",
+        "国内免代理直连",
+    ):
+        assert kw2 in index_txt, f"Missing Card 2 dependency keyword: {kw2}"
+
+    # Card 3 (`self_hosted`): 24h VPS hub zero Cloudflare / zero daily quota + Named Tunnel `cloudflared` & 127.0.0.1:8096 rule
+    assert 'id="card3-dep-note"' in index_txt
+    for kw3 in ("无 Cloudflare 依赖", "无单日请求配额限制", "Cloudflare Named Tunnel", "cloudflared", "http://127.0.0.1:8096"):
+        assert kw3 in index_txt, f"Missing Card 3 dependency keyword: {kw3}"
+
+    # Sites / CLI revocable PAT controls + red anti-sharing warning & copy toast
+    for pat_kw in (
+        'id="pat-mint-details"',
+        'id="mint-pat-btn"',
+        'id="pat-danger-warning-text"',
+        "严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue",
+        "ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件",
+        "关闭本提示后不再显示明文",
+        "点击『断开』立即作废",
+    ):
+        assert pat_kw in index_txt, f"Missing PAT UI element/warning: {pat_kw}"
+
+    assert "/api/studio/tokens/mint" in js_txt
+    assert "PAT_ANTI_LEAK_TOAST" in js_txt
+    assert "严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue" in js_txt
+
+    # Docs 02 covers ChatGPT Sites Secrets fallback without sharing token in chat
+    assert "ChatGPT Sites" in doc02_txt
+    assert "Secrets" in doc02_txt
+    assert "严禁将 `cmcp_...` 专用密钥发进与 AI 的聊天对话框" in doc02_txt
+

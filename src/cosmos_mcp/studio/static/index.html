@@ -298,6 +298,10 @@
                 </div>
               </div>
             </div>
+            <div class="chatgpt-pat-shortcut-row">
+              <span class="item-meta">工作区直连报 <code>403</code> 且暂时拿不到管理员 <code>Create plugins with MCPs</code> 权限？</span>
+              <button type="button" class="btn-link-subtle" id="open-pat-fallback-btn">展开 Sites 环境变量 / CLI 专用密钥兜底 ▾</button>
+            </div>
           </div>
 
           <p id="conn-private-url-notice" style="margin:6px 0 0;font-size:12px;line-height:1.45;color:var(--text-secondary);">注意：控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue。</p>
@@ -360,6 +364,42 @@
                     <ul class="item-list compact-session-list" id="authorized-sessions-list" style="margin:0;max-height:130px;overflow-y:auto;"></ul>
                   </div>
                 </div>
+
+                <details id="pat-mint-details" class="pat-mint-details">
+                  <summary class="pat-mint-summary">
+                    <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                    <span>受限工作区 403 免管理员兜底：Sites / CLI 专用密钥</span>
+                    <span class="tag tag-muted">仅本机 127.0.0.1 可签发 · 随时一键断开</span>
+                  </summary>
+                  <div class="pat-mint-body">
+                    <p class="item-meta" style="margin:0 0 8px;">用于无外部 MCP 权限但可发布私有 <code>ChatGPT Sites</code> 的工作区（填入 Sites 后台加密环境变量 Secrets），或无浏览器本地 CLI 客户端；密钥在本地仅存 SHA-256 哈希，签发后同步出现在上方已连会话列表。</p>
+                    <div class="pat-form-row">
+                      <select id="pat-scope-select" aria-label="专用密钥权限范围">
+                        <option value="readonly" selected>仅只读（推荐 · 限 /mcp/readonly）</option>
+                        <option value="readwrite">工作区读写（允许 /mcp）</option>
+                      </select>
+                      <select id="pat-ttl-select" aria-label="专用密钥有效天数">
+                        <option value="7">有效期 7 天</option>
+                        <option value="30" selected>有效期 30 天</option>
+                        <option value="90">有效期 90 天</option>
+                      </select>
+                      <input type="text" id="pat-label-input" class="flex-input" maxlength="60" placeholder="备注名称（选填，如 私有 Sites 助手 / 本地 CLI）">
+                      <button type="button" class="btn btn-tonal btn-sm" id="mint-pat-btn">本机生成专用密钥</button>
+                    </div>
+                    <div id="pat-loopback-only-hint" class="item-meta" style="display:none;margin-top:6px;color:var(--danger);">当前非本机 127.0.0.1 直连访问，已禁止签发专用密钥。</div>
+                    <div id="pat-once-result-box" class="pat-once-result" style="display:none;" role="alert">
+                      <div class="pat-danger-alert" id="pat-danger-warning-text">
+                        <strong>防外发安全红线：</strong>严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue！仅限填入 ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件；关闭本提示后不再显示明文，如怀疑泄露请在已授权列表点击『断开』立即作废。
+                      </div>
+                      <div class="copy-row" style="margin-top:8px;">
+                        <div class="mono-value" id="pat-once-token-value" style="font-size:12.5px;"></div>
+                        <button type="button" class="btn btn-primary btn-sm" id="copy-pat-token-btn">复制专用密钥</button>
+                        <button type="button" class="btn btn-sm" id="dismiss-pat-result-btn">关闭并擦除明文</button>
+                      </div>
+                      <div class="item-meta" id="pat-once-meta-text" style="margin-top:6px;"></div>
+                    </div>
+                  </div>
+                </details>
               </div>
             </details>
 
@@ -626,7 +666,7 @@
                           <span class="conn-card-step-num">第 1 类 · 默认免配置</span>
                           <h3 class="conn-card-title">一键上手免登录直连</h3>
                         </div>
-                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡。</p>
+                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡（默认 <code>*.srv.us</code> 走系统 <code>ssh</code> 免代理直连；临时通道需自动拉取 <code>cloudflared</code>）。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-ok" id="card1-status-badge">当前使用中</span>
@@ -646,6 +686,9 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
+                        <div class="gw-dep-note" id="card1-dep-note">
+                          <strong>前置依赖说明：</strong>默认 <code>*.srv.us</code> 依赖系统内置 <code>ssh</code> 客户端与出站 TCP <code>22</code> 端口（国内可免代理直连）；当 <code>22</code> 端口受阻自动切换至 <code>*.trycloudflare.com</code> 临时通道时，依赖 <code>cloudflared</code> 官方客户端组件（未预装时首次自动从 GitHub Releases 下载，重启会换网址，单连接无在线率保障）。
+                        </div>
                         <div id="card1-fixed-gw-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
                           已连接公共固定网关（节点标识：<code id="card1-node-id-text">-</code>），关机重启网址保持不变。
                         </div>
@@ -677,7 +720,7 @@
                           <span class="conn-card-step-num">第 2 类 · 无服务器固定网址</span>
                           <h3 class="conn-card-title">Cloudflare 专属固定网关</h3>
                         </div>
-                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址。</p>
+                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址（纯 Python <code>443 WSS</code> 免装 <code>cloudflared</code>；国内用默认 <code>*.workers.dev</code> 需常开系统代理，绑自定义域名可免代理直连）。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-info" id="card2-status-badge">终身固定推荐</span>
@@ -697,6 +740,10 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
+                        <div class="gw-dep-note gw-dep-note-warn" id="card2-dep-note">
+                          <div><strong>组件与账号依赖：</strong>纯 Python 标准库 <code>443 WSS</code> 长连接（无需安装 <code>Node.js</code>、<code>wrangler</code> 或 <code>cloudflared</code>），依赖免费 Cloudflare 账号（Workers Free 每日免费 <code>100,000</code> 次请求，默认反代读超时 <code>125</code> 秒）。</div>
+                          <div style="margin-top:4px;"><strong>网络与代理依赖（国内必看）：</strong>默认 <code>*.workers.dev</code> 域名在中国大陆受 DNS 污染影响（裸连超时），<strong>未绑定自定义域名时本机使用期间需保持系统 HTTP/HTTPS 代理（如 Clash / Mihomo / v2rayN）常开</strong>以维持后台 <code>443 WSS</code> 隧道，且首次打开 <code>/consent</code> 授权页需浏览器代理覆盖 <code>*.workers.dev</code>（若配了 <code>NO_PROXY</code> 必须保留 <code>127.0.0.1,localhost,::1</code>）；若希望<strong>国内免代理直连</strong>，请在右侧选填同账号下的 Cloudflare 自定义域名（Active Zone）。</div>
+                        </div>
                         <div id="cf-saved-hint-box" class="callout callout-info" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
                           已保存固定网关网址，直接打开右上角开关即可连接，无需重填令牌。
                         </div>
@@ -738,7 +785,7 @@
                           <span class="conn-card-step-num">第 3 类 · 自有资产合一</span>
                           <h3 class="conn-card-title">自有云服务器 24h 主站 或 自有固定域名</h3>
                         </div>
-                        <p class="conn-card-sub">一键在云服务器建 24h 主站，或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
+                        <p class="conn-card-sub">一键在云服务器建 24h 主站（无 Cloudflare 与日配额限制，近岸/国内服务器可免代理直连），或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-muted" id="card3-status-badge">服务器 / 域名</span>
@@ -758,6 +805,9 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
+                        <div class="gw-dep-note" id="card3-dep-note">
+                          <strong>前置依赖说明：</strong>「自有服务器建 24h 主站」无 Cloudflare 依赖、无单日请求配额限制，国内或近岸服务器可免代理直连；若在第二子页签填入 <code>Cloudflare Named Tunnel</code> 令牌，则依赖本机 <code>cloudflared</code> 客户端、Cloudflare 托管域名及后台指向 <code>http://127.0.0.1:8096</code> 的转发规则。
+                        </div>
                         <div class="card3-subtabs" role="tablist" aria-label="自有资产接入子项">
                           <button type="button" class="card3-subtab-btn active" role="tab" aria-selected="true" data-c3-tab="vps_hub">自有服务器建 24h 主站</button>
                           <button type="button" class="card3-subtab-btn channel-option" role="tab" aria-selected="false" data-c3-tab="custom_domain" data-mode="custom">自有固定域名 / 通用 HTTPS 反代</button>

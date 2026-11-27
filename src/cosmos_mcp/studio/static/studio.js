@@ -1325,6 +1325,13 @@
     if ($("revoke-sessions-btn")) {
       $("revoke-sessions-btn").disabled = sessCnt <= 0;
     }
+    if ($("mint-pat-btn")) {
+      var isStrictLb = doc.is_loopback !== false;
+      $("mint-pat-btn").disabled = !isStrictLb;
+      if ($("pat-loopback-only-hint")) {
+        $("pat-loopback-only-hint").style.display = isStrictLb ? "none" : "block";
+      }
+    }
     updateFirstWakeBanner(sessCnt);
 
     if ($("chk-keep-awake")) $("chk-keep-awake").checked = !!conn.keep_awake;
@@ -1485,6 +1492,13 @@
           body: { action: "revoke_client", client_id: sess.client_id },
         }).then(function (d) {
           if (!d.ok) return showToast(d.error || "断开客户端失败", true);
+          var patResBox = $("pat-once-result-box");
+          if (patResBox && patResBox.getAttribute("data-client-id") === String(sess.client_id || "")) {
+            patResBox.style.display = "none";
+            patResBox.removeAttribute("data-client-id");
+            if ($("pat-once-token-value")) $("pat-once-token-value").textContent = "";
+            if ($("pat-once-meta-text")) $("pat-once-meta-text").textContent = "";
+          }
           renderAll(d);
           showToast(d.message || "已断开该客户端授权", false);
         });
@@ -3861,13 +3875,117 @@
       });
     }
 
+    var PAT_ANTI_LEAK_TOAST =
+      "已复制专用密钥！严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue！仅限填入 ChatGPT Sites 后台专用的环境变量（Secrets）输入框或本地 CLI 配置文件；如怀疑泄露请在已授权列表点击『断开』立即作废。";
+
+    function clearPatOnceResult(onlyIfClientId) {
+      var box = $("pat-once-result-box");
+      if (!box) return;
+      if (onlyIfClientId && box.getAttribute("data-client-id") !== onlyIfClientId) {
+        return;
+      }
+      box.style.display = "none";
+      box.removeAttribute("data-client-id");
+      if ($("pat-once-token-value")) $("pat-once-token-value").textContent = "";
+      if ($("pat-once-meta-text")) $("pat-once-meta-text").textContent = "";
+    }
+
     $("revoke-sessions-btn").addEventListener("click", function () {
       apiFetch("/api/studio/connection", { method: "POST", body: { action: "revoke_sessions" } }).then(function (d) {
         if (!d.ok) return showToast(d.error || "断开会话失败", true);
+        clearPatOnceResult("");
         renderAll(d);
         showToast(d.message || "已断开全部网页会话", false);
       });
     });
+
+    if ($("open-pat-fallback-btn")) {
+      $("open-pat-fallback-btn").addEventListener("click", function () {
+        var pairDet = $("pairing-sessions-details");
+        var patDet = $("pat-mint-details");
+        if (pairDet) pairDet.open = true;
+        if (patDet) {
+          patDet.open = true;
+          if (patDet.scrollIntoView) {
+            patDet.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        }
+        if ($("pat-label-input")) {
+          $("pat-label-input").focus();
+        }
+      });
+    }
+
+    if ($("mint-pat-btn")) {
+      $("mint-pat-btn").addEventListener("click", function () {
+        var mBtn = $("mint-pat-btn");
+        var scopeSel = $("pat-scope-select");
+        var ttlSel = $("pat-ttl-select");
+        var lblInp = $("pat-label-input");
+        var wantReadonly = !scopeSel || scopeSel.value !== "readwrite";
+        var ttlDays = ttlSel ? parseInt(ttlSel.value, 10) || 30 : 30;
+        var labelVal = lblInp ? lblInp.value.trim() : "";
+
+        mBtn.disabled = true;
+        apiFetch("/api/studio/tokens/mint", {
+          method: "POST",
+          body: {
+            readonly: wantReadonly,
+            ttl_days: ttlDays,
+            label: labelVal,
+          },
+        }).then(function (d) {
+          mBtn.disabled = state.is_loopback === false;
+          if (!d || !d.ok || !d.minted_token || !d.minted_token.token) {
+            return showToast((d && (d.message || d.error)) || "生成专用密钥失败", true);
+          }
+          var minted = d.minted_token;
+          delete d.minted_token;
+          renderAll(d);
+          if (lblInp) lblInp.value = "";
+          var resBox = $("pat-once-result-box");
+          var tokValEl = $("pat-once-token-value");
+          var metaEl = $("pat-once-meta-text");
+          if (tokValEl) tokValEl.textContent = String(minted.token);
+          if (metaEl) {
+            var scopeDesc = minted.readonly ? "仅只读权限（限 /mcp/readonly）" : "工作区读写权限（允许 /mcp）";
+            metaEl.textContent =
+              "已签发：" +
+              (minted.platform || "专用密钥 (Sites / CLI)") +
+              " · " +
+              (minted.client_name || "") +
+              " ｜ " +
+              scopeDesc +
+              " ｜ 到期：" +
+              (minted.expires_at_text || "-");
+          }
+          if (resBox) {
+            resBox.setAttribute("data-client-id", String(minted.client_id || ""));
+            resBox.style.display = "block";
+          }
+          showToast(
+            "已生成专用密钥（仅显示一次）！严禁发进聊天对话框、微信群或公开 Issue，仅限填入 ChatGPT Sites 后台 Secrets 或本地 CLI 配置。",
+            true
+          );
+        });
+      });
+    }
+
+    if ($("copy-pat-token-btn")) {
+      $("copy-pat-token-btn").addEventListener("click", function () {
+        var tokEl = $("pat-once-token-value");
+        var rawTok = tokEl ? tokEl.textContent.trim() : "";
+        if (!rawTok) return;
+        copyText(rawTok, $("copy-pat-token-btn"));
+        showToast(PAT_ANTI_LEAK_TOAST, true);
+      });
+    }
+
+    if ($("dismiss-pat-result-btn")) {
+      $("dismiss-pat-result-btn").addEventListener("click", function () {
+        clearPatOnceResult("");
+      });
+    }
 
     function currentAddWorkspaceAccess() {
       return $("chk-add-ws-readonly") && $("chk-add-ws-readonly").checked ? "readonly" : "readwrite";

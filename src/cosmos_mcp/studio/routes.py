@@ -5579,6 +5579,91 @@ def mount_standalone_status_ui(
         snap["message"] = f"已在自有服务器部署 24h 主站并开启此网关：{pub_url}"
         return _json_with_optional_cookie(snap, request, minted)
 
+    async def studio_tokens_mint_ep(request: Request) -> Response:
+        if not is_strict_direct_loopback(request, port):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "forbidden_non_loopback",
+                    "message": "专用访问密钥仅允许在本机 127.0.0.1 控制台直接生成，禁止通过远程隧道或代理签发。",
+                },
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        data, _ = await _parse_request_data(request)
+        if data is None:
+            return JSONResponse(
+                {"ok": False, "error": "请求格式无效。"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        csrf_err = _verify_same_origin_and_csrf(
+            request,
+            data,
+            local_admin_csrf,
+            strict_loopback_only=True,
+            port=port,
+            local_api_token=local_api_token,
+        )
+        if csrf_err is not None:
+            return csrf_err
+
+        raw_label = str(data.get("label") or "").strip()
+        is_ro = parse_bool_flag(data.get("readonly"), default=True)
+        raw_ttl = data.get("ttl_days", 30)
+        if isinstance(raw_ttl, bool):
+            return JSONResponse(
+                {"ok": False, "error": "密钥有效天数格式无效。"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        try:
+            ttl_days_val = int(str(raw_ttl).strip() or "30")
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"ok": False, "error": "密钥有效天数格式无效。"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        try:
+            if hasattr(provider, "mint_personal_access_token"):
+                minted_pat = provider.mint_personal_access_token(
+                    label=raw_label,
+                    readonly=is_ro,
+                    ttl_days=ttl_days_val,
+                )
+            else:
+                minted_pat = store.mint_personal_access_token(
+                    label=raw_label,
+                    readonly=is_ro,
+                    ttl_days=ttl_days_val,
+                )
+        except ValueError as exc:
+            return JSONResponse(
+                {"ok": False, "error": str(exc)},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        snap = _state_snapshot(request)
+        exp_ts = int(minted_pat.get("expires_at") or 0)
+        snap["minted_token"] = {
+            "token": str(minted_pat["token"]),
+            "client_id": str(minted_pat["client_id"]),
+            "client_name": str(minted_pat["client_name"]),
+            "platform": str(minted_pat["platform"]),
+            "readonly": bool(minted_pat["readonly"]),
+            "scopes": list(minted_pat.get("scopes") or []),
+            "ttl_days": int(minted_pat["ttl_days"]),
+            "expires_at": exp_ts,
+            "expires_at_text": _format_epoch_local(exp_ts, with_seconds=False),
+        }
+        snap["message"] = (
+            "已在本机签发专用访问密钥（仅本次显示明文，严禁发进聊天对话框、微信群或公开页面；"
+            "仅限填入 ChatGPT Sites 后台环境变量 Secrets 或本地 CLI 配置）。"
+        )
+        return JSONResponse(snap, status_code=200, headers={"Cache-Control": "no-store"})
+
     async def studio_identity_export_png_ep(request: Request) -> Response:
         data, _ = await _parse_request_data(request)
         if data is None:
@@ -5884,6 +5969,7 @@ def mount_standalone_status_ui(
         Route("/api/studio/gateway/vps/provision", endpoint=studio_gateway_vps_provision_ep, methods=["POST"]),
         Route("/api/studio/identity/export_png", endpoint=studio_identity_export_png_ep, methods=["POST"]),
         Route("/api/studio/identity/import_png", endpoint=studio_identity_import_png_ep, methods=["POST"]),
+        Route("/api/studio/tokens/mint", endpoint=studio_tokens_mint_ep, methods=["POST"]),
         Route("/api/studio/tools-safety", endpoint=studio_tools_safety_ep, methods=["POST"]),
         Route("/api/studio/connection", endpoint=studio_connection_ep, methods=["POST"]),
         Route("/api/studio/tasks", endpoint=studio_tasks_ep, methods=["GET", "POST"]),

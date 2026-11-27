@@ -4340,3 +4340,112 @@ html[data-theme="dark"] .safety-radio-group .safety-seg-btn[data-safety="full_po
     margin-left: 0 !important;
   }
 }
+
+/* ==========================================================================
+   V1.2.1 Sites / CLI Revocable PAT & Gateway Dependency Callouts
+   ========================================================================== */
+
+.chatgpt-pat-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-inset);
+  border: 1px dashed var(--border);
+}
+
+.pat-mint-details {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+
+.pat-mint-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+
+.pat-mint-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pat-mint-details[open] .summary-chevron {
+  transform: rotate(90deg);
+}
+
+.pat-mint-body {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pat-form-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pat-form-row select {
+  width: auto;
+  min-width: 140px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+}
+
+.pat-form-row .flex-input {
+  min-width: 180px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+}
+
+.pat-once-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--danger-border, #dc2626);
+  background: var(--surface);
+}
+
+.pat-danger-alert {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--danger-border, #dc2626);
+  background: var(--danger-bg, #fef2f2);
+  color: var(--danger, #b91c1c);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.gw-dep-note {
+  padding: 8px 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gw-dep-note strong {
+  color: var(--text);
+}
+
+.gw-dep-note-warn {
+  border-left-color: var(--warn);
+}
+

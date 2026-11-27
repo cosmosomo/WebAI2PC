@@ -199,6 +199,10 @@ SCOPES: List[str] = ["workspace", "server:read", "server:admin"]
 SUB_WORKSTATION_SCOPES: List[str] = ["workspace", "server:read"]
 READONLY_SCOPES: List[str] = ["server:read"]
 TEMPORARY_SESSION_TTL_SEC: int = 7200
+PAT_PLATFORM_LABEL_ZH: str = "专用密钥 (Sites / CLI)"
+PAT_RESOURCE_ORIGIN: str = "https://pat.cosmos-mcp.local"
+PAT_FULL_RESOURCE: str = f"{PAT_RESOURCE_ORIGIN}/mcp"
+PAT_READONLY_RESOURCE: str = f"{PAT_RESOURCE_ORIGIN}/mcp/readonly"
 LOOPBACK_PEERS: Set[str] = {"127.0.0.1", "::1", "localhost", "testclient", "unknown", ""}
 
 GOOGLE_REDIRECT_HOSTS: Set[str] = {
@@ -836,7 +840,12 @@ def verify_owner_password(password: str, password_hash: str, salt_hex: str) -> b
         _SCRYPT_VERIFY_SEMAPHORE.release()
 
 
-def identify_client_platform(client_name: str, redirect_uris: Sequence[Any]) -> Tuple[str, List[str]]:
+def identify_client_platform(
+    client_name: str,
+    redirect_uris: Sequence[Any],
+    *,
+    client_id: str = "",
+) -> Tuple[str, List[str]]:
     hosts: List[str] = []
     schemes: List[str] = []
     for raw in redirect_uris or ():
@@ -853,6 +862,10 @@ def identify_client_platform(client_name: str, redirect_uris: Sequence[Any]) -> 
         elif not host and scheme and f"{scheme}://" not in hosts:
             hosts.append(f"{scheme}://")
 
+    clean_cid = (client_id or "").strip().lower()
+    if clean_cid.startswith("pat_"):
+        return PAT_PLATFORM_LABEL_ZH, hosts
+
     if any(is_google_oauth_redirect_host(h) or h == "googleusercontent.com" or h.endswith(".googleusercontent.com") for h in hosts):
         return "Google Gemini", hosts
     if any(h in OPENAI_REDIRECT_HOSTS or h.endswith(".openai.com") for h in hosts):
@@ -865,6 +878,10 @@ def identify_client_platform(client_name: str, redirect_uris: Sequence[Any]) -> 
         return "VS Code", hosts
 
     low_name = (client_name or "").strip().lower()
+    if not hosts and not schemes and (
+        low_name.startswith("pat_") or "专用密钥" in (client_name or "") or "sites / cli" in low_name
+    ):
+        return PAT_PLATFORM_LABEL_ZH, hosts
     if "gemini" in low_name:
         return "Google Gemini", hosts
     if "chatgpt" in low_name or "openai" in low_name:
@@ -1450,7 +1467,7 @@ class OAuthSQLiteStore:
             c_name = str(c_doc.get("client_name") or "").strip() or cid
             raw_uris = c_doc.get("redirect_uris") or []
             uris = [str(u) for u in raw_uris if u] if isinstance(raw_uris, list) else []
-            platform_label, redirect_hosts = identify_client_platform(c_name, uris)
+            platform_label, redirect_hosts = identify_client_platform(c_name, uris, client_id=cid)
             ordered_scopes = [s for s in SCOPES if s in slot["scopes_set"]] + sorted(
                 s for s in slot["scopes_set"] if s not in SCOPES
             )
@@ -1478,6 +1495,78 @@ class OAuthSQLiteStore:
             )
         sessions.sort(key=lambda item: (-item["latest_expiry"], item["client_id"]))
         return sessions
+
+    def mint_personal_access_token(
+        self,
+        *,
+        label: str = "",
+        readonly: bool = True,
+        ttl_days: int = 30,
+    ) -> Dict[str, Any]:
+        """Mint a revocable SHA-256 hashed personal access token (`cmcp_*`) in `client` + `access` tables."""
+        if isinstance(ttl_days, bool):
+            raise ValueError("密钥有效天数需为整数（1 至 365 天）。")
+        try:
+            eff_ttl_days = int(ttl_days)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("密钥有效天数需为整数（1 至 365 天）。") from exc
+        if eff_ttl_days < 1 or eff_ttl_days > 365:
+            raise ValueError("密钥有效天数需在 1 至 365 天之间。")
+
+        cleaned_chars = "".join(ch for ch in str(label or "") if ch.isprintable() and ch not in "\r\n\t")
+        clean_label = cleaned_chars.strip()[:80] or "Sites / CLI 专用密钥"
+        is_ro = bool(readonly)
+        eff_scopes = list(READONLY_SCOPES) if is_ro else list(SCOPES)
+        eff_resource = PAT_READONLY_RESOURCE if is_ro else PAT_FULL_RESOURCE
+
+        try:
+            self.prune_expired()
+        except Exception:
+            pass
+
+        now = int(time.time())
+        ttl_sec = eff_ttl_days * 86400
+        expires_at = now + ttl_sec
+        raw_token = "cmcp_" + secrets.token_urlsafe(32)
+        client_id = "pat_" + secrets.token_hex(6)
+
+        client_doc: Dict[str, Any] = {
+            "client_id": client_id,
+            "client_name": clean_label,
+            "redirect_uris": [],
+            "grant_types": [],
+            "token_endpoint_auth_method": "none",
+            "scope": " ".join(eff_scopes),
+            "token_kind": "personal_access_token",
+            "created_at": now,
+        }
+        access = AccessToken(
+            token=raw_token,
+            client_id=client_id,
+            scopes=eff_scopes,
+            expires_at=expires_at,
+            resource=eff_resource,
+            subject="owner",
+        )
+        access_doc: Dict[str, Any] = {
+            **access.model_dump(mode="json"),
+            "temporary_session": False,
+            "max_expires_at": expires_at,
+        }
+        self.put("client", client_id, client_doc, float(expires_at + 7 * 86400))
+        self.put("access", raw_token, access_doc, float(expires_at))
+        return {
+            "ok": True,
+            "token": raw_token,
+            "client_id": client_id,
+            "client_name": clean_label,
+            "platform": PAT_PLATFORM_LABEL_ZH,
+            "readonly": is_ro,
+            "scopes": eff_scopes,
+            "resource": eff_resource,
+            "ttl_days": eff_ttl_days,
+            "expires_at": expires_at,
+        }
 
     def revoke_client(self, client_id: str, delete_client: bool = False) -> Dict[str, Any]:
         """Independent per-client revocation preserving sibling clients' replay caches."""
@@ -3791,10 +3880,31 @@ class OAuthProvider:
                 return True
         return False
 
+    def mint_personal_access_token(
+        self,
+        *,
+        label: str = "",
+        readonly: bool = True,
+        ttl_days: int = 30,
+    ) -> Dict[str, Any]:
+        """Mint a revocable Sites/CLI personal access token backed by `OAuthSQLiteStore`."""
+        return self.store.mint_personal_access_token(
+            label=label,
+            readonly=readonly,
+            ttl_days=ttl_days,
+        )
+
     def is_token_resource_valid_for_current_request(self, tok_res: Optional[str]) -> bool:
         if not tok_res:
             return False
         norm_tok = str(tok_res).strip().rstrip("/")
+        if norm_tok in (PAT_FULL_RESOURCE, PAT_READONLY_RESOURCE):
+            req_gw = _REQUEST_GATEWAY_VAR.get()
+            if req_gw is None or req_gw.is_loopback:
+                return True
+            eff_map = self.get_effective_trusted_gateways()
+            req_pfx = (req_gw.public_prefix or "").lower()
+            return (req_gw.authority, req_pfx) in eff_map or (req_gw.authority, "") in eff_map
         if norm_tok not in self.allowed_resources:
             return False
         req_gw = _REQUEST_GATEWAY_VAR.get()

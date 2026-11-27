@@ -76,6 +76,24 @@ MCP 地址：https://<本机生成的实际域名>/mcp
 - **零敏感凭据外发**：复制文本仅包含可用 HTTPS 地址、通道状态与 4 步执行顺序，**严禁写入配对码、连接口令、令牌或本机文件路径**。
 - **优先会话原生工具探测，不默认拉起云浏览器或建中转服务**：引导 ChatGPT 先检查复用或用原生插件连接工具探测 OAuth 元数据，遇到需用户授权或工作区 `403` 卡点时精准停在对应步骤并给出 `https://chatgpt.com/plugins` 本机直绑或开启 `Create plugins with MCPs` 权限指引。
 
+### 方式 C（工作区报 `403` 且暂时拿不到管理员权限时的兜底）：`ChatGPT Sites` 环境变量免管理员中转
+
+如果所在工作区未开启 `Create plugins with MCPs` 管理员权限（网页端 `https://chatgpt.com/plugins` 添加外部 MCP 服务器返回 `403`），但该工作区允许发布私有 **`ChatGPT Sites`**（`*.chatgpt.site` 发布时会自动生成同域受托插件），可通过本机控制台签发可一键吊销的受限专用访问密钥完成中转：
+
+1. **安全前提**：`WebAI2PC` 严格锁定官方 OAuth 回调域名白名单，**绝不通配放行 `*.chatgpt.site` OAuth 回调域名**；专用访问密钥（`cmcp_...`）仅允许在本机 `http://127.0.0.1:8096` 控制台直接生成，在本地 `oauth.sqlite3` 中仅保存 SHA-256 哈希值（零明文落盘）。
+2. **在本机控制台签发专用访问密钥**：
+   - 打开本机控制台 `网页版 ChatGPT` 页签，点击下方 **「展开 Sites 环境变量 / CLI 专用密钥兜底」**（或展开 `配对与已连会话 -> 受限工作区 403 免管理员兜底：Sites / CLI 专用密钥`）。
+   - 选择权限范围：**「仅只读（推荐 · 限 /mcp/readonly）」**（在 `/mcp` 主端点会被服务端 `403` 拦截）或 **「工作区读写（允许 /mcp）」**，选择有效天数（`7` / `30` / `90` 天）并填写备注名称，点击 **「本机生成专用密钥」**。
+   - 点击 **「复制专用密钥」**（明文仅当次展示一次，关闭提示框后不再显示）。
+3. **填入 `ChatGPT Sites` 后台加密环境变量（Secrets）栏**：
+   - **防外发安全红线**：**严禁将 `cmcp_...` 专用密钥发进与 AI 的聊天对话框、提示词、站点前端源码、微信群、论坛或公开 Issue！**
+   - 仅将专用密钥粘贴进 `ChatGPT Sites` 项目后台专用的加密环境变量（**Secrets**）输入框（例如变量名设为 `WEBAI2PC_BEARER_TOKEN`），同时配置对应的公网网关地址（只读密钥填 `https://<域名>/mcp/readonly`，读写密钥填 `https://<域名>/mcp`），由该私有 Site 的服务端路由读取环境变量并以请求头 `Authorization: Bearer <密钥>` 转发 MCP JSON-RPC 请求。
+4. **私有发布并在 `Chat` 与 `Work` 模式调用**：
+   - 将该 `ChatGPT Site` 按工作区私有范围发布后，平台会自动注册配套插件。
+   - 安装完成后，同工作区账号在普通 **`Chat` 模式**（日常查改代码跑测试推荐，不扣减 `Work / Codex` 额度）与 **`Work` 模式**（跨应用长程交付与定时任务）下均可直接用 `@` 唤起该插件调用本机工具。
+5. **随时一键断开作废**：
+   - 签发后的专用密钥会显示在本机控制台 `配对与已连会话 -> 已连接网页会话列表` 中（标识为 `专用密钥 (Sites / CLI)`）。如需停用、轮换或怀疑泄露，直接点击对应行的 **「断开」** 按钮，该密钥会在 `1` 秒内立即失效（后续请求返回 `401`）。
+
 ## 三、RFC 8707 受众隔离与 stateless_http 免重复弹窗机制
 
 1. **RFC 8707 双端点受众隔离**：服务端为 `/mcp` 与 `/mcp/readonly` 分别建立独立会话管理器与受保护资源元数据（`/.well-known/oauth-protected-resource/mcp` 与 `/.well-known/oauth-protected-resource/mcp/readonly`）。`/mcp/readonly` 签发的令牌在 `oauth.sqlite3`（仅存 SHA-256 摘要，零明文落盘）中锁定 `server:read` 作用域；若客户端持只读令牌向上访问 `/mcp`，鉴权层直接返回 HTTP `403`（`forbidden_cross_resource`）。
@@ -86,7 +104,7 @@ MCP 地址：https://<本机生成的实际域名>/mcp
 | 报错现象或状态码 | 产生原因 | 排查与解决步骤 |
 | :- | :- | :- |
 | **「复制地址并打开 ChatGPT 插件页」与「复制给 ChatGPT 接入 / 排障」按钮置灰不可点** | 本地尚未开启公网 HTTPS 通道，或通道正在握手中 | 点击顶部连接卡「一键开启默认连接网关」（或前往 `#settings/gateways` 打开任一通道开关），待地址栏显示真实 `https://` 地址后按钮自动开放 |
-| **对话内让 `@Plugin Creator` 传 ZIP 新建插件报 `403`（`没有使用带 MCP 的插件权限`），但旧 `ChatGPT Sites` 插件却能自动生成** | 旧 `ChatGPT Sites` 发布自动生成的插件绑定平台同域 `*.chatgpt.site/mcp`，无需外部自定义 MCP 权限；而用 ZIP 新建绑定外部域名（如 `*.srv.us/mcp`、`*.workers.dev/mcp`）的私有插件受外部 MCP 权限策略拦截 | 不要用 ZIP 上传外部 MCP 私有插件：先在已登录本机浏览器打开 `https://chatgpt.com/plugins` 点 `＋ -> 添加自定义 MCP 服务器` 粘贴地址验证网页直绑路径；若网页端同样无添加入口或仍报 `403`，请联系工作区管理员开启 **`Create plugins with MCPs`** 权限 |
+| **对话内让 `@Plugin Creator` 传 ZIP 新建插件报 `403`（`没有使用带 MCP 的插件权限`），但旧 `ChatGPT Sites` 插件却能自动生成** | 旧 `ChatGPT Sites` 发布自动生成的插件绑定平台同域 `*.chatgpt.site/mcp`，无需外部自定义 MCP 权限；而用 ZIP 新建绑定外部域名（如 `*.srv.us/mcp`、`*.workers.dev/mcp`）的私有插件受外部 MCP 权限策略拦截 | 不要用 ZIP 上传外部 MCP 私有插件：先在已登录本机浏览器打开 `https://chatgpt.com/plugins` 点 `＋ -> 添加自定义 MCP 服务器` 粘贴地址验证网页直绑路径；若网页端同样无添加入口或仍报 `403`，优先联系工作区管理员开启 **`Create plugins with MCPs`** 权限，暂无法开启时按上文「方式 C」在本机控制台生成专用密钥填入私有 `ChatGPT Sites` 后台 Secrets 环境变量中转（严禁把密钥发进聊天框） |
 | **需要 AI 操作浏览器代填时只回复文字步骤** | 当前处于 `Chat` 模式（无受控浏览器，无法操作页面） | 优先直接点控制台「复制地址并打开 ChatGPT 插件页」在本机浏览器粘贴完成；若确需受控浏览器代填，在 ChatGPT 顶部切到 `Work` 模式发送 |
 | **在网页版 `Work` 云端浏览器 `Take over` 打开授权页提示输配对码或提示重登账号** | 网页版 `Work` 的受控浏览器是运行在 OpenAI 云端的独立未登录会话，既无本机登录态也无法访问本机 `127.0.0.1` 回环 | 推荐改在本机已登录浏览器打开 `https://chatgpt.com/plugins` 直绑（免输码）；若继续在云端浏览器授权，展开本地控制台首页 `配对与已连会话` 复制 `6` 位动态配对码填入，完成后点 `Return control` 交回 |
 | **HTTP 401 Unauthorized / 提示重新授权** | 在本地控制台点击过「全部断开」、更换了临时隧道域名（如重启后 `*.trycloudflare.com` 变更），或重置了状态目录密钥 | 若临时域名已变，在 `Plugins` 打开 `WebAI2PC` 更新 URL（推荐升级 Cloudflare `*.workers.dev` 固定网关）；若固定域名未变，重新触发一次连接并点「本机一键允许连接」 |

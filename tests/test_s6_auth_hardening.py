@@ -711,3 +711,289 @@ def test_s6_headless_consent_csp_toggle_and_studio_per_client_kick_dom(tmp_path:
                 ).status_code
                 == 200
             )
+
+
+def test_revocable_pat_loopback_mint_scope_isolation_multigw_and_zero_plaintext(tmp_path: Path) -> None:
+    """Verify revocable Sites/CLI PAT security boundaries end-to-end:
+    1) `DEFAULT_REDIRECT_HOSTS` / `OPENAI_REDIRECT_HOSTS` exclude `chatgpt.site` (DCR rejects `*.chatgpt.site`);
+    2) Non-loopback / proxied / missing-CSRF / cross-origin `POST /api/studio/tokens/mint` -> 403;
+    3) Readonly PAT -> 200 on `/mcp/readonly` (loopback & active multi-gateways), 403 on `/mcp`;
+    4) Readwrite PAT -> 200 on `/mcp` & `/mcp/readonly`, `revoke_client` immediately invalidates it (`401`);
+    5) Zero `cmcp_` plaintext leakage in `/`, `/studio`, `/api/studio/state`, `/api/studio/poll`, and `oauth.sqlite3`.
+    """
+    from cosmos_mcp.core.config import DEFAULT_REDIRECT_HOSTS
+    from cosmos_mcp.core.fs_tx import atomic_write_json
+    from cosmos_mcp.protocol.oauth import OPENAI_REDIRECT_HOSTS
+
+    # ⑤ Redirect host allowlist strictly excludes wildcard/any `chatgpt.site`
+    all_redir_hosts = {h.lower() for h in (*DEFAULT_REDIRECT_HOSTS, *OPENAI_REDIRECT_HOSTS)}
+    assert all("chatgpt.site" not in h for h in all_redir_hosts), all_redir_hosts
+
+    st_dir = tmp_path / "pat_state"
+    ws_dir = tmp_path / "pat_workspace"
+    ws_dir.mkdir(parents=True)
+
+    with LiveStudioServer(st_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="pat-s6") as srv:
+        owner_pw = cli._extract_saved_password(st_dir, "pc")
+        assert owner_pw
+        auth_doc = json.loads((st_dir / "secrets" / "auth.json").read_text(encoding="utf-8"))
+        local_api_tok = str(auth_doc["local_api_token"])
+        mcp_accept_hdr = {"Accept": "application/json, text/event-stream"}
+
+        # Simulate two active public gateways (`instant` srv.us + `workers_dev`) for multi-gateway PAT compatibility check
+        d_status_p = st_dir / "state" / "daemon_status.json"
+        atomic_write_json(
+            d_status_p,
+            {
+                "status": "running",
+                "supervisor_pid": 99999,
+                "port": srv.port,
+                "mode": "public_gateway",
+                "effective_tunnel_mode": "srv_us",
+                "public_url": "https://pat-gw1.srv.us",
+                "tunnel_ready": True,
+                "srvus_fixed_active": True,
+                "gateways": {
+                    "instant": {
+                        "enabled": True,
+                        "submode": "public_gateway",
+                        "effective_mode": "srv_us",
+                        "phase": "ready",
+                        "tunnel_ready": True,
+                        "public_url": "https://pat-gw1.srv.us",
+                        "srvus_fixed_active": True,
+                        "last_error": "",
+                    },
+                    "workers_dev": {
+                        "enabled": True,
+                        "submode": "workers_dev",
+                        "effective_mode": "workers_dev",
+                        "phase": "ready",
+                        "tunnel_ready": True,
+                        "public_url": "https://pat-gw2.demo.workers.dev",
+                        "last_error": "",
+                    },
+                },
+            },
+        )
+
+        with httpx.Client(base_url=srv.base_url, trust_env=False, timeout=10.0) as http:
+            # DCR must reject `*.chatgpt.site` callback URI
+            r_bad_dcr = http.post(
+                "/register",
+                json={
+                    "client_name": "Untrusted ChatGPT Site",
+                    "redirect_uris": ["https://my-team-app.chatgpt.site/oauth/callback"],
+                    "grant_types": ["authorization_code"],
+                    "response_types": ["code"],
+                    "token_endpoint_auth_method": "none",
+                },
+            )
+            assert r_bad_dcr.status_code == 400, r_bad_dcr.text
+
+            st0 = http.get("/api/studio/state").json()
+            csrf = st0["csrf_token"]
+            csrf_hdrs = {"X-Studio-Csrf": csrf, "Origin": srv.base_url}
+
+            # Register both active gateways into provider's trusted gateway map via Studio config save/state sync
+            http.post(
+                "/api/studio/connection",
+                headers=csrf_hdrs,
+                json={
+                    "action": "save_gateway_config",
+                    "gateway_id": "self_hosted",
+                    "submode": "custom",
+                    "enabled": True,
+                    "public_url": "https://pat-gw3.example.com",
+                },
+            )
+
+            # ① Non-loopback / proxied / missing-CSRF / cross-origin requests to `/api/studio/tokens/mint` MUST return 403
+            for tunnel_hdr in (
+                {"X-Forwarded-For": "203.0.113.42"},
+                {"X-Cosmos-Via-Tunnel": "1", "X-Forwarded-Host": "pat-gw1.srv.us"},
+                {"CF-Connecting-IP": "198.51.100.88"},
+            ):
+                r_non_lb = http.post(
+                    "/api/studio/tokens/mint",
+                    headers={
+                        **csrf_hdrs,
+                        "Authorization": f"Bearer {local_api_tok}",
+                        **tunnel_hdr,
+                    },
+                    json={"label": "Blocked Remote Mint", "readonly": True, "ttl_days": 7},
+                )
+                assert r_non_lb.status_code == 403, (tunnel_hdr, r_non_lb.text)
+
+            # Even an unlocked remote Studio session cookie MUST still get 403 when non-loopback headers are present
+            r_unlock = http.post(
+                "/api/studio/unlock",
+                headers=csrf_hdrs,
+                json={"owner_password": owner_pw},
+            )
+            assert r_unlock.status_code == 200
+            r_cookie_remote = http.post(
+                "/api/studio/tokens/mint",
+                headers={**csrf_hdrs, "X-Forwarded-For": "203.0.113.99"},
+                json={"label": "Blocked Cookie Remote Mint", "readonly": True, "ttl_days": 7},
+            )
+            assert r_cookie_remote.status_code == 403
+
+            # Loopback without CSRF (and without local Bearer) -> 403; cross-site Origin -> 403
+            with httpx.Client(base_url=srv.base_url, trust_env=False, timeout=10.0) as fresh_http:
+                assert (
+                    fresh_http.post(
+                        "/api/studio/tokens/mint",
+                        headers={"Origin": srv.base_url},
+                        json={"label": "No CSRF", "readonly": True, "ttl_days": 7},
+                    ).status_code
+                    == 403
+                )
+                assert (
+                    fresh_http.post(
+                        "/api/studio/tokens/mint",
+                        headers={"X-Studio-Csrf": csrf, "Origin": "https://evil.chatgpt.site"},
+                        json={"label": "Bad Origin", "readonly": True, "ttl_days": 7},
+                    ).status_code
+                    == 403
+                )
+
+            # ② Mint Readonly PAT (`readonly=True`) on strict loopback -> 200 on `/mcp/readonly`, 403 on `/mcp`
+            r_mint_ro = http.post(
+                "/api/studio/tokens/mint",
+                headers=csrf_hdrs,
+                json={"label": "ChatGPT Sites Readonly", "readonly": True, "ttl_days": 7},
+            )
+            assert r_mint_ro.status_code == 200, r_mint_ro.text
+            ro_doc = r_mint_ro.json()
+            ro_minted = ro_doc["minted_token"]
+            ro_pat = ro_minted["token"]
+            ro_cid = ro_minted["client_id"]
+            assert ro_pat.startswith("cmcp_") and len(ro_pat) >= 40
+            assert ro_cid.startswith("pat_")
+            assert ro_minted["readonly"] is True
+            assert ro_minted["platform"] == "专用密钥 (Sites / CLI)"
+            assert ro_minted["scopes"] == ["server:read"]
+
+            # Readonly PAT succeeds on loopback `/mcp/readonly` AND active public gateway `/mcp/readonly`
+            r_ro_lb = http.post(
+                "/mcp/readonly",
+                json={"jsonrpc": "2.0", "id": 101, "method": "tools/list", "params": {}},
+                headers={**mcp_accept_hdr, "Authorization": f"Bearer {ro_pat}"},
+            )
+            assert r_ro_lb.status_code == 200, r_ro_lb.text
+            ro_tools = [t["name"] for t in r_ro_lb.json()["result"]["tools"]]
+            assert "pc_read_file" in ro_tools
+            assert "pc_write_file" not in ro_tools
+
+            r_ro_gw = http.post(
+                "/mcp/readonly",
+                json={"jsonrpc": "2.0", "id": 102, "method": "tools/list", "params": {}},
+                headers={
+                    **mcp_accept_hdr,
+                    "Authorization": f"Bearer {ro_pat}",
+                    "Host": "pat-gw3.example.com",
+                    "X-Forwarded-Proto": "https",
+                },
+            )
+            assert r_ro_gw.status_code == 200, r_ro_gw.text
+
+            # Readonly PAT calling `/mcp` MUST be blocked with HTTP 403 `forbidden_cross_resource`
+            for extra_h in ({}, {"Host": "pat-gw3.example.com", "X-Forwarded-Proto": "https"}):
+                r_ro_esc = http.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "id": 103, "method": "tools/list", "params": {}},
+                    headers={**mcp_accept_hdr, "Authorization": f"Bearer {ro_pat}", **extra_h},
+                )
+                assert r_ro_esc.status_code == 403, r_ro_esc.text
+                assert r_ro_esc.json()["error"] == "forbidden_cross_resource"
+
+            # ③ Mint Readwrite PAT (`readonly=False`) -> 200 on `/mcp` & `/mcp/readonly`, then `revoke_client` -> immediate 401
+            r_mint_rw = http.post(
+                "/api/studio/tokens/mint",
+                headers=csrf_hdrs,
+                json={"label": "Headless CLI Full", "readonly": False, "ttl_days": 30},
+            )
+            assert r_mint_rw.status_code == 200, r_mint_rw.text
+            rw_minted = r_mint_rw.json()["minted_token"]
+            rw_pat = rw_minted["token"]
+            rw_cid = rw_minted["client_id"]
+            assert rw_pat.startswith("cmcp_") and rw_pat != ro_pat
+            assert rw_cid.startswith("pat_") and rw_cid != ro_cid
+            assert rw_minted["readonly"] is False
+            assert "workspace" in rw_minted["scopes"]
+
+            for extra_h in ({}, {"Host": "pat-gw3.example.com", "X-Forwarded-Proto": "https"}):
+                r_rw_main = http.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "id": 104, "method": "tools/list", "params": {}},
+                    headers={**mcp_accept_hdr, "Authorization": f"Bearer {rw_pat}", **extra_h},
+                )
+                assert r_rw_main.status_code == 200, r_rw_main.text
+                rw_tools = [t["name"] for t in r_rw_main.json()["result"]["tools"]]
+                assert "pc_write_file" in rw_tools and "pc_run_python" in rw_tools
+
+            # ④ Zero `cmcp_` plaintext leakage in `/`, `/studio`, `/api/studio/state`, `/api/studio/poll`, and `oauth.sqlite3`
+            for check_path, check_hdrs in (
+                ("/", {"Accept": "text/html"}),
+                ("/studio", {"Accept": "text/html"}),
+                ("/api/studio/state", {"Accept": "application/json"}),
+                ("/api/studio/poll", {"Accept": "application/json"}),
+            ):
+                resp_chk = http.get(check_path, headers=check_hdrs)
+                assert resp_chk.status_code == 200
+                body_txt = resp_chk.text
+                assert ro_pat not in body_txt, f"Readonly PAT leaked in {check_path}"
+                assert rw_pat not in body_txt, f"Readwrite PAT leaked in {check_path}"
+                assert "cmcp_" not in body_txt, f"Unexpected `cmcp_` token prefix found in {check_path}"
+
+            st_after = http.get("/api/studio/state").json()
+            sess_by_cid = {s["client_id"]: s for s in st_after["authorized_sessions"]}
+            assert ro_cid in sess_by_cid and rw_cid in sess_by_cid
+            assert sess_by_cid[ro_cid]["platform"] == "专用密钥 (Sites / CLI)"
+            assert sess_by_cid[ro_cid]["readonly"] is True
+            assert sess_by_cid[rw_cid]["platform"] == "专用密钥 (Sites / CLI)"
+            assert sess_by_cid[rw_cid]["readonly"] is False
+
+            oauth_db_files = list((st_dir / "state").glob("oauth.sqlite3*"))
+            assert oauth_db_files
+            for db_f in oauth_db_files:
+                raw_bytes = db_f.read_bytes()
+                assert ro_pat.encode("utf-8") not in raw_bytes
+                assert rw_pat.encode("utf-8") not in raw_bytes
+                assert b"cmcp_" not in raw_bytes
+
+            # One-click disconnect (`revoke_client`) immediately invalidates `rw_pat` (`401`) while preserving `ro_pat` (`200`)
+            r_rev = http.post(
+                "/api/studio/connection",
+                headers=csrf_hdrs,
+                json={"action": "revoke_client", "client_id": rw_cid},
+            )
+            assert r_rev.status_code == 200, r_rev.text
+            assert rw_cid not in {s["client_id"] for s in r_rev.json()["authorized_sessions"]}
+
+            assert (
+                http.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "id": 105, "method": "tools/list", "params": {}},
+                    headers={**mcp_accept_hdr, "Authorization": f"Bearer {rw_pat}"},
+                ).status_code
+                == 401
+            )
+            assert (
+                http.post(
+                    "/mcp/readonly",
+                    json={"jsonrpc": "2.0", "id": 106, "method": "tools/list", "params": {}},
+                    headers={**mcp_accept_hdr, "Authorization": f"Bearer {rw_pat}"},
+                ).status_code
+                == 401
+            )
+            assert (
+                http.post(
+                    "/mcp/readonly",
+                    json={"jsonrpc": "2.0", "id": 107, "method": "tools/list", "params": {}},
+                    headers={**mcp_accept_hdr, "Authorization": f"Bearer {ro_pat}"},
+                ).status_code
+                == 200
+            )
+
