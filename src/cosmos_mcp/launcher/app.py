@@ -868,6 +868,9 @@ def _make_workspace_guard(
     workspace_roots: Any,
     readonly_workspace_roots: Any = None,
     allow_host_global_skills: bool = False,
+    protect_host_credentials: Optional[bool] = None,
+    protect_dotenv_files: Optional[bool] = None,
+    block_destructive_commands: Optional[bool] = None,
     restrict_to_workspace: bool = True,
     tier: str = "L3",
     state_root: Optional[Path] = None,
@@ -886,6 +889,13 @@ def _make_workspace_guard(
     }
     if "allow_host_global_skills" in init_params:
         kwargs["allow_host_global_skills"] = bool(allow_host_global_skills)
+    for opt_k, opt_v in (
+        ("protect_host_credentials", protect_host_credentials),
+        ("protect_dotenv_files", protect_dotenv_files),
+        ("block_destructive_commands", block_destructive_commands),
+    ):
+        if opt_v is not None and opt_k in init_params:
+            kwargs[opt_k] = bool(opt_v)
     guard = WorkspaceGuard(**kwargs)
     try:
         setattr(guard, "allow_host_global_skills", bool(allow_host_global_skills))
@@ -902,6 +912,9 @@ def _sync_guard_workspace_policy(
     tier_key: str,
     readonly_workspace_roots: Any = None,
     allow_host_global_skills: bool = False,
+    protect_host_credentials: Optional[bool] = None,
+    protect_dotenv_files: Optional[bool] = None,
+    block_destructive_commands: Optional[bool] = None,
     tool_prefix: str = "",
     state_root: Optional[Path] = None,
     product_root: Optional[Path] = None,
@@ -926,6 +939,13 @@ def _sync_guard_workspace_policy(
         call_kw["product_root"] = product_root
     if "allow_host_global_skills" in set_params:
         call_kw["allow_host_global_skills"] = bool(allow_host_global_skills)
+    for opt_k, opt_v in (
+        ("protect_host_credentials", protect_host_credentials),
+        ("protect_dotenv_files", protect_dotenv_files),
+        ("block_destructive_commands", block_destructive_commands),
+    ):
+        if opt_v is not None and opt_k in set_params:
+            call_kw[opt_k] = bool(opt_v)
     guard.set_workspace_policy(workspace_roots, **call_kw)
 
 
@@ -1001,6 +1021,10 @@ def _mount_l1_capabilities(
             "prompt_profile": policy.prompt_profile,
             "enabled_packs": list(policy.enabled_packs),
             "keep_awake": policy.keep_awake,
+            "allow_loopback_dev": bool(getattr(policy, "allow_loopback_dev", True)),
+            "protect_dotenv_files": bool(getattr(policy, "protect_dotenv_files", False)),
+            "protect_host_credentials": bool(getattr(policy, "protect_host_credentials", True)),
+            "block_destructive_commands": bool(getattr(policy, "block_destructive_commands", True)),
             "python_path": str(getattr(policy, "python_path", "") or ""),
             "annotation_mode": str(getattr(policy, "annotation_mode", "") or ("honest" if policy.approval_popups else "compat")),
             "active_tool_count": len(active_specs),
@@ -1230,6 +1254,9 @@ class _StandaloneRuntimePolicy(LiveRuntimePolicy):
             tier_key=self.tier_key,
             readonly_workspace_roots=self.readonly_workspace_roots,
             allow_host_global_skills=bool(getattr(self, "scan_host_global_skills", False)),
+            protect_host_credentials=bool(getattr(self, "protect_host_credentials", True)),
+            protect_dotenv_files=bool(getattr(self, "protect_dotenv_files", False)),
+            block_destructive_commands=bool(getattr(self, "block_destructive_commands", True)),
             tool_prefix=eff_tp,
             state_root=self.state_root,
             product_root=self._product_root,

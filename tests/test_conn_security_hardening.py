@@ -190,25 +190,78 @@ def test_browser_pack_remote_ssrf_isolation_and_worker_ctx_refresh(
     ):
         assert expected_pat in cdp_pats
 
-    # 2) Inside remote MCP transport context: `is_remote_session=True` blocks loopback other ports & RFC1918 LAN
+    # 2) Inside remote MCP transport context (`is_remote_session=True`):
+    #    - With `allow_loopback_dev=True` (default in L2..L4), user dev servers (`127.0.0.1:3000`, `localhost:5173`),
+    #      LAN (`192.168.*`, `10.*`), and authorized workspace `file://` HTML previews are ALLOWED!
+    #    - Control plane (`127.0.0.1:{port}`, `mcp_public_url`), `0.0.0.0`, cloud metadata (`169.254.169.254`),
+    #      and `<state_root>/secrets` `file://` remain unbypassably BLOCKED!
+    #    - Toggling `allow_loopback_dev=False` (or switching to `tier1_readonly`) cleanly blocks loopback/LAN/`file://`.
+    preview_html = ws_dir / "preview.html"
+    preview_html.write_text("<h1>Dev Preview</h1>", encoding="utf-8")
+    state_secret_file = st_dir / "secrets" / "auth.json"
+    bad_exe_file = ws_dir / "payload.exe"
+    bad_exe_file.write_bytes(b"MZ")
+
     monkeypatch.setattr(browser_mod, "find_system_chromium_binary", lambda: "fake_chromium.exe")
     tok_rem = _REQUEST_TRANSPORT_CTX.set(RequestTransportContext(is_remote=True, public_url=pub_url))
     try:
         assert browser_pk._is_remote_session() is True
-        assert standalone_pk._is_remote_session() is True
+        assert browser_pk._effective_allow_loopback_dev() is True
+        for allowed_dev_url in (
+            "http://127.0.0.1:3000/admin",
+            "http://localhost:5173/",
+            "http://192.168.1.1/",
+            "http://10.0.0.8:8080/",
+            preview_html.as_uri(),
+        ):
+            checked_u = validate_outbound_http_url(
+                allowed_dev_url,
+                mcp_port=port,
+                mcp_public_url=pub_url,
+                is_remote_session=True,
+                allow_loopback_dev=browser_pk._effective_allow_loopback_dev(),
+                guard=policy.guard,
+            )
+            assert checked_u == allowed_dev_url, allowed_dev_url
+
+        # Control plane, cloud metadata, 0.0.0.0, state secrets & executable `file://` are ALWAYS blocked
+        for hard_blocked_url in (
+            f"http://127.0.0.1:{port}/api/studio/state",
+            f"http://localhost:{port}/",
+            f"{pub_url}/api/studio/state",
+            "http://0.0.0.0:3000/",
+            "http://169.254.169.254/latest/meta-data/",
+            state_secret_file.as_uri(),
+            bad_exe_file.as_uri(),
+        ):
+            res_hb, _ = asyncio.run(
+                dispatcher.call_tool_raw("pc_browser_use", {"action": "open", "url": hard_blocked_url})
+            )
+            assert res_hb["ok"] is False, (hard_blocked_url, res_hb)
+            assert res_hb.get("blocked_by_ssrf_guard") is True
+
+        # User toggles `allow_loopback_dev=False` -> loopback, LAN, and `file://` are blocked immediately
+        policy.apply_direct(allow_loopback_dev=False)
+        assert browser_pk._effective_allow_loopback_dev() is False
         for blocked_lan_url in (
             "http://127.0.0.1:3000/admin",
             "http://localhost:5173/",
             "http://192.168.1.1/",
             "http://10.0.0.8:8080/",
             "http://172.16.0.1/",
-            "http://172.31.255.10/",
+            preview_html.as_uri(),
         ):
             res_b, _ = asyncio.run(
                 dispatcher.call_tool_raw("pc_browser_use", {"action": "open", "url": blocked_lan_url})
             )
             assert res_b["ok"] is False, (blocked_lan_url, res_b)
             assert res_b.get("blocked_by_ssrf_guard") is True
+
+        # Re-enable `allow_loopback_dev=True`, verify L1 read-only mode still auto-disables local preview
+        policy.apply_direct(allow_loopback_dev=True, tier_key="tier1_readonly")
+        assert browser_pk._effective_allow_loopback_dev() is False
+        policy.apply_direct(tier_key="tier3_workspace_dev", enabled_packs=["browser"])
+        assert browser_pk._effective_allow_loopback_dev() is True
     finally:
         _REQUEST_TRANSPORT_CTX.reset(tok_rem)
 
@@ -610,3 +663,148 @@ RESULT["outcomes"] = outcomes
     )
     assert proc.returncode == 0, proc.stderr
     assert "L3_HF_OK" in proc.stdout
+
+
+def test_user_configurable_guard_switches_l4_tx_and_studio_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from starlette.testclient import TestClient
+
+    fake_home = tmp_path / "home_cfg"
+    ws_dir = tmp_path / "ws_cfg"
+    ext_dir = tmp_path / "ext_outside_ws"
+    st_dir = tmp_path / "st_cfg"
+    ws_dir.mkdir(parents=True)
+    ext_dir.mkdir(parents=True)
+    st_dir.mkdir(parents=True)
+    ssh_key = fake_home / ".ssh" / "id_ed25519"
+    ssh_key.parent.mkdir(parents=True)
+    ssh_key.write_text("PRIVATE_KEY_DEMO", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+
+    port = 18749
+    pub_url = "https://cfg-gold.workers.dev"
+    ensure_initialized(
+        product_root=st_dir,
+        public_url=pub_url,
+        port=port,
+        cli_state_dir=str(st_dir),
+        tier_key="tier3_workspace_dev",
+        prefix="pc",
+        workspace_roots=[ws_dir],
+    )
+    app = create_standalone_app(
+        workspace=str(ws_dir),
+        state_dir=str(st_dir),
+        port=port,
+        public_url=pub_url,
+        tunnel_mode="workers_dev",
+    )
+    dispatcher = app.state.dispatcher
+    policy = app.state.policy
+
+    # 1) Redline #1: default `approval_popups=False` keeps `readOnlyHint=True` for Web Gemini `Always allow`
+    tool_defs = dispatcher.list_tool_dicts()
+    by_name = {t["name"]: t for t in tool_defs}
+    assert by_name["pc_write_file"]["annotations"]["readOnlyHint"] is True
+    assert by_name["pc_run_python"]["annotations"]["readOnlyHint"] is True
+
+    # 2) Project `.env` works out of the box in L2..L4 (`protect_dotenv_files=False`),
+    #    blocks when `protect_dotenv_files=True`, and ALWAYS blocks on `/mcp/readonly`, L1, & `<state_root>/.env`.
+    proj_env = ws_dir / ".env"
+    proj_env.write_text("PORT=5173\n", encoding="utf-8")
+    state_env = st_dir / ".env"
+    state_env.write_text("CONTROL_SECRET=1\n", encoding="utf-8")
+
+    res_env_ok, err_env_ok = asyncio.run(
+        dispatcher.call_tool_raw("pc_read_file", {"path": str(proj_env)})
+    )
+    assert not err_env_ok and res_env_ok["ok"] is True
+    assert "5173" in res_env_ok["content"]
+
+    # `/mcp/readonly` (`readonly_only=True`) isolates `.env` automatically even when `protect_dotenv_files=False`
+    res_env_ro, _ = asyncio.run(
+        dispatcher.call_tool_raw("pc_read_file", {"path": str(proj_env)}, readonly_only=True)
+    )
+    assert res_env_ro["ok"] is False
+
+    # `<state_root>/.env` is ALWAYS isolated across L3 & L4
+    policy.apply_direct(tier_key="tier4_full_power")
+    assert policy.guard.check_path_access(state_env, mode="read") is not None
+
+    # User enables `protect_dotenv_files=True` -> blocks project `.env` even in L4
+    policy.apply_direct(protect_dotenv_files=True)
+    assert policy.guard.check_path_access(proj_env, mode="read") is not None
+    policy.apply_direct(protect_dotenv_files=False)
+    assert policy.guard.check_path_access(proj_env, mode="read") is None
+
+    # 3) `protect_host_credentials` (default True -> toggleable False in L4, while `<state_root>/secrets` stays blocked)
+    state_sec = st_dir / "secrets" / "auth.json"
+    assert policy.guard.check_path_access(ssh_key, mode="read") is not None
+    policy.apply_direct(protect_host_credentials=False)
+    assert policy.guard.check_path_access(ssh_key, mode="read") is None
+    assert policy.guard.check_path_access(state_sec, mode="read") is not None
+    policy.apply_direct(protect_host_credentials=True)
+
+    # 4) Dogmatic `.Parent` shell regex is gone; `block_destructive_commands=False` lifts `rm`/`os.remove`
+    #    while keeping WebAI2PC daemon self-protection active
+    assert policy.guard.check_command_pipelock("(Get-Item .).Parent.FullName", cwd=str(ws_dir)) is None
+    assert policy.guard.check_destructive_command("git reset --hard HEAD~1", cwd=str(ws_dir)) is not None
+    assert policy.guard.check_python_code_safety("import os\nos.remove('src/main.py')", cwd=str(ws_dir)) is not None
+
+    policy.apply_direct(block_destructive_commands=False)
+    assert policy.guard.check_destructive_command("git reset --hard HEAD~1", cwd=str(ws_dir)) is None
+    assert policy.guard.check_python_code_safety("import os\nos.remove('src/main.py')", cwd=str(ws_dir)) is None
+    # WebAI2PC own daemon self-protection remains active even when `block_destructive_commands=False`
+    assert policy.guard.check_destructive_command("taskkill /F /IM cloudflared.exe", cwd=str(ws_dir)) is not None
+    policy.apply_direct(block_destructive_commands=True)
+
+    # 5) L4 (`tier4_full_power`, `restrict_to_workspace=False`) allows edit + undo + redo + trash + restore outside `ws_dir`
+    ext_file = ext_dir / "outside_note.txt"
+    ext_file.write_text("alpha", encoding="utf-8")
+    assert file_ops.edit_file(ext_file, old_text="alpha", new_text="beta", guard=policy.guard)["ok"] is True
+    assert file_ops.manage_files(policy.guard, action="undo", path=ext_file)["ok"] is True
+    assert ext_file.read_text(encoding="utf-8") == "alpha"
+    assert file_ops.manage_files(policy.guard, action="redo", path=ext_file)["ok"] is True
+    assert ext_file.read_text(encoding="utf-8") == "beta"
+    tr_ext = file_ops.manage_files(policy.guard, action="trash", path=ext_file)
+    assert tr_ext["ok"] is True and not ext_file.exists()
+    rs_ext = file_ops.manage_files(policy.guard, action="restore", trash_id=tr_ext["trash_id"])
+    assert rs_ext["ok"] is True and ext_file.read_text(encoding="utf-8") == "beta"
+
+    # 6) Studio `/api/studio/tools-safety` <-> `/api/studio/state` bidirectional sync & persistence
+    #    (and Redline #3: `127.0.0.1` loopback direct access requires zero password)
+    origin_hdr = {"Origin": f"http://127.0.0.1:{port}", "Host": f"127.0.0.1:{port}"}
+    with TestClient(app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 52111)) as client:
+        r_init = client.get("/api/studio/state", headers=origin_hdr)
+        assert r_init.status_code == 200
+        init_doc = r_init.json()
+        tc_init = init_doc["tools_center"]
+        assert tc_init["allow_loopback_dev"] is True
+        assert tc_init["protect_dotenv_files"] is False
+        assert tc_init["protect_host_credentials"] is True
+        assert tc_init["block_destructive_commands"] is True
+
+        post_hdr = {**origin_hdr, "X-Studio-Csrf": init_doc["csrf_token"]}
+        r_upd = client.post(
+            "/api/studio/tools-safety",
+            json={
+                "allow_loopback_dev": False,
+                "protect_dotenv_files": True,
+                "protect_host_credentials": False,
+                "block_destructive_commands": False,
+            },
+            headers=post_hdr,
+        )
+        assert r_upd.status_code == 200
+        tc_upd = r_upd.json()["tools_center"]
+        assert tc_upd["allow_loopback_dev"] is False
+        assert tc_upd["protect_dotenv_files"] is True
+        assert tc_upd["protect_host_credentials"] is False
+        assert tc_upd["block_destructive_commands"] is False
+        assert policy.allow_loopback_dev is False
+        assert policy.guard.protect_dotenv_files is True
+        assert policy.guard.protect_host_credentials is False
+        assert policy.guard.block_destructive_commands is False
+

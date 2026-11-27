@@ -1845,7 +1845,8 @@ def _check_tx_write_paths(
 ) -> Optional[Dict[str, Any]]:
     for raw_p in paths:
         cand_p = Path(raw_p).resolve()
-        if allowed_roots and not any(_is_under_dir(cand_p, ws_r) for ws_r in allowed_roots):
+        enforce_ws = bool(getattr(guard, "restrict_to_workspace", True)) if guard is not None else True
+        if enforce_ws and allowed_roots and not any(_is_under_dir(cand_p, ws_r) for ws_r in allowed_roots):
             roots_s = ", ".join(str(r) for r in allowed_roots)
             return {
                 "ok": False,

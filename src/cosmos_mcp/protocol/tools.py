@@ -32,7 +32,7 @@ from cosmos_mcp.core import (
 from cosmos_mcp.core.config import DEFAULT_CORE_TOOLS, normalize_tier as normalize_tier_full
 from cosmos_mcp.core.contracts import ExecutionHook, SafetyBand, ToolSpec
 from cosmos_mcp.core.fs_io import encode_with_detected_encoding
-from cosmos_mcp.core.guard import WorkspaceGuard, normalize_tier
+from cosmos_mcp.core.guard import WorkspaceGuard, _READONLY_CALL_CTX, normalize_tier
 from cosmos_mcp.core.path_heal import is_link_or_junction
 from cosmos_mcp.core.proc import ProcessManager
 from cosmos_mcp.protocol.ergonomics import SessionSidebandTracker
@@ -557,11 +557,13 @@ def build_core_tools(
                 if not (sc_set & {"mcp:tools", "workspace", "server:admin"}):
                     is_ro = True
             status_ro_var.set(is_ro)
+            _READONLY_CALL_CTX.set(is_ro)
             return None
 
         def after_call(self, ctx: Any, result: Any, error: Optional[BaseException], duration_ms: float) -> Any:
             _ = (ctx, error, duration_ms)
             status_ro_var.set(False)
+            _READONLY_CALL_CTX.set(False)
             return result
 
     status_ro_hook = _GetStatusReadonlyContextHook()

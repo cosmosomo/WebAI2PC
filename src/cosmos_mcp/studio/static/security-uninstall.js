@@ -213,8 +213,12 @@
     rotBtn.type = "button";
     rotBtn.id = "cosmos-rotate-ep-secret-btn";
     rotBtn.className = "btn btn-sm";
-    rotBtn.title = "为连接地址追加或更换 24 位随机私密路径，旧裸路径对外部扫描直接返回 404，已授权对话平滑不断线";
+    rotBtn.title = "为连接地址追加或更换 24 位随机防扫描路径；更换后旧地址返回 404，已连接客户端需同步更新为新地址";
     rotBtn.addEventListener("click", function () {
+      var confirmMsg = endpointSecretEnabled
+        ? "更换 24 位静态防扫描路径后，旧连接地址将返回 404，已绑定的网页端连接器需要重新粘贴新地址。确定继续更换吗？"
+        : "开启 24 位静态防扫描路径后，默认裸 /mcp 路径将对外部请求返回 404，已绑定的网页端连接器需更新为带 /u/<路径> 的新地址。确定开启吗？";
+      if (!window.confirm(confirmMsg)) return;
       rotBtn.disabled = true;
       studioPost("/api/studio/connection", { action: "rotate_endpoint_secret", revoke_sessions: false })
         .then(function (d) {
@@ -224,7 +228,7 @@
           endpointSecretEnabled = Boolean(conn.endpoint_secret_enabled);
           endpointSecretMasked = String(conn.endpoint_secret_masked || "");
           updateSecrecyStripState();
-          showStudioToast("已生成全新 24 位私密连接地址，请点击上方按钮重新复制最新地址", false);
+          showStudioToast("已生成全新 24 位防扫描连接地址，请重新复制最新地址并更新客户端连接器", false);
           setTimeout(function () {
             window.location.reload();
           }, 700);
@@ -238,6 +242,7 @@
     disBtn.textContent = "恢复短路径";
     disBtn.style.display = "none";
     disBtn.addEventListener("click", function () {
+      if (!window.confirm("恢复默认 /mcp 短路径后，原 /u/<路径> 地址将不再需要随机前缀。确定恢复短路径吗？")) return;
       disBtn.disabled = true;
       studioPost("/api/studio/connection", { action: "disable_endpoint_secret" }).then(function (d) {
         disBtn.disabled = false;

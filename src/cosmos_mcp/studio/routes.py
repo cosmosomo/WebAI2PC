@@ -1715,6 +1715,10 @@ def _persist_extra_studio_config(
     subchannel_reconnect_requested_at: Optional[Dict[str, float]] = None,
     readonly_workspace_roots: Optional[Sequence[Any]] = None,
     scan_host_global_skills: Optional[bool] = None,
+    allow_loopback_dev: Optional[bool] = None,
+    protect_dotenv_files: Optional[bool] = None,
+    protect_host_credentials: Optional[bool] = None,
+    block_destructive_commands: Optional[bool] = None,
     tool_prefix: Optional[str] = None,
     tray_enabled: Optional[bool] = None,
     workers_dev_custom_domain: Optional[str] = None,
@@ -1757,6 +1761,14 @@ def _persist_extra_studio_config(
         persist_kwargs["readonly_workspace_roots"] = list(readonly_workspace_roots)
     if scan_host_global_skills is not None:
         persist_kwargs["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+    if allow_loopback_dev is not None:
+        persist_kwargs["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
+    if protect_dotenv_files is not None:
+        persist_kwargs["protect_dotenv_files"] = parse_bool_flag(protect_dotenv_files, default=False)
+    if protect_host_credentials is not None:
+        persist_kwargs["protect_host_credentials"] = parse_bool_flag(protect_host_credentials, default=True)
+    if block_destructive_commands is not None:
+        persist_kwargs["block_destructive_commands"] = parse_bool_flag(block_destructive_commands, default=True)
     if tool_prefix is not None and str(tool_prefix).strip():
         persist_kwargs["tool_prefix"] = normalize_prefix(str(tool_prefix).strip())
     if tray_enabled is not None:
@@ -2268,6 +2280,10 @@ def _compute_studio_state_revision(
         "tool_prefix": str(getattr(policy, "tool_prefix", policy.eff_prefix) or policy.eff_prefix),
         "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
         "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
+        "allow_loopback_dev": bool(getattr(policy, "allow_loopback_dev", True)),
+        "protect_dotenv_files": bool(getattr(policy, "protect_dotenv_files", False)),
+        "protect_host_credentials": bool(getattr(policy, "protect_host_credentials", True)),
+        "block_destructive_commands": bool(getattr(policy, "block_destructive_commands", True)),
         "python_path": str(getattr(policy, "python_path", "") or ""),
         "env_locks": dict(env_locks),
         "sessions": sess_sig,
@@ -2484,12 +2500,12 @@ def _collect_recovery_state(
 
 def _execute_studio_undo(policy: LiveRuntimePolicy, path_str: str) -> Dict[str, Any]:
     scope_roots = list(policy.workspace_roots) if policy.restrict_to_workspace else None
-    res = undo_last_edit(path_str, action="undo", workspace_roots=scope_roots, state_root=policy.state_root)
+    res = undo_last_edit(path_str, action="undo", workspace_roots=scope_roots, state_root=policy.state_root, guard=policy.guard)
     if res.get("ok"):
         return res
     for ud in (policy.state_root / "history", policy.state_root / ".undo_history"):
         if (ud / "index.json").is_file():
-            alt = undo_last_edit(path_str, action="undo", workspace_roots=scope_roots, undo_dir=ud, state_root=policy.state_root)
+            alt = undo_last_edit(path_str, action="undo", workspace_roots=scope_roots, undo_dir=ud, state_root=policy.state_root, guard=policy.guard)
             if alt.get("ok"):
                 return alt
     return res
@@ -2498,12 +2514,12 @@ def _execute_studio_undo(policy: LiveRuntimePolicy, path_str: str) -> Dict[str, 
 def _execute_studio_restore_trash(policy: LiveRuntimePolicy, trash_id: str) -> Dict[str, Any]:
     scope_roots = list(policy.workspace_roots) if policy.restrict_to_workspace else None
     eff_tid = (trash_id or "").strip() or "latest"
-    res = restore_from_trash(eff_tid, action="restore", workspace_roots=scope_roots, state_root=policy.state_root)
+    res = restore_from_trash(eff_tid, action="restore", workspace_roots=scope_roots, state_root=policy.state_root, guard=policy.guard)
     if res.get("ok"):
         return res
     for ud in (policy.state_root / "history", policy.state_root / ".undo_history"):
         if (ud / "trash_index.json").is_file():
-            alt = restore_from_trash(eff_tid, action="restore", workspace_roots=scope_roots, undo_dir=ud, state_root=policy.state_root)
+            alt = restore_from_trash(eff_tid, action="restore", workspace_roots=scope_roots, undo_dir=ud, state_root=policy.state_root, guard=policy.guard)
             if alt.get("ok"):
                 return alt
     return res
@@ -3229,6 +3245,10 @@ def _build_studio_state_payload(
     instance_id_val = str(getattr(policy, "instance_id", policy.eff_prefix) or policy.eff_prefix).strip()
     ro_ws_roots = [str(p) for p in getattr(policy, "readonly_workspace_roots", ())]
     scan_host_global = bool(getattr(policy, "scan_host_global_skills", False))
+    allow_loopback_val = bool(getattr(policy, "allow_loopback_dev", True))
+    protect_dotenv_val = bool(getattr(policy, "protect_dotenv_files", False))
+    protect_cred_val = bool(getattr(policy, "protect_host_credentials", True))
+    block_destructive_val = bool(getattr(policy, "block_destructive_commands", True))
     tray_enabled_val = bool(getattr(policy, "tray_enabled", True))
     workers_custom_dom = str(
         getattr(policy, "workers_dev_custom_domain", "")
@@ -3338,6 +3358,10 @@ def _build_studio_state_payload(
         "tunnel_error": tunnel_err,
         "readonly_workspace_roots": ro_ws_roots,
         "scan_host_global_skills": scan_host_global,
+        "allow_loopback_dev": allow_loopback_val,
+        "protect_dotenv_files": protect_dotenv_val,
+        "protect_host_credentials": protect_cred_val,
+        "block_destructive_commands": block_destructive_val,
         "tray_enabled": tray_enabled_val,
         "status_kind": status_kind,
         "status_text": status_text,
@@ -3460,6 +3484,10 @@ def _build_studio_state_payload(
             "pack_desktop": eff_pack_desktop,
             "confirm_popups": eff_confirm_popups,
             "scan_host_global_skills": scan_host_global,
+            "allow_loopback_dev": allow_loopback_val,
+            "protect_dotenv_files": protect_dotenv_val,
+            "protect_host_credentials": protect_cred_val,
+            "block_destructive_commands": block_destructive_val,
             "tool_prefix": tool_prefix_val,
             "tray_enabled": tray_enabled_val,
             "readonly_locked": bool(mode_code == "readonly"),
@@ -4713,6 +4741,26 @@ def mount_standalone_status_ui(
                 want_scan = parse_bool_flag(data.get("scan_host_global_skills"), default=False)
                 _persist_extra_studio_config(policy, scan_host_global_skills=want_scan)
                 messages.append(f"扫描本机全局技能目录已{'开启' if want_scan else '关闭（仅使用工作区与受管技能库）'}")
+
+            if "allow_loopback_dev" in data:
+                want_lb = parse_bool_flag(data.get("allow_loopback_dev"), default=True)
+                _persist_extra_studio_config(policy, allow_loopback_dev=want_lb)
+                messages.append(f"浏览器访问本地开发端口与局域网已{'开启' if want_lb else '关闭（仅限公网网页）'}")
+
+            if "protect_dotenv_files" in data:
+                want_env_prot = parse_bool_flag(data.get("protect_dotenv_files"), default=False)
+                _persist_extra_studio_config(policy, protect_dotenv_files=want_env_prot)
+                messages.append(f"项目 .env 文件隔离已{'开启（禁止 AI 读写 .env）' if want_env_prot else '关闭（允许正常读写项目 .env）'}")
+
+            if "protect_host_credentials" in data:
+                want_cred_prot = parse_bool_flag(data.get("protect_host_credentials"), default=True)
+                _persist_extra_studio_config(policy, protect_host_credentials=want_cred_prot)
+                messages.append(f"本机系统凭据目录隔离已{'开启' if want_cred_prot else '关闭（已放行访问 .ssh / .npmrc 等目录）'}")
+
+            if "block_destructive_commands" in data:
+                want_blk_dest = parse_bool_flag(data.get("block_destructive_commands"), default=True)
+                _persist_extra_studio_config(policy, block_destructive_commands=want_blk_dest)
+                messages.append(f"高危删除与重置命令拦截已{'开启（引导走回收箱）' if want_blk_dest else '关闭（已允许直接执行删除/重置命令）'}")
 
             if "tool_prefix" in data:
                 raw_tp = str(data.get("tool_prefix") or "").strip()

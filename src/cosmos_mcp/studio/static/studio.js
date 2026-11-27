@@ -1270,6 +1270,73 @@
           : Boolean(state.scan_host_global_skills);
       $("chk-scan-host-skills").checked = scanVal;
     }
+
+    var lbChk = $("chk-allow-loopback-dev");
+    var lbBox = $("allow-loopback-dev-box");
+    var lbHint = $("allow-loopback-dev-ro-hint");
+    var lbSaved =
+      tc.allow_loopback_dev !== undefined
+        ? Boolean(tc.allow_loopback_dev)
+        : state.allow_loopback_dev !== undefined
+        ? Boolean(state.allow_loopback_dev)
+        : true;
+    if (lbChk) {
+      lbChk.checked = isReadonly ? false : lbSaved;
+      lbChk.disabled = isReadonly;
+    }
+    if (lbBox) lbBox.classList.toggle("disabled-switch", isReadonly);
+    if (lbHint) {
+      lbHint.style.display = isReadonly ? "inline-flex" : "none";
+      lbHint.textContent = "只读模式下自动关闭";
+    }
+
+    var envProtChk = $("chk-protect-dotenv");
+    var envProtBox = $("protect-dotenv-box");
+    var envProtHint = $("protect-dotenv-ro-hint");
+    var envProtSaved =
+      tc.protect_dotenv_files !== undefined
+        ? Boolean(tc.protect_dotenv_files)
+        : Boolean(state.protect_dotenv_files);
+    if (envProtChk) {
+      envProtChk.checked = isReadonly ? true : envProtSaved;
+      envProtChk.disabled = isReadonly;
+    }
+    if (envProtBox) envProtBox.classList.toggle("disabled-switch", isReadonly);
+    if (envProtHint) {
+      envProtHint.style.display = isReadonly ? "inline-flex" : "none";
+      envProtHint.textContent = "只读模式下自动开启";
+    }
+
+    var credProtChk = $("chk-protect-credentials");
+    if (credProtChk) {
+      var credProtSaved =
+        tc.protect_host_credentials !== undefined
+          ? Boolean(tc.protect_host_credentials)
+          : state.protect_host_credentials !== undefined
+          ? Boolean(state.protect_host_credentials)
+          : true;
+      credProtChk.checked = credProtSaved;
+    }
+
+    var blkDestChk = $("chk-block-destructive");
+    var blkDestBox = $("block-destructive-box");
+    var blkDestHint = $("block-destructive-ro-hint");
+    var blkDestSaved =
+      tc.block_destructive_commands !== undefined
+        ? Boolean(tc.block_destructive_commands)
+        : state.block_destructive_commands !== undefined
+        ? Boolean(state.block_destructive_commands)
+        : true;
+    if (blkDestChk) {
+      blkDestChk.checked = execLocked ? true : blkDestSaved;
+      blkDestChk.disabled = execLocked;
+    }
+    if (blkDestBox) blkDestBox.classList.toggle("disabled-switch", execLocked);
+    if (blkDestHint) {
+      blkDestHint.style.display = execLocked ? "inline-flex" : "none";
+      blkDestHint.textContent = isReadonly ? "只读模式下自动生效" : "禁跑命令模式下自动生效";
+    }
+
     if ($("chk-tray-enabled")) {
       var trayVal =
         tc.tray_enabled !== undefined
@@ -5239,6 +5306,33 @@
     if ($("chk-scan-host-skills")) {
       $("chk-scan-host-skills").addEventListener("change", function () {
         pushToolsSafetySwitches({ scan_host_global_skills: $("chk-scan-host-skills").checked });
+      });
+    }
+
+    if ($("chk-allow-loopback-dev")) {
+      $("chk-allow-loopback-dev").addEventListener("change", function () {
+        if ($("chk-allow-loopback-dev").disabled) return;
+        pushToolsSafetySwitches({ allow_loopback_dev: $("chk-allow-loopback-dev").checked });
+      });
+    }
+
+    if ($("chk-protect-dotenv")) {
+      $("chk-protect-dotenv").addEventListener("change", function () {
+        if ($("chk-protect-dotenv").disabled) return;
+        pushToolsSafetySwitches({ protect_dotenv_files: $("chk-protect-dotenv").checked });
+      });
+    }
+
+    if ($("chk-protect-credentials")) {
+      $("chk-protect-credentials").addEventListener("change", function () {
+        pushToolsSafetySwitches({ protect_host_credentials: $("chk-protect-credentials").checked });
+      });
+    }
+
+    if ($("chk-block-destructive")) {
+      $("chk-block-destructive").addEventListener("change", function () {
+        if ($("chk-block-destructive").disabled) return;
+        pushToolsSafetySwitches({ block_destructive_commands: $("chk-block-destructive").checked });
       });
     }
 

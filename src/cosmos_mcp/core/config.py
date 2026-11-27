@@ -2516,6 +2516,10 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        allow_loopback_dev: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         tray_enabled: Optional[bool] = None,
         tunnel_mode: Optional[str] = None,
         public_gateway_base: Optional[str] = None,
@@ -2731,6 +2735,26 @@ class LiveRuntimePolicy:
             bool(scan_host_global_skills)
             if scan_host_global_skills is not None
             else parse_bool_flag(file_cfg.get("scan_host_global_skills"), default=False)
+        )
+        self.allow_loopback_dev: bool = (
+            bool(allow_loopback_dev)
+            if allow_loopback_dev is not None
+            else parse_bool_flag(file_cfg.get("allow_loopback_dev"), default=True)
+        )
+        self.protect_dotenv_files: bool = (
+            bool(protect_dotenv_files)
+            if protect_dotenv_files is not None
+            else parse_bool_flag(file_cfg.get("protect_dotenv_files"), default=False)
+        )
+        self.protect_host_credentials: bool = (
+            bool(protect_host_credentials)
+            if protect_host_credentials is not None
+            else parse_bool_flag(file_cfg.get("protect_host_credentials"), default=True)
+        )
+        self.block_destructive_commands: bool = (
+            bool(block_destructive_commands)
+            if block_destructive_commands is not None
+            else parse_bool_flag(file_cfg.get("block_destructive_commands"), default=True)
         )
         self.tray_enabled: bool = (
             bool(tray_enabled)
@@ -2986,6 +3010,10 @@ class LiveRuntimePolicy:
                 "workspace_roots": [str(p) for p in self.workspace_roots],
                 "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
                 "scan_host_global_skills": self.scan_host_global_skills,
+                "allow_loopback_dev": self.allow_loopback_dev,
+                "protect_dotenv_files": self.protect_dotenv_files,
+                "protect_host_credentials": self.protect_host_credentials,
+                "block_destructive_commands": self.block_destructive_commands,
                 "tray_enabled": self.tray_enabled,
                 "tunnel_mode": self.tunnel_mode,
                 "selected_gateway": self.selected_gateway,
@@ -3068,6 +3096,9 @@ class LiveRuntimePolicy:
                     tier_key=to_short_tier_code(self.tier_key),
                     readonly_workspace_roots=self.readonly_workspace_roots,
                     allow_host_global_skills=self.scan_host_global_skills,
+                    protect_host_credentials=self.protect_host_credentials,
+                    protect_dotenv_files=self.protect_dotenv_files,
+                    block_destructive_commands=self.block_destructive_commands,
                     state_root=self.state_root,
                     product_root=self._product_root,
                 )
@@ -3383,6 +3414,10 @@ class LiveRuntimePolicy:
             "enabled_packs": self.enabled_packs,
             "keep_awake": self.keep_awake,
             "scan_host_global_skills": self.scan_host_global_skills,
+            "allow_loopback_dev": self.allow_loopback_dev,
+            "protect_dotenv_files": self.protect_dotenv_files,
+            "protect_host_credentials": self.protect_host_credentials,
+            "block_destructive_commands": self.block_destructive_commands,
             "tray_enabled": self.tray_enabled,
             "tunnel_mode": self.tunnel_mode,
             "gateways": {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS if gid in self.gateways},
@@ -3419,6 +3454,10 @@ class LiveRuntimePolicy:
         self.enabled_packs = snap["enabled_packs"]
         self.keep_awake = snap["keep_awake"]
         self.scan_host_global_skills = snap["scan_host_global_skills"]
+        self.allow_loopback_dev = snap["allow_loopback_dev"]
+        self.protect_dotenv_files = snap["protect_dotenv_files"]
+        self.protect_host_credentials = snap["protect_host_credentials"]
+        self.block_destructive_commands = snap["block_destructive_commands"]
         self.tray_enabled = snap["tray_enabled"]
         self.tunnel_mode = snap["tunnel_mode"]
         self.gateways = {gid: dict(v) for gid, v in snap["gateways"].items()}
@@ -3503,6 +3542,10 @@ class LiveRuntimePolicy:
             "workspace_roots": [str(p) for p in self.workspace_roots],
             "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
             "scan_host_global_skills": self.scan_host_global_skills,
+            "allow_loopback_dev": self.allow_loopback_dev,
+            "protect_dotenv_files": self.protect_dotenv_files,
+            "protect_host_credentials": self.protect_host_credentials,
+            "block_destructive_commands": self.block_destructive_commands,
             "tray_enabled": self.tray_enabled,
             "gateways": {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS if gid in self.gateways},
             "selected_gateway": self.selected_gateway,
@@ -3543,6 +3586,10 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        allow_loopback_dev: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         tray_enabled: Optional[bool] = None,
         tunnel_mode: Optional[str] = None,
         gateways: Optional[Mapping[str, Any]] = None,
@@ -3608,6 +3655,14 @@ class LiveRuntimePolicy:
             plan["keep_awake"] = bool(keep_awake)
         if scan_host_global_skills is not None:
             plan["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+        if allow_loopback_dev is not None:
+            plan["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
+        if protect_dotenv_files is not None:
+            plan["protect_dotenv_files"] = parse_bool_flag(protect_dotenv_files, default=False)
+        if protect_host_credentials is not None:
+            plan["protect_host_credentials"] = parse_bool_flag(protect_host_credentials, default=True)
+        if block_destructive_commands is not None:
+            plan["block_destructive_commands"] = parse_bool_flag(block_destructive_commands, default=True)
         if tray_enabled is not None:
             plan["tray_enabled"] = parse_bool_flag(tray_enabled, default=True)
         if public_gateway_base is not None:
@@ -3776,6 +3831,14 @@ class LiveRuntimePolicy:
                 self.enabled_packs = parse_pack_spec(merged_doc.get("enabled_packs"), strict=False)
             if "scan_host_global_skills" in merged_doc and "scan_host_global_skills" not in plan:
                 self.scan_host_global_skills = parse_bool_flag(merged_doc.get("scan_host_global_skills"), default=False)
+            if "allow_loopback_dev" in merged_doc and "allow_loopback_dev" not in plan:
+                self.allow_loopback_dev = parse_bool_flag(merged_doc.get("allow_loopback_dev"), default=True)
+            if "protect_dotenv_files" in merged_doc and "protect_dotenv_files" not in plan:
+                self.protect_dotenv_files = parse_bool_flag(merged_doc.get("protect_dotenv_files"), default=False)
+            if "protect_host_credentials" in merged_doc and "protect_host_credentials" not in plan:
+                self.protect_host_credentials = parse_bool_flag(merged_doc.get("protect_host_credentials"), default=True)
+            if "block_destructive_commands" in merged_doc and "block_destructive_commands" not in plan:
+                self.block_destructive_commands = parse_bool_flag(merged_doc.get("block_destructive_commands"), default=True)
             if "tray_enabled" in merged_doc and "tray_enabled" not in plan:
                 self.tray_enabled = parse_bool_flag(merged_doc.get("tray_enabled"), default=True)
             if "annotation_mode" in merged_doc and "annotation_mode" not in plan:
@@ -3878,6 +3941,14 @@ class LiveRuntimePolicy:
                 keep_awake_changed_to = new_ka
         if "scan_host_global_skills" in plan:
             self.scan_host_global_skills = plan["scan_host_global_skills"]
+        if "allow_loopback_dev" in plan:
+            self.allow_loopback_dev = plan["allow_loopback_dev"]
+        if "protect_dotenv_files" in plan:
+            self.protect_dotenv_files = plan["protect_dotenv_files"]
+        if "protect_host_credentials" in plan:
+            self.protect_host_credentials = plan["protect_host_credentials"]
+        if "block_destructive_commands" in plan:
+            self.block_destructive_commands = plan["block_destructive_commands"]
         if "tray_enabled" in plan:
             self.tray_enabled = plan["tray_enabled"]
         if "public_gateway_base" in plan:
@@ -3965,6 +4036,10 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        allow_loopback_dev: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         tray_enabled: Optional[bool] = None,
         tunnel_mode: Optional[str] = None,
         gateways: Optional[Mapping[str, Any]] = None,
@@ -3996,6 +4071,10 @@ class LiveRuntimePolicy:
                 enabled_packs=enabled_packs,
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
+                allow_loopback_dev=allow_loopback_dev,
+                protect_dotenv_files=protect_dotenv_files,
+                protect_host_credentials=protect_host_credentials,
+                block_destructive_commands=block_destructive_commands,
                 tray_enabled=tray_enabled,
                 tunnel_mode=tunnel_mode,
                 gateways=gateways,
@@ -4051,6 +4130,10 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        allow_loopback_dev: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         tray_enabled: Optional[bool] = None,
         tunnel_mode: Optional[str] = None,
         gateways: Optional[Mapping[str, Any]] = None,
@@ -4082,6 +4165,10 @@ class LiveRuntimePolicy:
                 enabled_packs=enabled_packs,
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
+                allow_loopback_dev=allow_loopback_dev,
+                protect_dotenv_files=protect_dotenv_files,
+                protect_host_credentials=protect_host_credentials,
+                block_destructive_commands=block_destructive_commands,
                 tray_enabled=tray_enabled,
                 tunnel_mode=tunnel_mode,
                 gateways=gateways,
@@ -4219,6 +4306,14 @@ class LiveRuntimePolicy:
                     merged_doc["keep_awake"] = plan["keep_awake"]
                 if "scan_host_global_skills" in plan:
                     merged_doc["scan_host_global_skills"] = plan["scan_host_global_skills"]
+                if "allow_loopback_dev" in plan:
+                    merged_doc["allow_loopback_dev"] = plan["allow_loopback_dev"]
+                if "protect_dotenv_files" in plan:
+                    merged_doc["protect_dotenv_files"] = plan["protect_dotenv_files"]
+                if "protect_host_credentials" in plan:
+                    merged_doc["protect_host_credentials"] = plan["protect_host_credentials"]
+                if "block_destructive_commands" in plan:
+                    merged_doc["block_destructive_commands"] = plan["block_destructive_commands"]
                 if "tray_enabled" in plan:
                     merged_doc["tray_enabled"] = plan["tray_enabled"]
                 if "public_gateway_base" in plan:
@@ -4374,6 +4469,26 @@ class LiveRuntimePolicy:
             if "scan_host_global_skills" in merged and merged["scan_host_global_skills"] is not None
             else None
         )
+        allow_lb_val = (
+            parse_bool_flag(merged["allow_loopback_dev"], default=True)
+            if "allow_loopback_dev" in merged and merged["allow_loopback_dev"] is not None
+            else None
+        )
+        prot_env_val = (
+            parse_bool_flag(merged["protect_dotenv_files"], default=False)
+            if "protect_dotenv_files" in merged and merged["protect_dotenv_files"] is not None
+            else None
+        )
+        prot_cred_val = (
+            parse_bool_flag(merged["protect_host_credentials"], default=True)
+            if "protect_host_credentials" in merged and merged["protect_host_credentials"] is not None
+            else None
+        )
+        blk_dest_val = (
+            parse_bool_flag(merged["block_destructive_commands"], default=True)
+            if "block_destructive_commands" in merged and merged["block_destructive_commands"] is not None
+            else None
+        )
         tray_val = (
             parse_bool_flag(merged["tray_enabled"], default=True)
             if "tray_enabled" in merged and merged["tray_enabled"] is not None
@@ -4440,6 +4555,10 @@ class LiveRuntimePolicy:
             enabled_packs=en_packs,
             keep_awake=ka_val,
             scan_host_global_skills=scan_sk_val,
+            allow_loopback_dev=allow_lb_val,
+            protect_dotenv_files=prot_env_val,
+            protect_host_credentials=prot_cred_val,
+            block_destructive_commands=blk_dest_val,
             tray_enabled=tray_val,
             tunnel_mode=tm_val,
             gateways=gws_val,
@@ -4529,6 +4648,14 @@ class LiveRuntimePolicy:
                             self.enabled_packs = parse_pack_spec(raw_cfg.get("enabled_packs"), strict=False)
                         if "scan_host_global_skills" in raw_cfg:
                             self.scan_host_global_skills = parse_bool_flag(raw_cfg.get("scan_host_global_skills"), default=False)
+                        if "allow_loopback_dev" in raw_cfg:
+                            self.allow_loopback_dev = parse_bool_flag(raw_cfg.get("allow_loopback_dev"), default=True)
+                        if "protect_dotenv_files" in raw_cfg:
+                            self.protect_dotenv_files = parse_bool_flag(raw_cfg.get("protect_dotenv_files"), default=False)
+                        if "protect_host_credentials" in raw_cfg:
+                            self.protect_host_credentials = parse_bool_flag(raw_cfg.get("protect_host_credentials"), default=True)
+                        if "block_destructive_commands" in raw_cfg:
+                            self.block_destructive_commands = parse_bool_flag(raw_cfg.get("block_destructive_commands"), default=True)
                         if "tray_enabled" in raw_cfg:
                             self.tray_enabled = parse_bool_flag(raw_cfg.get("tray_enabled"), default=True)
                         refreshed_gw_doc = dict(raw_cfg)

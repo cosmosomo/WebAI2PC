@@ -1458,6 +1458,8 @@ def build_subprocess_env(
         env,
         eff_guard.workspace_roots,
         st_root,
+        protect_host_credentials=getattr(eff_guard, "protect_host_credentials", True),
+        protect_dotenv_files=bool(getattr(eff_guard, "protect_dotenv_files", False) or eff_guard.tier == "L1"),
         restrict_to_workspace=restrict_l3,
         enable_audit_hook=restrict_l3,
     )
@@ -3220,6 +3222,8 @@ class ProcessManager:
             env=env,
             **popen_kwargs,
         )
+        from cosmos_mcp.core.guard import _READONLY_CALL_CTX
+
         job = OwnedJobHandle(assign_win32_job_kill_on_close(proc.pid))
         try:
             probe_input = json.dumps({
@@ -3229,6 +3233,12 @@ class ProcessManager:
                 "restrict_ws": self.guard.restrict_to_workspace,
                 "read_blocked": list(self.guard._read_blocked_prefixes()),
                 "state_root": str(self.state_root),
+                "protect_host_credentials": bool(getattr(self.guard, "protect_host_credentials", True)),
+                "protect_dotenv_files": bool(
+                    getattr(self.guard, "protect_dotenv_files", False)
+                    or self.guard.tier == "L1"
+                    or bool(_READONLY_CALL_CTX.get())
+                ),
             })
             out, err = proc.communicate(input=probe_input, timeout=max(3, min(60, int(timeout_seconds))))
             dur = round((time.monotonic() - t0) * 1000)

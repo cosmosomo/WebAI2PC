@@ -15,6 +15,7 @@ Pure Python >=3.9 standard-library implementation providing:
 from __future__ import annotations
 
 import ast
+import contextvars
 import ctypes
 from datetime import datetime, timezone
 import inspect
@@ -30,6 +31,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 
 CREATE_NO_WINDOW: int = 0x08000000
 ERR_HUMAN_MODE_LOCKED = "ERR_HUMAN_MODE_LOCKED"
+_READONLY_CALL_CTX: contextvars.ContextVar[bool] = contextvars.ContextVar("cosmos_readonly_call_ctx", default=False)
 
 READONLY_PACKAGE_MARKERS: Tuple[str, ...] = (
     "site-packages",
@@ -43,7 +45,7 @@ READONLY_PACKAGE_MARKERS: Tuple[str, ...] = (
     "/windowsapps/",
 )
 
-SENSITIVE_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
+HOST_CREDENTIAL_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (
         r"(?i)[\\/]\.ssh[\\/](?:id_[a-z0-9_.-]+|authorized_keys|known_hosts|config|[^\\/\"'\s;|&><)`]*\.(?:pem|key))(?:$|[\\/\"'\s;|&><)`])",
         "SSH private keys and configuration files are isolated by Guard.",
@@ -72,10 +74,14 @@ SENSITIVE_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
         r"(?i)(?:[\\/]\.(?:pypirc|npmrc|netrc|git-credentials|docker[\\/]config\.json)|[\\/]\.cargo[\\/]credentials(?:\.toml)?|[\\/]\.?huggingface[\\/](?:token|stored_tokens))(?:$|[\\/\"'\s;|&><)`:])",
         "Package registry and container credential files are isolated by Guard.",
     ),
-    (
-        r"(?i)(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)(?:$|[\\/\"'\s;|&><)`:]))[a-z0-9_.-]+)?(?:$|[\\/\"'\s;|&><)`:])",
-        "Private .env environment files are isolated by Guard (.env.example and .env.template remain accessible).",
-    ),
+)
+
+DOTENV_PATH_PATTERN: Tuple[str, str] = (
+    r"(?i)(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)(?:$|[\\/\"'\s;|&><)`:]))[a-z0-9_.-]+)?(?:$|[\\/\"'\s;|&><)`:])",
+    "Private .env environment files are isolated by Guard (.env.example and .env.template remain accessible).",
+)
+
+MCP_OWN_SECRET_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (
         r"(?i)(?:^|[\\/])\.cosmos-mcp[\\/](?:secrets|state|config|\.env(?:\.[a-z0-9_.-]+)?)(?:$|[\\/\"'\s;|&><)`:])",
         "MCP state root secrets and configuration files are isolated by Guard.",
@@ -85,6 +91,8 @@ SENSITIVE_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "MCP session secret files are isolated by Guard.",
     ),
 )
+
+SENSITIVE_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = HOST_CREDENTIAL_PATH_PATTERNS + MCP_OWN_SECRET_PATTERNS
 
 WINDOWS_OS_DIRS: Tuple[str, ...] = (
     r"c:\windows",
@@ -114,7 +122,7 @@ SSRF_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
     ),
 )
 
-DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
+USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (
         r"(?i)(?:^|[;&|\s\(])(?:rm|del|erase|rd|rmdir|Remove-Item|ri|unlink|rimraf|Clear-Content|clc)\b",
         "Direct permanent file deletion (rm / del / rd / Remove-Item / Clear-Content) is blocked; move files to recoverable trash instead.",
@@ -124,7 +132,7 @@ DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Direct permanent file deletion in scripts (rmtree / os.remove / unlink) is blocked; use trash_file instead.",
     ),
     (
-        r"(?i)\bgit\s+(?:reset\s+--(?!soft\b)\S+|clean\b[^\n;]*-[a-zA-Z]*[fdFD]|checkout\s+(?:--|-[fF]\b)|restore\s+(?!--staged\b)|push\b[^\n;]*(?:--force|-f\b)|branch\s+-D\b|stash\s+(?:drop|clear)\b)",
+        r"(?i)\bgit\s+(?:reset\s+--(?!soft\b)\S+|clean\b[^\n;]*-[a-zA-Z]*[fdFD]|checkout\s+(?:--|-[fF]\b)|restore\s+(?!--staged\b)|push\s+[^\n;]*(?:--force|-f\b)|branch\s+-D\b|stash\s+(?:drop|clear)\b)",
         "Destructive Git commands that erase uncommitted work or history are blocked.",
     ),
     (
@@ -136,14 +144,19 @@ DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Terminating user browsers, IDEs, shells, or OS system processes is blocked.",
     ),
     (
-        r"(?i)\b(?:Stop-Process|spps|kill|taskkill)\b[^\n;]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
-        "Terminating MCP daemon or active tunnel processes is blocked.",
-    ),
-    (
         r"(?i)(?:\breg(?:\.exe)?\s+(?:add|delete|import)\b[^\n;]*\\currentversion\\run(?:once)?\b|\b(?:Set-ItemProperty|New-ItemProperty|Remove-ItemProperty)\b[^\n;]*\\currentversion\\run(?:once)?\b|\bschtasks(?:\.exe)?\s+/create\b|\bRegister-ScheduledTask\b)",
         "Modifying startup registry Run keys or creating scheduled tasks via MCP is blocked.",
     ),
 )
+
+MCP_SELF_PROTECT_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
+    (
+        r"(?i)\b(?:Stop-Process|spps|kill|taskkill)\b[^\n;]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
+        "Terminating MCP daemon or active tunnel processes is blocked.",
+    ),
+)
+
+DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS + MCP_SELF_PROTECT_CMD_PATTERNS
 
 _PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----")
 SECRET_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
@@ -1407,6 +1420,9 @@ class WorkspaceGuard:
         *,
         readonly_workspace_roots: Union[str, Path, Sequence[Union[str, Path]], None] = None,
         allow_host_global_skills: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         restrict_to_workspace: bool = True,
         tier: Union[str, int] = "L3",
         state_root: Optional[Union[str, Path]] = None,
@@ -1417,6 +1433,9 @@ class WorkspaceGuard:
         self.workspace_roots: Tuple[Path, ...] = ()
         self.readonly_workspace_roots: Tuple[Path, ...] = ()
         self.allow_host_global_skills: bool = bool(allow_host_global_skills) if allow_host_global_skills is not None else False
+        self.protect_host_credentials: bool = bool(protect_host_credentials) if protect_host_credentials is not None else True
+        self.protect_dotenv_files: bool = bool(protect_dotenv_files) if protect_dotenv_files is not None else False
+        self.block_destructive_commands: bool = bool(block_destructive_commands) if block_destructive_commands is not None else True
         self.tier: str = to_short_tier_code(tier, restrict_to_workspace=bool(restrict_to_workspace))
         self.restrict_to_workspace: bool = False if self.tier == "L4" else bool(restrict_to_workspace)
         self.state_root: Optional[Path] = canonical_realpath(state_root) if state_root else None
@@ -1431,6 +1450,9 @@ class WorkspaceGuard:
                 tier_key=str(tier),
                 readonly_workspace_roots=readonly_workspace_roots,
                 allow_host_global_skills=allow_host_global_skills,
+                protect_host_credentials=protect_host_credentials,
+                protect_dotenv_files=protect_dotenv_files,
+                block_destructive_commands=block_destructive_commands,
                 state_root=state_root,
                 product_root=product_root,
                 extra_access_gate=extra_access_gate,
@@ -1457,6 +1479,9 @@ class WorkspaceGuard:
         *,
         readonly_workspace_roots: Union[str, Path, Sequence[Union[str, Path]], None] = None,
         allow_host_global_skills: Optional[bool] = None,
+        protect_host_credentials: Optional[bool] = None,
+        protect_dotenv_files: Optional[bool] = None,
+        block_destructive_commands: Optional[bool] = None,
         state_root: Optional[Union[str, Path]] = None,
         product_root: Optional[Union[str, Path]] = None,
         extra_access_gate: Optional[Callable[..., Optional[str]]] = None,
@@ -1479,6 +1504,12 @@ class WorkspaceGuard:
             )
         if allow_host_global_skills is not None:
             self.allow_host_global_skills = bool(allow_host_global_skills)
+        if protect_host_credentials is not None:
+            self.protect_host_credentials = bool(protect_host_credentials)
+        if protect_dotenv_files is not None:
+            self.protect_dotenv_files = bool(protect_dotenv_files)
+        if block_destructive_commands is not None:
+            self.block_destructive_commands = bool(block_destructive_commands)
         eff_tier = to_short_tier_code(tier_key, restrict_to_workspace=bool(restrict_to_workspace))
         if eff_tier == "L4":
             self.restrict_to_workspace = False
@@ -1499,10 +1530,27 @@ class WorkspaceGuard:
             "workspace_roots": [str(p) for p in self.workspace_roots],
             "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
             "allow_host_global_skills": self.allow_host_global_skills,
+            "protect_host_credentials": self.protect_host_credentials,
+            "protect_dotenv_files": self.protect_dotenv_files,
+            "block_destructive_commands": self.block_destructive_commands,
             "restrict_to_workspace": self.restrict_to_workspace,
             "tier": self.tier,
             "state_root": str(self.effective_state_root()),
         }
+
+    def _active_sensitive_path_patterns(self) -> Tuple[Tuple[str, str], ...]:
+        pats: List[Tuple[str, str]] = list(MCP_OWN_SECRET_PATTERNS)
+        if self.protect_host_credentials:
+            pats.extend(HOST_CREDENTIAL_PATH_PATTERNS)
+        is_ro_ctx = (self.tier == "L1") or bool(_READONLY_CALL_CTX.get())
+        if self.protect_dotenv_files or is_ro_ctx:
+            pats.append(DOTENV_PATH_PATTERN)
+        return tuple(pats)
+
+    def _active_destructive_cmd_patterns(self) -> Tuple[Tuple[str, str], ...]:
+        if self.block_destructive_commands:
+            return USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS + MCP_SELF_PROTECT_CMD_PATTERNS
+        return MCP_SELF_PROTECT_CMD_PATTERNS
 
     def record_security_event(self, event_type: str, target: str, reason: str) -> None:
         try:
@@ -1548,7 +1596,7 @@ class WorkspaceGuard:
         return roots
 
     def _is_state_secret_or_conn_file(self, cand_path: Path) -> bool:
-        if cand_path.name.lower() in _PROTECTED_SECRET_BASENAMES or _is_protected_secret_file(cand_path):
+        if cand_path.name.lower() in _PROTECTED_SECRET_BASENAMES or bool(_PROTECTED_SECRET_FILE_RE.match(cand_path.name)):
             return True
         c_low = str(cand_path).lower().rstrip("\\/")
         nm_low = cand_path.name.lower()
@@ -1589,10 +1637,11 @@ class WorkspaceGuard:
         for sh in (home / ".cosmos-mcp", generic_state_home):
             for sub_rel in ("secrets", "state", "config", ".env"):
                 _add(sh / sub_rel)
-        for cr in (home / ".cargo", Path(os.environ["CARGO_HOME"]) if os.environ.get("CARGO_HOME") else None):
-            if cr is not None:
-                _add(cr / "credentials")
-                _add(cr / "credentials.toml")
+        if self.protect_host_credentials:
+            for cr in (home / ".cargo", Path(os.environ["CARGO_HOME"]) if os.environ.get("CARGO_HOME") else None):
+                if cr is not None:
+                    _add(cr / "credentials")
+                    _add(cr / "credentials.toml")
         return tuple(out)
 
     def _write_blocked_prefixes(self) -> Tuple[str, ...]:
@@ -1659,7 +1708,11 @@ class WorkspaceGuard:
 
     def _is_allowed_readonly_toolchain_path(self, resolved_path: Path) -> bool:
         rp = canonical_realpath(resolved_path)
-        if _is_protected_secret_file(rp):
+        if _PROTECTED_SECRET_FILE_RE.match(rp.name):
+            return False
+        if (self.protect_dotenv_files or self.tier == "L1" or bool(_READONLY_CALL_CTX.get())) and _is_private_dotenv_name(rp.name):
+            return False
+        if self.protect_host_credentials and rp.parent.name.lower() == ".cargo" and rp.name.lower() in ("credentials", "credentials.toml"):
             return False
         res_low = str(rp).lower().rstrip("\\/")
         if not res_low:
@@ -1781,6 +1834,7 @@ class WorkspaceGuard:
                 candidates.append(cwd_cand)
 
         read_blocked = self._read_blocked_prefixes()
+        active_sens_patterns = self._active_sensitive_path_patterns()
         for cand in candidates:
             c_str = str(cand)
             c_low = c_str.lower()
@@ -1793,7 +1847,7 @@ class WorkspaceGuard:
                     reason = "MCP secrets, state directory, and connection info files are isolated."
                     self.record_security_event(f"self_secret_{mode}_blocked", c_str, reason)
                     return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
-            for pat, reason in SENSITIVE_PATH_PATTERNS:
+            for pat, reason in active_sens_patterns:
                 if re.search(pat, c_str) or re.search(pat, expanded) or re.search(pat, raw_clean):
                     self.record_security_event(f"path_{mode}_blocked", c_str, reason)
                     return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
@@ -1817,16 +1871,17 @@ class WorkspaceGuard:
                         reason = "Modifying MCP server code, configuration, logs, or secrets is prohibited."
                         self.record_security_event("self_tamper_blocked", c_str, reason)
                         return f"[GUARD ANTI-TAMPER]: {reason}"
-                pers_err = check_persistence_components(cand)
-                if pers_err:
-                    self.record_security_event("persistence_write_blocked", c_str, pers_err)
-                    return f"[GUARD PERSISTENCE ISOLATION]: {pers_err}"
-                os_dirs = WINDOWS_OS_DIRS if sys.platform == "win32" else POSIX_OS_DIRS
-                for sys_dir in os_dirs:
-                    if _is_under_prefix(c_low, sys_dir):
-                        reason = f"Writing to OS system directory `{sys_dir}` is prohibited."
-                        self.record_security_event("os_dir_write_blocked", c_str, reason)
-                        return f"[GUARD OS ISOLATION]: {reason}"
+                if self.block_destructive_commands:
+                    pers_err = check_persistence_components(cand)
+                    if pers_err:
+                        self.record_security_event("persistence_write_blocked", c_str, pers_err)
+                        return f"[GUARD PERSISTENCE ISOLATION]: {pers_err}"
+                    os_dirs = WINDOWS_OS_DIRS if sys.platform == "win32" else POSIX_OS_DIRS
+                    for sys_dir in os_dirs:
+                        if _is_under_prefix(c_low, sys_dir):
+                            reason = f"Writing to OS system directory `{sys_dir}` is prohibited."
+                            self.record_security_event("os_dir_write_blocked", c_str, reason)
+                            return f"[GUARD OS ISOLATION]: {reason}"
 
         if self.restrict_to_workspace and self.workspace_roots:
             if not self._is_under_any_workspace(resolved):
@@ -2426,8 +2481,9 @@ class WorkspaceGuard:
                 return None
 
         expanded_cmd = expand_env_and_tilde(eff_cmd)
+        active_sens_patterns = self._active_sensitive_path_patterns()
 
-        for pat, reason in SENSITIVE_PATH_PATTERNS:
+        for pat, reason in active_sens_patterns:
             if re.search(pat, eff_cmd) or re.search(pat, expanded_cmd):
                 self.record_security_event("cmd_credential_access_blocked", command, reason)
                 return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
@@ -2491,11 +2547,6 @@ class WorkspaceGuard:
                 self.record_security_event("cmd_link_creation_blocked", command, reason)
                 return f"[GUARD WORKSPACE SANDBOX]: {reason}"
 
-            if re.search(r"(?i)(?:\.\s*Parent\b|::\s*GetParent\s*\()", eff_cmd):
-                reason = f"Dynamic parent-directory traversal expressions (`.Parent` / `GetParent`) are prohibited in Tier {self.tier}."
-                self.record_security_event("cmd_dynamic_parent_blocked", command, reason)
-                return f"[GUARD WORKSPACE SANDBOX]: {reason}"
-
             if re.search(r"(?i)(?:\bWin32_Process\b|\bwmic(?:\.exe)?\b[^\r\n;|&]*\bprocess\b[^\r\n;|&]*\bcreate\b)", eff_cmd):
                 reason = "Spawning detached WMI/CIM processes (`Win32_Process` / `wmic process create`) is prohibited in workspace-restricted tier."
                 self.record_security_event("cmd_wmi_spawn_blocked", command, reason)
@@ -2548,11 +2599,11 @@ class WorkspaceGuard:
                 reason = "MCP secrets, OAuth database, and connection info files are isolated."
                 self.record_security_event("cmd_credential_access_blocked", command, reason)
                 return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
-            for pat, reason in SENSITIVE_PATH_PATTERNS:
+            for pat, reason in active_sens_patterns:
                 if re.search(pat, nc_str):
                     self.record_security_event("cmd_credential_access_blocked", command, reason)
                     return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
-            if has_shell_write or not is_python_code:
+            if self.block_destructive_commands and (has_shell_write or not is_python_code):
                 pers_err = check_persistence_components(base_cand)
                 if pers_err:
                     self.record_security_event("cmd_persistence_blocked", command, pers_err)
@@ -2702,8 +2753,9 @@ class WorkspaceGuard:
             or str(Path.cwd())
         )
         clauses = [c for c in _SHELL_CLAUSE_SPLIT_RE.split(cleaned) if c and c.strip()]
-        for idx_p, (pat, reason) in enumerate(DESTRUCTIVE_CMD_PATTERNS):
-            if idx_p == 0 and clauses:
+        active_cmd_patterns = self._active_destructive_cmd_patterns()
+        for idx_p, (pat, reason) in enumerate(active_cmd_patterns):
+            if self.block_destructive_commands and idx_p == 0 and clauses:
                 bad_hit = False
                 for cl in clauses:
                     if re.search(pat, cl) and not self._is_safe_workspace_build_clean_clause(cl, eff_base):
@@ -2723,6 +2775,15 @@ class WorkspaceGuard:
         pipelock_err = self.check_command_pipelock(code_no_comments, cwd=cwd, is_python_code=True)
         if pipelock_err:
             return pipelock_err
+        if not self.block_destructive_commands:
+            if re.search(
+                r"(?i)\b(?:Stop-Process|taskkill)\b[^\n]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
+                code_no_comments,
+            ):
+                kill_mcp_reason = "Terminating MCP daemon or active tunnel processes is blocked."
+                self.record_security_event("python_code_blocked", code_no_comments[:240], kill_mcp_reason)
+                return f"[GUARD PYTHON SAFETY]: {kill_mcp_reason}"
+            return None
         del_reason = "Direct permanent file deletion in Python (rmtree / os.remove / unlink) is blocked; use trash_file instead."
         kill_reason = "Terminating host browsers, IDEs, or MCP daemon processes is blocked."
         try:
@@ -2818,6 +2879,9 @@ def set_workspace_policy(
     *,
     readonly_workspace_roots: Union[str, Path, Sequence[Union[str, Path]], None] = None,
     allow_host_global_skills: Optional[bool] = None,
+    protect_host_credentials: Optional[bool] = None,
+    protect_dotenv_files: Optional[bool] = None,
+    block_destructive_commands: Optional[bool] = None,
     state_root: Optional[Union[str, Path]] = None,
     product_root: Optional[Union[str, Path]] = None,
     extra_access_gate: Optional[Callable[..., Optional[str]]] = None,
@@ -2828,6 +2892,9 @@ def set_workspace_policy(
         tier_key=tier_key,
         readonly_workspace_roots=readonly_workspace_roots,
         allow_host_global_skills=allow_host_global_skills,
+        protect_host_credentials=protect_host_credentials,
+        protect_dotenv_files=protect_dotenv_files,
+        block_destructive_commands=block_destructive_commands,
         state_root=state_root,
         product_root=product_root,
         extra_access_gate=extra_access_gate,

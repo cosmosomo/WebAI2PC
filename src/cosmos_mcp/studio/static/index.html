@@ -1552,7 +1552,7 @@
                   <label class="setting-row" id="confirm-popups-box">
                     <div class="setting-row-text">
                       <div class="setting-row-title">写文件与运行命令前向宿主请求确认 <span class="tag tag-muted ro-auto-hint" id="confirm-popups-ro-hint" style="display:none;">只读模式自动关闭</span></div>
-                      <div class="setting-row-sub">关闭时配合宿主 Always allow 保持连贯开发；开启后每次写入或运行命令都会弹确认</div>
+                      <div class="setting-row-sub">关闭时向宿主声明免弹窗兼容注解以支持 Always allow 连贯开发；开启后每次写入或运行命令都会弹确认</div>
                     </div>
                     <input type="checkbox" class="apple-switch" id="chk-confirm-popups">
                   </label>
@@ -1576,6 +1576,40 @@
                       <div class="setting-row-sub">默认关闭以保持项目与受管技能库隔离；开启后只读发现本机其他编程工具全局技能</div>
                     </div>
                     <input type="checkbox" class="apple-switch" id="chk-scan-host-skills">
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">操作边界保护（可按需自主开关）</div>
+                <div class="settings-rows-list">
+                  <label class="setting-row" id="allow-loopback-dev-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">允许受管浏览器访问本机开发端口、局域网与本地 HTML <span class="tag tag-muted ro-auto-hint" id="allow-loopback-dev-ro-hint" style="display:none;">只读模式下自动关闭</span></div>
+                      <div class="setting-row-sub">默认开启以便预览 localhost / 127.0.0.1 / 局域网与授权目录内 HTML（自身控制端口与云元数据始终隔离）；关闭后仅访问公网网页</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-allow-loopback-dev" checked>
+                  </label>
+                  <label class="setting-row" id="protect-dotenv-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">隔离项目 .env 环境变量文件 <span class="tag tag-muted ro-auto-hint" id="protect-dotenv-ro-hint" style="display:none;">只读模式下自动开启</span></div>
+                      <div class="setting-row-sub">默认关闭以便开发时正常读写项目 .env（只读模式下自动开启隔离，自身状态目录密钥始终隔离）；开启后禁止 AI 读写任何 .env 文件</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-protect-dotenv">
+                  </label>
+                  <label class="setting-row" id="protect-credentials-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">隔离本机系统凭据目录（.ssh / .aws / 浏览器密码库 / 包仓库令牌）</div>
+                      <div class="setting-row-sub">默认开启以防误读本机全局密钥（不影响读取模型权重缓存）；确需管理本机凭据文件时可关闭放行</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-protect-credentials" checked>
+                  </label>
+                  <label class="setting-row" id="block-destructive-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">拦截高危直删与重置命令（引导移入可恢复回收箱） <span class="tag tag-muted ro-auto-hint" id="block-destructive-ro-hint" style="display:none;">只读模式下自动生效</span></div>
+                      <div class="setting-row-sub">默认开启，拦截 rm -rf / git reset --hard / format 等不可逆操作并引导走可恢复回收箱；确需执行清理命令时可关闭放行</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-block-destructive" checked>
                   </label>
                 </div>
               </div>

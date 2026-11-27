@@ -38,11 +38,18 @@ import sys
 import threading
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 import urllib.request
 
 from cosmos_mcp.core.contracts import PackPlugin, SafetyBand, ToolSpec
-from cosmos_mcp.core.guard import DEFAULT_GUARD, WorkspaceGuard, canonical_realpath
+from cosmos_mcp.core.guard import (
+    DEFAULT_GUARD,
+    WorkspaceGuard,
+    _READONLY_CALL_CTX,
+    canonical_realpath,
+    normalize_tier,
+    strip_file_uri,
+)
 from cosmos_mcp.core.net_power import (
     BLOCKED_INTERNAL_HOSTNAMES,
     BLOCKED_INTERNAL_SUFFIXES,
@@ -757,6 +764,24 @@ def resolve_browser_proxy_settings(explicit_proxy: Optional[str] = None) -> Dict
     }
 
 
+_FORBIDDEN_FILE_PREVIEW_EXTS = frozenset({
+    ".exe", ".bat", ".cmd", ".com", ".msi", ".ps1", ".vbs", ".hta", ".scr", ".dll", ".sys",
+})
+
+
+def _state_root_file_block_patterns(state_root: Optional[Union[str, Path]] = None) -> List[str]:
+    try:
+        sr = canonical_realpath(state_root) if state_root else DEFAULT_GUARD.effective_state_root()
+    except Exception:
+        return []
+    pats: List[str] = []
+    for sub in ("secrets", "state", "config", ".env", "连接信息_CONNECTION_INFO.txt", "latest_consent_pair_code.txt"):
+        with contextlib.suppress(Exception):
+            uri = (sr / sub).resolve().as_uri()
+            pats.append(f"{uri}*")
+    return pats
+
+
 def validate_outbound_http_url(
     raw_url: str,
     *,
@@ -765,32 +790,54 @@ def validate_outbound_http_url(
     mcp_public_url: str = "",
     is_remote_session: bool = False,
     allow_loopback_dev: bool = True,
+    allow_file_urls: Optional[bool] = None,
+    guard: Optional[WorkspaceGuard] = None,
     proxy_url: Optional[str] = None,
     resolver: Optional[DnsResolverFn] = None,
 ) -> str:
-    """Validate `browser_use` navigation/redirect URL using `cosmos_mcp.core.net_power` SSRF primitives."""
+    """Validate `browser_use` navigation/redirect URL while honoring user-configured `allow_loopback_dev`."""
+    _ = is_remote_session
     u = (raw_url or "").strip()
     if not u:
         raise ValueError("`url` is required when action='open' (e.g. 'https://example.com' or a local dev HTTP URL).")
 
+    eff_allow_files = bool(allow_loopback_dev) if allow_file_urls is None else bool(allow_file_urls)
     parsed = urlsplit(u)
     scheme = (parsed.scheme or "").lower()
     if not scheme:
         if u.startswith(("/", "\\", ".")) or (len(u) >= 2 and u[1] == ":"):
-            raise PermissionError(
-                f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): Local filesystem paths (`file://`) are blocked in `browser_use`."
-            )
-        u = f"https://{u}"
-        parsed = urlsplit(u)
-        scheme = "https"
+            if not eff_allow_files:
+                raise PermissionError(
+                    f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): Local filesystem paths (`file://`) are disabled when `allow_loopback_dev` is off."
+                )
+            u = canonical_realpath(u).resolve().as_uri()
+            parsed = urlsplit(u)
+            scheme = "file"
+        else:
+            u = f"https://{u}"
+            parsed = urlsplit(u)
+            scheme = "https"
 
     if scheme == "file":
-        raise PermissionError(
-            f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): `file://` URLs are blocked in `browser_use`."
-        )
+        if not eff_allow_files:
+            raise PermissionError(
+                f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): `file://` URLs are disabled when `allow_loopback_dev` is off in `browser_use`."
+            )
+        raw_local = strip_file_uri(unquote(u))
+        local_p = canonical_realpath(raw_local)
+        if local_p.suffix.lower() in _FORBIDDEN_FILE_PREVIEW_EXTS:
+            raise PermissionError(
+                f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): Executable local file `{local_p.name}` is blocked in `browser_use`."
+            )
+        eff_g = guard if guard is not None else WorkspaceGuard(restrict_to_workspace=False, tier="L4")
+        g_err = eff_g.check_path_access(local_p, mode="read", tool_name="browser_use")
+        if g_err:
+            raise PermissionError(f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): {g_err}")
+        return local_p.resolve().as_uri()
+
     if scheme not in ("http", "https"):
         raise ValueError(
-            f"[LOCALPC SSRF GUARD]: Unsupported URL scheme `{scheme}:` in `browser_use` (only `http://` and `https://` are allowed)."
+            f"[LOCALPC SSRF GUARD]: Unsupported URL scheme `{scheme}:` in `browser_use` (only `http://`, `https://`, and authorized `file://` are allowed)."
         )
     if parsed.username or parsed.password:
         raise PermissionError(f"[LOCALPC SSRF GUARD] ({ERR_SSRF_BLOCKED}): Embedded credentials in URL are prohibited.")
@@ -837,7 +884,7 @@ def validate_outbound_http_url(
             "is strictly blocked in `browser_use`."
         )
 
-    if is_remote_session or not allow_loopback_dev:
+    if not allow_loopback_dev:
         return validate_public_http_url(u, proxy_url=proxy_url, resolver=resolver)
 
     if host in ("localhost",) or host.endswith(".localhost"):
@@ -870,6 +917,8 @@ def _validate_browser_url_pair(
     mcp_public_url: str = "",
     is_remote_session: bool = False,
     allow_loopback_dev: bool = True,
+    allow_file_urls: Optional[bool] = None,
+    guard: Optional[WorkspaceGuard] = None,
     proxy_url: Optional[str] = None,
     resolver: Optional[DnsResolverFn] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
@@ -881,6 +930,8 @@ def _validate_browser_url_pair(
             mcp_public_url=mcp_public_url,
             is_remote_session=is_remote_session,
             allow_loopback_dev=allow_loopback_dev,
+            allow_file_urls=allow_file_urls,
+            guard=guard,
             proxy_url=proxy_url,
             resolver=resolver,
         )
@@ -1287,13 +1338,15 @@ class _HeadlessCdpPage:
                 record_events=False,
             )
         if self._last_blocked_args is not None:
-            mp, mpub, blp, is_r, allow_lb = self._last_blocked_args
+            mp, mpub, blp, is_r, allow_lb = self._last_blocked_args[:5]
+            sr_saved = self._last_blocked_args[5] if len(self._last_blocked_args) > 5 else ""
             self.apply_cdp_blocked_urls(
                 mp,
                 mpub,
                 blocked_local_ports=blp,
                 is_remote_session=is_r,
                 allow_loopback_dev=allow_lb,
+                state_root=sr_saved or None,
             )
         if self._download_dir is not None:
             self.configure_download_dir(self._download_dir)
@@ -1584,20 +1637,24 @@ class _HeadlessCdpPage:
         blocked_local_ports: Iterable[int] = (),
         is_remote_session: bool = False,
         allow_loopback_dev: bool = True,
+        state_root: Optional[Union[str, Path]] = None,
     ) -> None:
         blp_tup = tuple(int(x) for x in blocked_local_ports if int(x or 0) > 0)
-        self._last_blocked_args = (int(mcp_port or 0), str(mcp_public_url or ""), blp_tup, bool(is_remote_session), bool(allow_loopback_dev))
+        sr_str = str(state_root or "")
+        self._last_blocked_args = (int(mcp_port or 0), str(mcp_public_url or ""), blp_tup, bool(is_remote_session), bool(allow_loopback_dev), sr_str)
         if self._ws is None:
             return
         meta_ip = ".".join(("169", "254", "*"))
         ali_meta = ".".join(("100", "100", "100", "200"))
         patterns: List[str] = [
-            "file://*",
             f"http://{meta_ip}",
             f"https://{meta_ip}",
             f"http://{ali_meta}*",
             f"https://{ali_meta}*",
+            "http://0.0.0.0*",
+            "https://0.0.0.0*",
         ]
+        patterns.extend(_state_root_file_block_patterns(state_root))
         ports_set: Set[int] = set(PROTECTED_LOCAL_CONTROL_PORTS)
         if int(mcp_port or 0) > 0:
             ports_set.add(int(mcp_port))
@@ -1608,14 +1665,17 @@ class _HeadlessCdpPage:
             patterns.extend(
                 [
                     f"http://127.0.0.1:{p}*",
+                    f"http://127.*:{p}*",
                     f"http://localhost:{p}*",
                     f"http://[::1]:{p}*",
                     f"https://127.0.0.1:{p}*",
+                    f"https://127.*:{p}*",
                     f"https://localhost:{p}*",
                     f"https://[::1]:{p}*",
                 ]
             )
-        if is_remote_session or not allow_loopback_dev:
+        if not allow_loopback_dev:
+            patterns.append("file://*")
             patterns.extend(_private_lan_cdp_block_patterns())
         if mcp_public_url:
             clean_pub = mcp_public_url.strip().rstrip("/")
@@ -1924,6 +1984,7 @@ class _IsolatedBrowserWorker:
             mcp_public_url=str(sc.get("mcp_public_url") or ""),
             is_remote_session=bool(sc.get("is_remote_session", False)),
             allow_loopback_dev=bool(sc.get("allow_loopback_dev", True)),
+            guard=sc.get("guard"),
             proxy_url=proxy_cfg.get("server") or None,
         )
 
@@ -1982,12 +2043,14 @@ class _IsolatedBrowserWorker:
             meta_ip = ".".join(("169", "254", "*"))
             ali_meta = ".".join(("100", "100", "100", "200"))
             patterns: List[str] = [
-                "file://*",
                 f"http://{meta_ip}",
                 f"https://{meta_ip}",
                 f"http://{ali_meta}*",
                 f"https://{ali_meta}*",
+                "http://0.0.0.0*",
+                "https://0.0.0.0*",
             ]
+            patterns.extend(_state_root_file_block_patterns(sc_now.get("state_root")))
             ports_set: Set[int] = set(PROTECTED_LOCAL_CONTROL_PORTS)
             if mcp_p > 0:
                 ports_set.add(mcp_p)
@@ -1997,14 +2060,18 @@ class _IsolatedBrowserWorker:
                 patterns.extend(
                     [
                         f"http://127.0.0.1:{p_num}*",
+                        f"http://127.*:{p_num}*",
                         f"http://localhost:{p_num}*",
                         f"http://[::1]:{p_num}*",
                         f"https://127.0.0.1:{p_num}*",
+                        f"https://127.*:{p_num}*",
                         f"https://localhost:{p_num}*",
                         f"https://[::1]:{p_num}*",
                     ]
                 )
-            if is_rem_b or not allow_lb_b:
+            _ = is_rem_b
+            if not allow_lb_b:
+                patterns.append("file://*")
                 patterns.extend(_private_lan_cdp_block_patterns())
             if mcp_pub_s.strip():
                 patterns.append(f"{mcp_pub_s.strip().rstrip('/')}*")
@@ -2066,6 +2133,7 @@ class _IsolatedBrowserWorker:
                         blocked_local_ports=sc.get("blocked_local_ports") or (),
                         is_remote_session=bool(sc.get("is_remote_session", False)),
                         allow_loopback_dev=bool(sc.get("allow_loopback_dev", True)),
+                        state_root=sc.get("state_root") or None,
                     )
                     if dl_dir is not None and page._download_dir != dl_dir:
                         page.configure_download_dir(dl_dir)
@@ -2162,6 +2230,7 @@ class _IsolatedBrowserWorker:
                         blocked_local_ports=sc.get("blocked_local_ports") or (),
                         is_remote_session=bool(sc.get("is_remote_session", False)),
                         allow_loopback_dev=bool(sc.get("allow_loopback_dev", True)),
+                        state_root=sc.get("state_root") or None,
                     )
                     ctx = cdp_page
                     page = cdp_page
@@ -2526,6 +2595,13 @@ class BrowserPackPlugin:
             return bool(self._is_remote_session_fn())
         return _is_active_remote_transport_ctx()
 
+    def _effective_allow_loopback_dev(self) -> bool:
+        if normalize_tier(self.guard.tier) == "L1" or bool(_READONLY_CALL_CTX.get()):
+            return False
+        if self.policy is not None and hasattr(self.policy, "allow_loopback_dev"):
+            return bool(getattr(self.policy, "allow_loopback_dev"))
+        return bool(self.allow_loopback_dev)
+
     def resolve_profile_dir(self, prefix: str = "") -> Path:
         eff_p = (prefix or self._effective_prefix() or "pc").strip()
         sr = self._effective_state_root().resolve()
@@ -2661,6 +2737,8 @@ class BrowserPackPlugin:
         mcp_port = self._effective_mcp_port()
         mcp_pub = self._effective_public_url()
         is_rem = self._is_remote_session()
+        eff_allow_lb = self._effective_allow_loopback_dev()
+        eff_sr = self._effective_state_root()
         proxy_cfg = resolve_browser_proxy_settings(self.proxy_url)
 
         if act == "open_login_window":
@@ -2679,7 +2757,8 @@ class BrowserPackPlugin:
                     blocked_local_ports=self._blocked_local_ports,
                     mcp_public_url=mcp_pub,
                     is_remote_session=is_rem,
-                    allow_loopback_dev=self.allow_loopback_dev,
+                    allow_loopback_dev=eff_allow_lb,
+                    guard=self.guard,
                     proxy_url=proxy_cfg.get("server") or None,
                 )
                 if u_err or not v_login:
@@ -2741,7 +2820,8 @@ class BrowserPackPlugin:
                 blocked_local_ports=self._blocked_local_ports,
                 mcp_public_url=mcp_pub,
                 is_remote_session=is_rem,
-                allow_loopback_dev=self.allow_loopback_dev,
+                allow_loopback_dev=eff_allow_lb,
+                guard=self.guard,
                 proxy_url=proxy_cfg.get("server") or None,
             )
             if u_err or not v_url:
@@ -2772,7 +2852,9 @@ class BrowserPackPlugin:
             "blocked_local_ports": self._blocked_local_ports,
             "mcp_public_url": mcp_pub,
             "is_remote_session": is_rem,
-            "allow_loopback_dev": self.allow_loopback_dev,
+            "allow_loopback_dev": eff_allow_lb,
+            "guard": self.guard,
+            "state_root": str(eff_sr),
             "download_dir": str(dl_dir),
         }
         worker.active_ssrf_ctx = dict(call_ssrf_ctx)
@@ -2787,7 +2869,8 @@ class BrowserPackPlugin:
                 blocked_local_ports=self._blocked_local_ports,
                 mcp_public_url=mcp_pub,
                 is_remote_session=is_rem,
-                allow_loopback_dev=self.allow_loopback_dev,
+                allow_loopback_dev=eff_allow_lb,
+                guard=self.guard,
                 proxy_url=proxy_cfg.get("server") or None,
             )
             if post_err:

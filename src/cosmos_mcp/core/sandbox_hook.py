@@ -195,15 +195,24 @@ def _install_cosmos_l3_hook():
             _ro_list.append(_rl)
     _ro_roots = _tuple(_ro_list)
 
-    _sens_rx = _tuple(re.compile(p, re.IGNORECASE) for p in (
-        r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
-        r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
-        r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
+    _prot_cred = os.environ.get("COSMOS_L3_PROTECT_CREDENTIALS", "1") != "0"
+    _prot_dotenv = os.environ.get("COSMOS_L3_PROTECT_DOTENV", "0") == "1"
+    _sens_pats = [
         r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
-        r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
-        r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$",
-        r"(?:^|[\\/])appdata[\\/]local[\\/](?:google[\\/]chrome|microsoft[\\/]edge|bravesoftware[\\/]brave-browser|chromium)[\\/]user data(?:$|[\\/])",
-    ))
+    ]
+    if _prot_cred:
+        _sens_pats.extend([
+            r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
+            r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
+            r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
+            r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
+            r"(?:^|[\\/])appdata[\\/]local[\\/](?:google[\\/]chrome|microsoft[\\/]edge|bravesoftware[\\/]brave-browser|chromium)[\\/]user data(?:$|[\\/])",
+        ])
+    if _prot_dotenv:
+        _sens_pats.append(
+            r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$"
+        )
+    _sens_rx = _tuple(re.compile(p, re.IGNORECASE) for p in _sens_pats)
     _ads_rx = re.compile(r"::\$[A-Za-z0-9_]+")
     _py_iso_rx = re.compile(r"^-(?=[A-Za-z]*[IES])[A-Za-z]+$")
     _pop_tok_rx = re.compile(r'"([^"]*)"|(\S+)')
@@ -231,6 +240,8 @@ def _install_cosmos_l3_hook():
         "LOCALPC_L3_WORKSPACE",
         "COSMOS_L3_READONLY_WORKSPACES",
         "COSMOS_L3_SCAN_HOST_SKILLS",
+        "COSMOS_L3_PROTECT_CREDENTIALS",
+        "COSMOS_L3_PROTECT_DOTENV",
         "COSMOS_L3_STATE_ROOT",
         "LOCALPC_L3_STATE_ROOT",
         "COSMOS_L3_ALLOW_TMP",
@@ -604,6 +615,8 @@ def prepare_l3_sandbox_env(
     readonly_workspace_roots: Optional[Sequence[Union[Path, str]]] = None,
     scan_host_global_skills: Optional[bool] = None,
     allow_host_global_skills: Optional[bool] = None,
+    protect_host_credentials: Optional[bool] = None,
+    protect_dotenv_files: Optional[bool] = None,
     restrict_to_workspace: bool = True,
     enable_audit_hook: bool = True,
 ) -> Dict[str, str]:
@@ -634,6 +647,8 @@ def prepare_l3_sandbox_env(
             "LOCALPC_L3_WORKSPACE",
             "COSMOS_L3_READONLY_WORKSPACES",
             "COSMOS_L3_SCAN_HOST_SKILLS",
+            "COSMOS_L3_PROTECT_CREDENTIALS",
+            "COSMOS_L3_PROTECT_DOTENV",
             "COSMOS_L3_ALLOW_TMP",
             "LOCALPC_L3_ALLOW_TMP",
             "COSMOS_L3_STATE_ROOT",
@@ -679,11 +694,16 @@ def prepare_l3_sandbox_env(
     guard_key = _norm_dir_key(str(guard_dir))
     existing_pp = [p for p in (out_env.get("PYTHONPATH") or "").split(sep) if p and _norm_dir_key(p) != guard_key]
 
+    eff_prot_cred = bool(protect_host_credentials) if protect_host_credentials is not None else True
+    eff_prot_dotenv = bool(protect_dotenv_files) if protect_dotenv_files is not None else False
+
     joined_ws = sep.join(resolved_roots)
     out_env["COSMOS_L3_WORKSPACES"] = joined_ws
     out_env["LOCALPC_L3_WORKSPACE"] = resolved_roots[0]
     out_env["COSMOS_L3_READONLY_WORKSPACES"] = sep.join(resolved_ro_roots)
     out_env["COSMOS_L3_SCAN_HOST_SKILLS"] = "1" if eff_scan_skills else "0"
+    out_env["COSMOS_L3_PROTECT_CREDENTIALS"] = "1" if eff_prot_cred else "0"
+    out_env["COSMOS_L3_PROTECT_DOTENV"] = "1" if eff_prot_dotenv else "0"
     out_env["COSMOS_L3_ALLOW_TMP"] = str(tmp_dir)
     out_env["LOCALPC_L3_ALLOW_TMP"] = str(tmp_dir)
     out_env["COSMOS_L3_STATE_ROOT"] = sr_resolved
@@ -758,14 +778,23 @@ def _bootstrap_probe():
     _allowed_imp = tuple(dict.fromkeys(
         os.path.realpath(str(c)).lower().rstrip(_strip) for c in _ro_cands
     ))
-    _sens_rxs = tuple(re.compile(p, re.IGNORECASE) for p in (
-        r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
-        r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
-        r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
+    _prot_cred = bool(payload.get("protect_host_credentials", True))
+    _prot_dotenv = bool(payload.get("protect_dotenv_files", False))
+    _sens_pats = [
         r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
-        r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
-        r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$",
-    ))
+    ]
+    if _prot_cred:
+        _sens_pats.extend([
+            r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
+            r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
+            r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
+            r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
+        ])
+    if _prot_dotenv:
+        _sens_pats.append(
+            r"(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)$)[a-z0-9_.-]+)?$"
+        )
+    _sens_rxs = tuple(re.compile(p, re.IGNORECASE) for p in _sens_pats)
     _ads_rx = re.compile(r"::\$[A-Za-z0-9_]+")
     _ignored_dirs = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build", ".undo_history", "target"}
 
