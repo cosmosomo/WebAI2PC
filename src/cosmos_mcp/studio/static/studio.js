@@ -772,6 +772,8 @@
       "copy-mcp-url-btn",
       "copy-ro-url-btn",
       "copy-chatgpt-full-btn",
+      "open-chatgpt-plugins-full-btn",
+      "open-chatgpt-plugins-ro-btn",
       "copy-chatgpt-assist-ro-btn",
       "copy-chatgpt-assist-full-btn",
     ].forEach(function (btnId) {
@@ -3124,24 +3126,49 @@
       return /^[A-Za-z][A-Za-z0-9_]{0,15}$/.test(raw) ? raw : "pc";
     }
 
-    function buildChatGptConnectPrompt(kind, targetUrl) {
+    var SHOWCASE_PROMPTS = {
+      blackhole: '在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。',
+      holo: '在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。',
+      canyon: '在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。'
+    };
+
+    function buildChatGptConnectPrompt(kind, targetUrl, effTop) {
       var isRo = kind === "readonly";
       var pfx = getEffectiveToolPrefix();
       var statusTool = pfx + "_get_status";
-      var verifyToolDesc = statusTool === "get_status" ? "get_status" : statusTool + "（get_status）";
+      var statusHint =
+        statusTool === "pc_get_status" || statusTool === "get_status"
+          ? "pc_get_status 或 get_status"
+          : statusTool + "（或 pc_get_status / get_status）";
       var targetDesc = isRo
-        ? "ChatGPT Plus / Pro，只读（装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用）"
-        : "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写（装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用）";
+        ? "ChatGPT Plus / Pro，授权后可在 Chat 和 Work 中通过 @WebAI2PC 使用该服务提供的只读工具。"
+        : "ChatGPT Team / Business / Enterprise / Edu 工作区，授权后可在 Chat 和 Work 中通过 @WebAI2PC 使用该服务提供、且工作区允许的读写工具（日常在 Chat 调用不扣 Work / Codex 额度）。";
+      var effSlot = (effTop && effTop.slot) || {};
+      var effMode = String(effSlot.effective_mode || effSlot.submode || (effTop && (effTop.effective_tunnel_mode || effTop.tunnel_mode)) || "https").trim();
+      var gatewayNote = "公网 HTTPS 已就绪（通道：" + effMode + "）";
+      if (effTop && effTop.tunnel_error) {
+        gatewayNote += "；最近提示：" + String(effTop.tunnel_error).trim();
+      }
       return [
-        "【请先在 ChatGPT 顶部切换到 Work 模式再发送；Chat 模式无受控浏览器，无法代填插件页面】",
-        "请帮我把 WebAI2PC 连接到当前 ChatGPT 账号，并验证首次调用。",
-        "请用你的浏览器打开我的 ChatGPT Plugins 页面填写配置；需要我登录或完成授权确认时请让我接管（Take over），或告诉我当前要点哪里。",
+        "请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。",
         "",
         "插件名称：WebAI2PC",
         "MCP 地址：" + targetUrl,
-        "目标：" + targetDesc,
-        "认证：OAuth，由 WebAI2PC 自动协商",
-        "验证：授权并安装插件后调用 " + verifyToolDesc + "，确认能连接到我的电脑。",
+        "认证方式：OAuth",
+        "使用目标：" + targetDesc,
+        "本地控制台通道状态：" + gatewayNote,
+        "",
+        "请按以下顺序执行：",
+        "",
+        "1. 先检查当前工作区是否已经有指向这个 MCP 地址的 WebAI2PC 连接。有就复用，没有就优先用当前会话可用的插件管理、连接或创建工具接入现有 MCP 服务。不要默认打开云浏览器，也不要新建中转服务。只有原生工具无法完成某一步时，才说明卡点和可用的替代入口（例如让我在已登录本机浏览器打开 https://chatgpt.com/plugins 点 ＋ -> 添加自定义 MCP 服务器，或找管理员开启 Create plugins with MCPs 权限）。",
+        "",
+        "2. 使用 OAuth，按服务端实际公布的元数据配置认证。如果需要我选择账号、同意授权，或由工作区管理员批准，请先完成你能做的配置，再把我带到需要操作的那一步。不要让我在聊天里粘贴密码、令牌或授权码。如果自动发现失败，告诉我具体失败在哪一步。",
+        "",
+        "3. 授权并安装后，读取 WebAI2PC 实际公布的工具和参数。找到 " + statusHint + "，用实际参数调用一次，确认是否返回我电脑的主机名和系统。必须通过 WebAI2PC 调用，旧插件的结果或历史状态不能作为这次验收结果。",
+        "",
+        "4. 最后分别告诉我：连接是否创建或复用、OAuth 是否完成、状态工具是否真实调用成功、在哪个模式完成验证。能分别在 Chat 和 Work 验证就分别验证，无法验证的模式标为未验证。列出已发现的工具和已知权限限制，首次验收只读状态，不改文件或系统设置。",
+        "",
+        "请直接执行你能完成的步骤。只有遇到必须由我操作的步骤时才暂停，并告诉我在哪个页面、点哪个按钮。最后附上插件链接（如果有）和实际工具调用结果。",
       ].join("\n");
     }
 
@@ -3159,7 +3186,24 @@
       });
     }
 
-    // ChatGPT One-Click Guided Connect Prompt Copy Buttons (strictly enabled only when public HTTPS gateway is ready; zero secrets/paths)
+    // Primary ChatGPT Action: Copy URL & Synchronously Open Logged-In Local Browser `https://chatgpt.com/plugins`
+    document.querySelectorAll("[data-open-chatgpt-plugins]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var kind = btn.getAttribute("data-open-chatgpt-plugins");
+        var effTop = resolveEffectiveTopView(state.connection || {});
+        var targetUrl = kind === "readonly" ? effTop.readonly_mcp_url || "" : effTop.mcp_url || "";
+        if (!effTop.public_https_ready || !isSafeHttpsUrl(targetUrl)) {
+          showToast("网关尚未就绪，请等待公网 HTTPS 地址生成后再操作。", true);
+          return;
+        }
+        window.open("https://chatgpt.com/plugins", "_blank", "noopener");
+        copyText(targetUrl, btn);
+        showToast("已复制连接地址并打开 ChatGPT 插件页：点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，粘贴地址后点「本机一键允许连接」", false);
+        probeWorkersDevReachabilitySilent();
+      });
+    });
+
+    // Secondary ChatGPT Action: Copy Zero-Secret Diagnostic Prompt when encountering connection/permission issues
     document.querySelectorAll("[data-copy-chatgpt-assist]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var kind = btn.getAttribute("data-copy-chatgpt-assist");
@@ -3169,9 +3213,28 @@
           showToast("网关尚未就绪，请等待公网 HTTPS 地址生成后再复制。", true);
           return;
         }
-        var connectPrompt = buildChatGptConnectPrompt(kind, targetUrl);
+        var connectPrompt = buildChatGptConnectPrompt(kind, targetUrl, effTop);
         copyText(connectPrompt, btn);
-        showToast("已复制连接请求，请切换到 ChatGPT 顶部的 Work 模式粘贴发送（不含配对码与本机路径）", false);
+        showToast("已复制 ChatGPT 接入与排障指令（可直接发给 ChatGPT 执行，不含配对码与本机路径）", false);
+      });
+    });
+
+    // One-Shot Showcase Prompt Copy Buttons (auto-adapts `@Cosmos` vs `@WebAI2PC` based on active host scene tab)
+    document.querySelectorAll("[data-copy-showcase]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var caseKey = btn.getAttribute("data-copy-showcase") || "";
+        var bodyText = SHOWCASE_PROMPTS[caseKey] || "";
+        if (!bodyText) return;
+        var isCgptScene = Boolean($("host-panel-chatgpt") && $("host-panel-chatgpt").classList.contains("active"));
+        var prefix = isCgptScene ? "@WebAI2PC " : "@Cosmos ";
+        var fullPrompt = prefix + bodyText;
+        copyText(fullPrompt, btn);
+        showToast(
+          isCgptScene
+            ? "已复制 " + "@WebAI2PC 实机案例提示词（可直接粘贴到 ChatGPT 普通 Chat 模式运行，零扣 Work/Codex 额度）"
+            : "已复制 " + "@Cosmos 实机案例提示词，直接粘贴到网页版 Gemini 发送即可本地生成运行",
+          false
+        );
       });
     });
 

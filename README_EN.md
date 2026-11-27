@@ -40,7 +40,7 @@
 2. **Launch & Copy URL**: Double-click `一键启动_Cosmos_MCP.bat` on Windows (or run `./start_cosmos_mcp.sh` on macOS / Linux). The local console opens at `http://127.0.0.1:8096/` with a ready-to-use `https://<domain>/mcp` endpoint.
 3. **Paste into Web AI Connectors & Allow** (**do NOT open the `/mcp` URL directly in your browser address bar**):
    - **Web Gemini**: Open [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) (or bottom-left menu `Personal Intelligence -> Connected Apps`), click `+ Custom`, paste `https://<domain>/mcp` into **`MCP Server URL`**, click `Next` to approve OAuth 2.1, then set `App actions` to `Always allow`. Start a chat with `@Cosmos`; your same-account mobile Gemini App syncs automatically.
-   - **Web ChatGPT (`Work` to auto-connect · `Chat` for daily coding)**: For first-time setup, once the gateway is ready in Studio, click **`复制给 Work 模式帮我连接` (Copy for Work Mode to Connect)** and send it in ChatGPT **`Work` mode** so its controlled browser fills the `Plugins` form (`Chat` mode has no controlled browser and can only reply with text steps; `Take over` in the web `Work` cloud browser prompts for the 6-digit pairing code shown in Studio), or manually open `Plugins -> + -> Add custom MCP server` in your local browser, add `/mcp` (Workspace full access) or `/mcp/readonly` (Personal Plus / Pro read-only) as `WebAI2PC`, approve via 1-click local loopback, and click `Install`. Once installed, both modes share `@WebAI2PC`: switch back to **`Chat` mode** for fast daily coding, Office edits, and tests without burning `Work / Codex` quota, or use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
+   - **Web ChatGPT (1-click in logged-in browser · `Chat` for daily coding)**: Once the gateway is ready in Studio, click **`复制地址并打开 ChatGPT 插件页` (Copy URL & Open ChatGPT Plugins)** to open `https://chatgpt.com/plugins` in your logged-in local browser -> click `+ -> Add custom MCP server`, enter `WebAI2PC` with `OAuth`, paste `/mcp` (Workspace full access) or `/mcp/readonly` (Personal Plus / Pro read-only), click **`本机一键允许连接` (1-click local allow)** on the consent page, and click **`Install`** (if you hit a connection or `403` permission issue, click **`复制给 ChatGPT 接入 / 排障` (Copy for ChatGPT Setup / Diagnostics)**). Once installed, both modes share `@WebAI2PC`: use everyday **`Chat` mode** for fast local coding, Office edits, and tests without burning `Work / Codex` quota, and use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
 
 ### Let Your AI Agent Set It Up for You
 
@@ -52,12 +52,49 @@ Please install and configure https://github.com/cosmosomo/WebAI2PC for me. First
 
 > Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md) right at the top of the README.
 
+## One-Shot Local Showcase · Copy & Run
+
+<p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC One-Shot Local 3D Showcase Wall" width="100%" /></p>
+
+With zero external textures, libraries, or CDNs, prepend `@Cosmos ` in Web Gemini or `@WebAI2PC ` in everyday Web ChatGPT `Chat` mode (`$0` extra API bills and zero `Work / Codex` quota usage) to generate and run these offline WebGL2 projects at 60fps directly inside your local workspace folder:
+
+| Case | Local Output | What Runs Locally at 60fps |
+| :- | :- | :- |
+| **01 Black Hole Gravitational Lensing** | Single file `blackhole_studio.html` | Raw WebGL2 (GLSL 300) real-time raymarching with glowing accretion disk & Einstein ring, 3 camera presets, and 4 live physics sliders |
+| **02 Periodic Table Holo Cards** | Single file `gemini_holo_cards.html` | Procedural Canvas + WebGL2 thin-film interference metallic foil for `06 C / 01 H / 10 Ne`, spring 3D tilt, 180° flip, and 3 lighting presets |
+| **03 Neon Canyon 3D Low-Altitude Flight** | 5-file project `neon_canyon/` | Generates `index.html`, `styles.css`, `terrain.js`, `audio.js`, and `game.js` with synthwave wireframe canyon, boost rings, Web Audio synth SFX, and keyboard/mouse flight |
+
+<details>
+<summary><strong>Click to expand 1-click copyable prompts (prepend <code>@Cosmos </code> in Gemini or <code>@WebAI2PC </code> in ChatGPT Chat mode)</strong></summary>
+
+**01 Black Hole Gravitational Lensing (`blackhole_studio.html`)**
+
+```text
+@Cosmos Build a pure offline single-file blackhole_studio.html in the current workspace using raw WebGL2 (GLSL 300) real-time raymarching to render a black hole with a glowing accretion disk and gravitational lensing; add left-drag orbit and wheel zoom, plus a clean translucent control panel with 3 camera presets (Top Disk / Skim Horizon / Ring Flyby) and 4 real-time sliders (mass, spin, disk brightness, time scale), then launch and verify zero console errors locally.
+```
+
+**02 Periodic Table Holo Cards (`gemini_holo_cards.html`)**
+
+```text
+@Cosmos Build a pure offline single-file gemini_holo_cards.html in the current workspace using raw WebGL2 and procedural Canvas to render 3 thin-film interference metallic 3D collector cards for 06 C (Carbon), 01 H (Hydrogen), and 10 Ne (Neon); include spring 3D hover tilt and parallax, click-to-flip 180 degrees, a top toggle between Row Spread and Single Focus, and 3 ambient color-temperature presets with zero external images or CDNs, then open and verify locally.
+```
+
+**03 Neon Canyon 3D Low-Altitude Flight (`neon_canyon/`)**
+
+```text
+@Cosmos Create a neon_canyon folder in the current workspace with a 5-file structure (index.html, styles.css, terrain.js, audio.js, game.js) for a pure offline raw WebGL2 3D low-altitude flight game: synthwave sunset and neon wireframe canyon, boost/combo energy rings, red hazard pylons and canyon walls, real-time Web Audio engine and ring SFX, automatic WASD/arrow and mouse steering switch, HUD for score/high score/combo/airspeed/FPS plus pause and restart buttons, then run and verify zero console errors locally.
+```
+
+> In Web ChatGPT everyday `Chat` mode, simply replace `@Cosmos ` with `@WebAI2PC ` (or click the 1-click showcase copy buttons in the local Studio console, which switch prefixes automatically).
+
+</details>
+
 ## Supported Web Hosts
 
 | Web Host | Account Requirement & Mode Split | Endpoint |
 | :- | :- | :- |
 | **Web Google Gemini & Mobile App** | 18+ Google AI Pro / Ultra or Workspace with custom connectors enabled | `https://<domain>/mcp` (Full) |
-| **Web ChatGPT (Workspace)** | Team / Business / Enterprise / Edu (connect via `Work` browser or manual `Plugins`; daily `@WebAI2PC` in `Chat` uses zero `Work / Codex` quota, `Work` for multi-app & scheduled tasks) | `https://<domain>/mcp` (Full) |
+| **Web ChatGPT (Workspace)** | Team / Business / Enterprise / Edu (1-click setup via `chatgpt.com/plugins`; daily `@WebAI2PC` in `Chat` uses zero `Work / Codex` quota, `Work` for multi-app & scheduled tasks) | `https://<domain>/mcp` (Full) |
 | **Web ChatGPT (Personal)** | Personal Plus / Pro (when custom MCP servers are restricted to `read/fetch`; shared across `Chat` & `Work` once installed) | `https://<domain>/mcp/readonly` (Read-only) |
 
 ## Local Visual Console

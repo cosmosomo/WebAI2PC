@@ -1,15 +1,15 @@
 # 02. 网页版 ChatGPT 工作区与个人只读接入教程
 
-本教程说明如何将本地 WebAI2PC（Cosmos MCP `v1.2.1`）接入网页版 ChatGPT，明确拆解 **`Work` 模式与 `Chat` 模式在「首次代连」与「装好后日常干活」两阶段的能力差异**，涵盖工作区账号与个人 `Plus / Pro` 订阅账号的端点选择、控制台「复制给 Work 模式帮我连接」门禁与代办边界、云端浏览器与本机浏览器授权页差异、[RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离机制、`stateless_http` 无状态会话保持及常见报错处理。
+本教程说明如何将本地 WebAI2PC（Cosmos MCP `v1.2.1`）接入网页版 ChatGPT，明确拆解**本机已登录浏览器插件页直绑**与**装好后 `Chat` / `Work` 模式日常干活分工**，涵盖工作区账号与个人 `Plus / Pro` 订阅账号的端点选择、控制台主按钮 **「复制地址并打开 ChatGPT 插件页」** 与旁侧 **「复制给 ChatGPT 接入 / 排障」** 的就绪门禁与零密钥边界、为什么旧 `ChatGPT Sites` 发布自动派生插件无需外部权限而对话内用 ZIP 新建外部 MCP 私有插件会报 `403`、[RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离机制、`stateless_http` 无状态会话保持及常见报错处理。
 
-## 一、两阶段能力边界：首次代连找 `Work` 模式，日常干活优先 `Chat` 模式
+## 一、两阶段能力边界：本机已登录浏览器直绑最快，日常干活优先 `Chat` 模式
 
-根据 OpenAI 官方文档（[Browser 受控浏览器说明](https://learn.chatgpt.com/docs/browser)、[Chrome 浏览器扩展说明](https://learn.chatgpt.com/docs/chrome-extension)、[ChatGPT 使用指南](https://learn.chatgpt.com/docs/use-chatgpt)、[自定义 MCP 连接指南](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) 与 [ChatGPT Work 与 Codex 额度说明](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex)），`Work` 模式与 `Chat` 模式在连接阶段和日常调用阶段职责不同：
+根据 OpenAI 官方文档（[Browser 受控浏览器说明](https://learn.chatgpt.com/docs/browser)、[Chrome 浏览器扩展说明](https://learn.chatgpt.com/docs/chrome-extension)、[ChatGPT 使用指南](https://learn.chatgpt.com/docs/use-chatgpt)、[自定义 MCP 连接指南](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) 与 [ChatGPT Work 与 Codex 额度说明](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex)）及真机实测，`Work` 模式与 `Chat` 模式在连接阶段和日常调用阶段职责不同：
 
-1. **阶段一：首次添加/代填自定义 MCP 插件（谁能帮用户连）**
-   - **`Chat` 模式无法代填新插件**：`Chat` 模式没有受控浏览器（无云端 Browser，也不支持桌面端 `@Chrome` 浏览器扩展与 Computer Use），把连接请求发给 `Chat` 模式无法操作 `chatgpt.com/plugins` 页面，只能回复文字步骤供用户手动点击。
-   - **只有 `Work` 模式能操作浏览器代填配置**：网页版 `Work` 模式自带云端受控浏览器，支持打开 `Plugins` 页面填写表单；遇到登录或 `/consent` 授权确认时支持用户点 `Take over` 接管操作，完成后点 `Return control` 交回；桌面版 `Work` 还支持通过浏览器扩展 `@Chrome` / `@Edge` 操作本机已登录标签页。
-   - **云端受控浏览器与本机浏览器的授权页差异**：若用户在网页版 `Work` 的云端浏览器里点 `Take over` 打开 `/consent` 授权页，因该浏览器运行在 OpenAI 云端不在本机，无法访问本机 `127.0.0.1` 回环，授权页会提示输入本地控制台显示的 `6` 位动态配对码；若在本机浏览器手动打开 `Plugins -> + -> Add custom MCP server`（或桌面版 `Work` 调本机浏览器扩展），跳转 `/consent` 命中 `127.0.0.1` 回环，首屏直接点「本机一键允许连接」。
+1. **阶段一：首次添加自定义 MCP 插件（为什么本机浏览器直绑最快、为什么不要传外部 MCP ZIP）**
+   - **首选在已登录本机浏览器直绑（免重登 Google、免配对码）**：网关就绪后点击本地控制台主按钮 **「复制地址并打开 ChatGPT 插件页」**，直接在你当前已登录 ChatGPT 的本机浏览器打开 `https://chatgpt.com/plugins` -> `＋ -> 添加自定义 MCP 服务器`（`Add custom MCP server`），名称填 `WebAI2PC`、认证选 `OAuth`、粘贴地址创建并点 `Install`。跳转 `/consent` 授权页时命中同机 `127.0.0.1` 回环，首屏直接点「本机一键允许连接（免输口令）」即可完成，无需搭建 `ChatGPT Sites` 中转，也避开了网页版 `Work` 模式云端隔离浏览器未登录需重过 Google 登录墙及无 `127.0.0.1` 回环的问题。
+   - **实证对比：为什么旧 `ChatGPT Sites` 自动生成的插件无需外部 MCP 权限，而对话内 `@Plugin Creator` 用 ZIP 新建私有插件会报 `403`**：发布 `ChatGPT Sites` 时平台自动派生的插件连接的是同域受托端点（`*.chatgpt.site/mcp`），不走外部自定义 MCP 权限校验；而在聊天对话内让 `@Plugin Creator` 用 ZIP 新建绑定外部自定义 MCP 地址（如 `*.srv.us/mcp` 或 `*.workers.dev/mcp`）的私有插件受工作区外部 MCP 策略独立管控，未开启权限时会直接触发平台 `403`（`没有使用带 MCP 的插件权限`）拒绝。排查时应先在已登录本机浏览器打开 `https://chatgpt.com/plugins` 点 `＋ -> 添加自定义 MCP 服务器` 验证网页直绑路径；若网页端同样看不到该入口或仍报 `403`，再联系工作区管理员开启 **`Create plugins with MCPs`** 权限。
+   - **委托探测或排障点「复制给 ChatGPT 接入 / 排障」**：该指令引导 ChatGPT 直接使用当前会话的原生插件管理/连接工具检查复用、协商 OAuth 元数据并调用 `pc_get_status` 核验（默认不拉起未登录云浏览器，也不新建中转服务，无需预设必须切到 `Work` 模式）；仅在若改用网页版 `Work` 云端浏览器 `Take over` 打开 `/consent` 授权页时才需手动填入本地控制台显示的 `6` 位动态配对码。
 2. **阶段二：插件绑定安装完成后的日常调用（谁能调 `@WebAI2PC` 干活）**
    - 插件在 `Plugins` 创建并点 `Install` 安装完成后，同账号下 **`Chat` 模式与 `Work` 模式共享该已安装插件**，均可输入 `@WebAI2PC` 调用本机 MCP 工具：
    - **`Chat` 模式调 `@WebAI2PC`（日常本地开发首选）**：适合日常查改本地代码、原样修订 Word / Excel、跑无窗口命令与 Python 测试；响应快，走普通对话限额，**完全不扣减 `Work / Codex` 共享的智能体 Token 额度**。
@@ -31,39 +31,48 @@ OpenAI 平台按**账号订阅档位**区分未上架自建远程 MCP 服务器�
 4. `pc_workspace_memory`：仅保留 `read` 与 `search` 读取跨会话交接记录（隐藏写入记录）。
 5. `pc_skill_manage`：仅保留 `list` 与 `trash_list` 列出技能清单（隐藏创建、安装与启停）。
 
-## 二、两种绑定路径：切 `Work` 模式代填连接 vs 本机浏览器手动添加
+## 二、标准直绑流程与零密钥排障协助
 
-### 方式 A：网关就绪后点「复制给 Work 模式帮我连接」切到 `Work` 模式发送
+### 方式 A（推荐首选）：网关就绪后点「复制地址并打开 ChatGPT 插件页」在本机浏览器直绑
 
-本地控制台（`http://127.0.0.1:8096/` 切到 `网页版 ChatGPT` 页签，或打开 `/tutorials` 第 2 章）在**公网 HTTPS 网关就绪后**开放 **「复制给 Work 模式帮我连接」** 按钮，自动填入当前实际可用的 `/mcp` 或 `/mcp/readonly` 地址与目标说明（以 `Plus / Pro` 只读为例）：
-
-```text
-【请先在 ChatGPT 顶部切换到 Work 模式再发送；Chat 模式无受控浏览器，无法代填插件页面】
-请帮我把 WebAI2PC 连接到当前 ChatGPT 账号，并验证首次调用。
-请用你的浏览器打开我的 ChatGPT Plugins 页面填写配置；需要我登录或完成授权确认时请让我接管（Take over），或告诉我当前要点哪里。
-
-插件名称：WebAI2PC
-MCP 地址：https://<本机生成的实际域名>/mcp/readonly
-目标：ChatGPT Plus / Pro，只读（装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用）
-认证：OAuth，由 WebAI2PC 自动协商
-验证：授权并安装插件后调用 pc_get_status（get_status），确认能连接到我的电脑。
-```
-
-**信息最小化与双模式代办边界**：
-- **零敏感凭据外发**：复制文本仅包含可用 HTTPS 地址与配置说明，**严禁写入配对码、连接口令、令牌或本机文件路径**。
-- **必须发给 `Work` 模式才能操作浏览器代填**：网页版 `Work` 模式通过云端受控浏览器打开 `Plugins` 填写配置（桌面版 `Work` 也可通过 `@Chrome` / `@Edge` 浏览器扩展操作本机标签页）；若误粘到 `Chat` 模式，因 `Chat` 无受控浏览器，仅能输出文字步骤供手动点击。
-- **本人接管完成授权并点 `Install`**：遇到账号登录或 `/consent` 授权确认时，在网页版 `Work` 云端浏览器点击 `Take over` 接管并填入本地控制台显示的 `6` 位动态配对码（因云端浏览器不在本机），完成后点 `Return control` 交回并点击 `Install` 安装插件，最终以 **`pc_get_status` 实际调用成功**作为接通标准。
-
-### 方式 B：在本机浏览器手动打开 `Plugins` 添加并一键允许
-
-1. **复制对应地址（勿直接浏览器打开）**：在本地控制台 `网页版 ChatGPT` 页签等待网关就绪，工作区账号点 `复制地址`（`https://<域名>/mcp`），个人 `Plus / Pro` 只读点 `复制只读`（`https://<域名>/mcp/readonly`）。**不要把这个地址粘贴到浏览器地址栏里打开**，而是粘贴到下一步 ChatGPT 的自定义 MCP 配置栏中。
-2. **创建并安装插件**：在本机浏览器打开网页版 ChatGPT 左侧栏 **`Plugins -> + -> Add custom MCP server`**（无需开启旧版 `Developer Mode`），名称填写 `WebAI2PC`，`Connection` 粘贴上一步复制的 HTTPS 地址，认证保持 `OAuth`（服务端通过动态客户端注册自动协商，无需手动填写 Client ID 或密钥），勾选风险提示确认框后点击 **`Create as a plugin`**，并在插件列表中点击 **`Install`（安装）**。
+1. **一键复制地址并打开插件页（勿直接浏览器打开 `/mcp`）**：在本地控制台 `网页版 ChatGPT` 页签（或 `/tutorials` 第 2 章）等待网关就绪，工作区账号点击全功能栏的 **「复制地址并打开 ChatGPT 插件页」**（自动复制 `https://<域名>/mcp`），个人 `Plus / Pro` 只读点击只读栏的 **「复制地址并打开 ChatGPT 插件页」**（自动复制 `https://<域名>/mcp/readonly`；也可点 `仅复制地址` / `仅复制只读`）。**不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开**。
+2. **添加自定义 MCP 服务器并点 `Install`**：在自动打开的已登录本机浏览器 `https://chatgpt.com/plugins` 页面点击 **`＋ -> 添加自定义 MCP 服务器`**（`Add custom MCP server`，无需开启旧版 `Developer Mode`），名称填写 `WebAI2PC`，`Connection` 粘贴刚才复制的 HTTPS 地址，认证保持 `OAuth`（服务端通过动态客户端注册自动协商，无需手动填写 Client ID 或密钥），勾选确认框创建插件，并在插件列表中点击 **`Install`（安装）**。
 3. **同机浏览器 800ms 回环一键允许**：本机浏览器跳转到 `/consent` 授权页时，会在 `800ms` 内通过 `127.0.0.1` 回环桥接接口（`/oauth/local-bridge`）校验网关签名票据与 `Origin`，首屏直接展示 **「本机一键允许连接（免输口令）」**；异地浏览器、网页版 `Work` 云端浏览器或开启严格本地网络拦截的浏览器会自动展开输入框，填入本地控制台显示的 `6` 位动态配对码（或 `20` 位备用口令）即可完成授权。
 4. **装好后切回 `Chat` 模式（或按需在 `Work` 模式）输入 `@WebAI2PC` 验证**：日常改代码跑脚本推荐新建 **`Chat` 模式**对话（不扣 `Work / Codex` 额度；跨应用长程交付与定时任务新建 `Work` 模式对话），在输入框键入 `@WebAI2PC` 选中插件，发送验证指令：
    ```text
    @WebAI2PC 请调用 pc_get_status 确认连接状态，并查看当前开放的工作目录与文件结构。
    ```
    写操作默认弹出确认卡片，在同一对话中可勾选记住批准，避免同会话后续步骤重复弹窗；长耗时命令（超过 `20` 秒）会自动转为 `pc_bg_command` 后台任务返回 `job_id` 供分段轮询。
+
+### 方式 B（让 ChatGPT 原生探测接入 / 排障）：点击旁侧「复制给 ChatGPT 接入 / 排障」
+
+本地控制台在公网 HTTPS 网关就绪后同步开放 **「复制给 ChatGPT 接入 / 排障」** 按钮，生成经真机验证的 4 步指令（无需预设切换到 `Work` 模式，引导 ChatGPT 优先使用当前会话原生插件管理/连接工具探测并核验，以工作区 `/mcp` 为例）：
+
+```text
+请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。
+
+插件名称：WebAI2PC
+MCP 地址：https://<本机生成的实际域名>/mcp
+认证方式：OAuth
+使用目标：ChatGPT Team / Business / Enterprise / Edu 工作区，授权后可在 Chat 和 Work 中通过 @WebAI2PC 使用该服务提供、且工作区允许的读写工具（日常在 Chat 调用不扣 Work / Codex 额度）。
+本地控制台通道状态：公网 HTTPS 已就绪（通道：srv_us）
+
+请按以下顺序执行：
+
+1. 先检查当前工作区是否已经有指向这个 MCP 地址的 WebAI2PC 连接。有就复用，没有就优先用当前会话可用的插件管理、连接或创建工具接入现有 MCP 服务。不要默认打开云浏览器，也不要新建中转服务。只有原生工具无法完成某一步时，才说明卡点和可用的替代入口（例如让我在已登录本机浏览器打开 https://chatgpt.com/plugins 点 ＋ -> 添加自定义 MCP 服务器，或找管理员开启 Create plugins with MCPs 权限）。
+
+2. 使用 OAuth，按服务端实际公布的元数据配置认证。如果需要我选择账号、同意授权，或由工作区管理员批准，请先完成你能做的配置，再把我带到需要操作的那一步。不要让我在聊天里粘贴密码、令牌或授权码。如果自动发现失败，告诉我具体失败在哪一步。
+
+3. 授权并安装后，读取 WebAI2PC 实际公布的工具和参数。找到 pc_get_status 或 get_status，用实际参数调用一次，确认是否返回我电脑的主机名和系统。必须通过 WebAI2PC 调用，旧插件的结果或历史状态不能作为这次验收结果。
+
+4. 最后分别告诉我：连接是否创建或复用、OAuth 是否完成、状态工具是否真实调用成功、在哪个模式完成验证。能分别在 Chat 和 Work 验证就分别验证，无法验证的模式标为未验证。列出已发现的工具和已知权限限制，首次验收只读状态，不改文件或系统设置。
+
+请直接执行你能完成的步骤。只有遇到必须由我操作的步骤时才暂停，并告诉我在哪个页面、点哪个按钮。最后附上插件链接（如果有）和实际工具调用结果。
+```
+
+**信息最小化与原生探测边界**：
+- **零敏感凭据外发**：复制文本仅包含可用 HTTPS 地址、通道状态与 4 步执行顺序，**严禁写入配对码、连接口令、令牌或本机文件路径**。
+- **优先会话原生工具探测，不默认拉起云浏览器或建中转服务**：引导 ChatGPT 先检查复用或用原生插件连接工具探测 OAuth 元数据，遇到需用户授权或工作区 `403` 卡点时精准停在对应步骤并给出 `https://chatgpt.com/plugins` 本机直绑或开启 `Create plugins with MCPs` 权限指引。
 
 ## 三、RFC 8707 受众隔离与 stateless_http 免重复弹窗机制
 
@@ -74,9 +83,10 @@ MCP 地址：https://<本机生成的实际域名>/mcp/readonly
 
 | 报错现象或状态码 | 产生原因 | 排查与解决步骤 |
 | :- | :- | :- |
-| **「复制给 Work 模式帮我连接」按钮置灰不可点** | 本地尚未开启公网 HTTPS 通道，或通道正在握手中 | 点击顶部连接卡「一键开启默认连接网关」（或前往 `#settings/gateways` 打开任一通道开关），待地址栏显示真实 `https://` 地址后按钮自动开放 |
-| **把连接请求发给 ChatGPT 后只回复文字步骤未自动填表** | 当前处于 `Chat` 模式（无受控浏览器，无法操作 `chatgpt.com/plugins`） | 在 ChatGPT 顶部切换到 `Work` 模式重新粘贴发送，或直接按文字步骤在本机浏览器左侧 `Plugins -> + -> Add custom MCP server` 手动创建并安装 |
-| **在网页版 `Work` 云端浏览器 `Take over` 打开授权页提示输配对码** | 网页版 `Work` 的受控浏览器运行在 OpenAI 云端不在本机，无法命中本机 `127.0.0.1` 回环 | 展开本地控制台首页 `配对与已连会话`，复制 `6` 位动态配对码填入云端浏览器授权页，完成后点 `Return control` 交回即可 |
+| **「复制地址并打开 ChatGPT 插件页」与「复制给 ChatGPT 接入 / 排障」按钮置灰不可点** | 本地尚未开启公网 HTTPS 通道，或通道正在握手中 | 点击顶部连接卡「一键开启默认连接网关」（或前往 `#settings/gateways` 打开任一通道开关），待地址栏显示真实 `https://` 地址后按钮自动开放 |
+| **对话内让 `@Plugin Creator` 传 ZIP 新建插件报 `403`（`没有使用带 MCP 的插件权限`），但旧 `ChatGPT Sites` 插件却能自动生成** | 旧 `ChatGPT Sites` 发布自动生成的插件绑定平台同域 `*.chatgpt.site/mcp`，无需外部自定义 MCP 权限；而用 ZIP 新建绑定外部域名（如 `*.srv.us/mcp`、`*.workers.dev/mcp`）的私有插件受外部 MCP 权限策略拦截 | 不要用 ZIP 上传外部 MCP 私有插件：先在已登录本机浏览器打开 `https://chatgpt.com/plugins` 点 `＋ -> 添加自定义 MCP 服务器` 粘贴地址验证网页直绑路径；若网页端同样无添加入口或仍报 `403`，请联系工作区管理员开启 **`Create plugins with MCPs`** 权限 |
+| **需要 AI 操作浏览器代填时只回复文字步骤** | 当前处于 `Chat` 模式（无受控浏览器，无法操作页面） | 优先直接点控制台「复制地址并打开 ChatGPT 插件页」在本机浏览器粘贴完成；若确需受控浏览器代填，在 ChatGPT 顶部切到 `Work` 模式发送 |
+| **在网页版 `Work` 云端浏览器 `Take over` 打开授权页提示输配对码或提示重登账号** | 网页版 `Work` 的受控浏览器是运行在 OpenAI 云端的独立未登录会话，既无本机登录态也无法访问本机 `127.0.0.1` 回环 | 推荐改在本机已登录浏览器打开 `https://chatgpt.com/plugins` 直绑（免输码）；若继续在云端浏览器授权，展开本地控制台首页 `配对与已连会话` 复制 `6` 位动态配对码填入，完成后点 `Return control` 交回 |
 | **HTTP 401 Unauthorized / 提示重新授权** | 在本地控制台点击过「全部断开」、更换了临时隧道域名（如重启后 `*.trycloudflare.com` 变更），或重置了状态目录密钥 | 若临时域名已变，在 `Plugins` 打开 `WebAI2PC` 更新 URL（推荐升级 Cloudflare `*.workers.dev` 固定网关）；若固定域名未变，重新触发一次连接并点「本机一键允许连接」 |
 | **开启扩展包或改前缀后未看到新工具** | ChatGPT 缓存了创建或会话初始化时的工具元数据快照 | 前往 `ChatGPT Plugins` 打开 `WebAI2PC` 详情点击 **Refresh（刷新）**（工作区已发布应用需管理员在工作区插件设置刷新），随后**新建对话**再输入 `@WebAI2PC` |
 | **个人 Plus / Pro 账号测试 `/mcp` 时写操作被平台拦截** | 当前账号受 OpenAI 平台策略限制，自建 MCP 仅放行 `read/fetch` 工具 | 将连接地址改为只读端点 `https://<域名>/mcp/readonly` 重新保存并完成一次授权 |

@@ -40,7 +40,7 @@
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`。
 3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开**）：
    - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
-   - **网页版 ChatGPT（首次代连找 `Work`，日常干活用 `Chat`）**：首次添加插件时，在控制台网关就绪后点 **「复制给 Work 模式帮我连接」** 切换到 ChatGPT 顶部 `Work` 模式发送由受控浏览器代填（网页版 `Work` 云端浏览器内点 `Take over` 打开授权页需输控制台 `6` 位动态配对码；`Chat` 模式无受控浏览器不能自动代连），或在本机浏览器左侧 `Plugins -> + -> Add custom MCP server` 填入 `/mcp`（工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 只读）创建并点 `Install` 安装 `WebAI2PC`（本机浏览器授权页直接点「本机一键允许连接」）。装好后同账号互通：日常改代码修文档切回 `Chat` 模式发 `@WebAI2PC`（响应快，不扣 `Work / Codex` 额度），跨应用长程交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证。
+   - **网页版 ChatGPT（本机插件页直绑最快，日常干活用 `Chat` 省额度）**：首选在控制台网关就绪后点 **「复制地址并打开 ChatGPT 插件页」**，在已登录本机浏览器打开 `https://chatgpt.com/plugins` -> `＋ -> 添加自定义 MCP 服务器`（`Add custom MCP server`），名称填 `WebAI2PC`、认证选 `OAuth`，粘贴 `/mcp`（工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 只读），在授权页点「本机一键允许连接」并点击 `Install` 安装（遇到连接或 `403` 权限问题点旁侧 **「复制给 ChatGPT 接入 / 排障」**；装好后日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证）。
 
 ### 懒得自己装？复制一句话发给你的 AI / Agent 帮你配好
 
@@ -52,12 +52,49 @@
 
 > 就算只把仓库链接 `https://github.com/cosmosomo/WebAI2PC` 直接发给上述 Agent 说“帮我装这个”，它们打开首页第一屏也能直接定位到 [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)。
 
+## 一句话实机效果 · 复制提示词即刻复现
+
+<p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC 一句话生成本地离线 3D 案例墙" width="100%" /></p>
+
+连好后无需外部图片、第三方库或 CDN，网页版 Gemini 开头加 `@Cosmos `、网页版 ChatGPT 普通 `Chat` 模式开头加 `@WebAI2PC `（`$0` 额外 API 费，零消耗 `Work / Codex` 额度），即可在本地工作目录直接生成文件并 60fps 运行（本地控制台首页与 `/tutorials` 第 4 章均支持一键复制）：
+
+| 案例 | 本地生成产物 | 实机运行内容 |
+| :- | :- | :- |
+| **01 黑洞引力透镜仿真** | 单文件 `blackhole_studio.html` | 原生 WebGL2（GLSL 300）实时光线步进渲染发光吸积盘与引力透镜，带「俯瞰盘面 / 掠过视界 / 穿越光环」三组机位与 4 项实时物理滑块，离线 60fps |
+| **02 元素全息金属典藏卡** | 单文件 `gemini_holo_cards.html` | 程序化 Canvas + 原生 WebGL2 薄膜干涉反光，`06 C / 01 H / 10 Ne` 三张 3D 典藏卡支持悬停弹簧倾角、点击 180° 翻转与三档色温环境光，离线 60fps |
+| **03 霓虹峡谷 3D 低空飞行** | 5 文件工程 `neon_canyon/` | 自动生成 `index.html`、`styles.css`、`terrain.js`、`audio.js`、`game.js`，含合成波线框峡谷、穿环加速连击、Web Audio 实时合成音效与键鼠切换，离线 60fps |
+
+<details>
+<summary><strong>点击展开 3 个案例的一键复制提示词（Gemini 用 <code>@Cosmos </code> · ChatGPT 普通 Chat 模式用 <code>@WebAI2PC </code>）</strong></summary>
+
+**01 黑洞引力透镜仿真 (`blackhole_studio.html`)**
+
+```text
+@Cosmos 在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。
+```
+
+**02 元素全息金属典藏卡 (`gemini_holo_cards.html`)**
+
+```text
+@Cosmos 在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。
+```
+
+**03 霓虹峡谷 3D 低空飞行 (`neon_canyon/`)**
+
+```text
+@Cosmos 在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。
+```
+
+> 在网页版 ChatGPT 普通 `Chat` 模式运行时，把开头的 `@Cosmos ` 换成 `@WebAI2PC ` 即可（控制台首页「一句话实机效果」折叠栏支持按当前 Gemini / ChatGPT 页签自动切换前缀复制）。
+
+</details>
+
 ## 支持宿主范围
 
 | 目标网页宿主 | 账号条件与模式分工 | 连接端点 |
 | :- | :- | :- |
 | **网页版 Google Gemini & 手机 App** | 年满 18 岁的 Google AI Pro / Ultra 或已开连接器权限的 Workspace 账号 | `https://<域名>/mcp`（全功能） |
-| **网页版 ChatGPT（工作区账号）** | Team / Business / Enterprise / Edu（首次代连用 `Work` 或本机手动装插件；装好后日常用 `Chat` 零扣 `Work / Codex` 额度，长程/定时任务用 `Work`） | `https://<域名>/mcp`（全功能） |
+| **网页版 ChatGPT（工作区账号）** | Team / Business / Enterprise / Edu（本机插件页 `chatgpt.com/plugins` 一键允许安装；装好后日常用 `Chat` 零扣 `Work / Codex` 额度，长程/定时任务用 `Work`） | `https://<域名>/mcp`（全功能） |
 | **网页版 ChatGPT（个人订阅账号）** | 个人 Plus / Pro（平台对自建 MCP 仅开放 `read/fetch` 时绑此地址；装好后 `Chat` 与 `Work` 均可调 `@WebAI2PC`） | `https://<域名>/mcp/readonly`（只读） |
 
 ## 本地可视化控制台

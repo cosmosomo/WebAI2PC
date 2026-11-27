@@ -2792,6 +2792,76 @@ details[open] > summary .summary-chevron {
   padding: 8px 10px !important;
 }
 
+.wb-chatgpt-grid .copy-row {
+  flex-wrap: wrap;
+}
+
+.wb-chatgpt-grid .copy-row .mono-value {
+  flex: 1 1 210px;
+}
+
+.wb-fold-span-full {
+  grid-column: 1 / -1;
+}
+
+.wb-showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.wb-showcase-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  min-width: 0;
+}
+
+.wb-showcase-art {
+  width: 100%;
+  height: 92px;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #090d16;
+  display: block;
+}
+
+.wb-showcase-art svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.wb-showcase-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.wb-showcase-meta {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--text-soft, var(--text));
+  line-height: 1.45;
+}
+
+.wb-showcase-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* Collapsible Footer Strips inside Connection Card */
 .wb-fold-strips {
   margin-top: 8px;

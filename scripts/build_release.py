@@ -45,6 +45,7 @@ REQUIRED_ROOT_FILES: Tuple[str, ...] = (
     ".gitattributes",
     "pyproject.toml",
     "README.md",
+    "README_EN.md",
     "AGENTS.md",
     "PRIVACY.md",
     "SECURITY.md",
@@ -84,6 +85,9 @@ REQUIRED_SANDBOX_FILES: Tuple[str, ...] = (
     "sandbox/Dockerfile",
     "sandbox/docker-compose.yml",
     "sandbox/CosmosMCP_WindowsSandbox.wsb",
+)
+REQUIRED_ASSET_FILES: Tuple[str, ...] = (
+    "assets/readme/cases-trio-banner-dark.png",
 )
 GENERATED_LAUNCHERS: Tuple[str, str] = (
     "一键启动_Cosmos_MCP.bat",
@@ -256,10 +260,10 @@ def render_quickstart_txt(version: str) -> bytes:
         "  复制本地控制台里显示的 https://.../mcp 加密连接网址，粘贴到：",
         "  - 网页版 Google Gemini（勿直接浏览器打开 /mcp，请访问 https://gemini.google.com/customize/connectors 点 + Custom 粘贴到 MCP Server URL）",
         "  - 网页版 ChatGPT：",
-        "    · 首次添加插件：网关就绪后点「复制给 Work 模式帮我连接」切到 ChatGPT 顶部 Work 模式发送代填",
-        "      （Chat 模式无受控浏览器不能代连；网页版 Work 云端浏览器 Take over 授权需输控制台 6 位配对码），",
-        "      或在本机浏览器左侧 Plugins -> + -> Add custom MCP server 填 /mcp（个人只读填 /mcp/readonly）",
-        "      创建并点 Install 安装（本机浏览器授权直接点「本机一键允许连接」）。",
+        "    · 首次添加插件：网关就绪后首选点「复制地址并打开 ChatGPT 插件页」，在已登录本机浏览器",
+        "      打开 https://chatgpt.com/plugins 点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，",
+        "      粘贴 /mcp（个人只读填 /mcp/readonly），授权页点「本机一键允许连接」并点 Install 安装",
+        "      （遇到连接或 403 权限问题点旁侧「复制给 ChatGPT 接入 / 排障」）。",
         "    · 日常使用分工：装好后切回 Chat 模式发 @WebAI2PC 改代码跑脚本（快且不扣 Work/Codex 额度），",
         "      跨应用长程交付与定时任务用 Work 模式发 @WebAI2PC。",
         "",
@@ -357,6 +361,7 @@ def collect_release_manifest(repo_root: Path = REPO_ROOT) -> List[Tuple[str, Pat
     entries.extend(iter_clean_tree_files(repo_root / "docs", "docs/", repo_root=repo_root))
     entries.extend(iter_clean_tree_files(repo_root / "host_skills", "host_skills/", repo_root=repo_root))
     entries.extend(iter_clean_tree_files(repo_root / "sandbox", "sandbox/", repo_root=repo_root))
+    entries.extend(iter_clean_tree_files(repo_root / "assets", "assets/", repo_root=repo_root))
 
     github_ci = repo_root / ".github" / "workflows" / "ci.yml"
     if github_ci.is_file():
@@ -593,7 +598,7 @@ def build_release_zip(
 
 
 def scan_text_email_leaks(txt: str, *, is_test_file: bool = False) -> List[str]:
-    """Return unredacted personal email addresses found in `txt` while allowing `[at]Cosmos` & doc placeholders."""
+    """Return unredacted personal email addresses found in `txt` while allowing connector mentions & doc placeholders."""
     leaked: List[str] = []
     for em_match in _EMAIL_ADDR_RE.finditer(txt):
         full_em = em_match.group(0).lower()
@@ -750,6 +755,7 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
         *REQUIRED_DOC_FILES,
         *REQUIRED_STUDIO_STATIC_FILES,
         *REQUIRED_SANDBOX_FILES,
+        *REQUIRED_ASSET_FILES,
         *GENERATED_LAUNCHERS,
     ):
         if req not in zip_name_set:
@@ -819,6 +825,9 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             rel_arc
             in (
                 "README.md",
+                "README_EN.md",
+                "PRIVACY_EN.md",
+                "SECURITY_EN.md",
                 "AGENTS.md",
                 "PRIVACY.md",
                 "SECURITY.md",
@@ -828,12 +837,19 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             )
             or rel_arc.startswith(("docs/", "host_skills/"))
         )
+        is_user_facing_ui_catalog = rel_arc in (
+            "src/cosmos_mcp/core/tutorials_catalog.py",
+            "src/cosmos_mcp/studio/static/index.html",
+            "src/cosmos_mcp/studio/static/tutorials.html",
+        )
         if is_public_doc:
             doc_checked_count += 1
             if _BRACKET_AT_RE.search(txt):
                 errors.append(f"Escaped bracket-at typo found in doc `{rel_arc}` (use `{chr(64)}Cosmos`)")
             if _INTERNAL_CODENAME_RE.search(txt):
                 errors.append(f"Internal experiment codename leaked in doc `{rel_arc}`")
+        elif is_user_facing_ui_catalog and _BRACKET_AT_RE.search(txt):
+            errors.append(f"Escaped bracket-at typo found in UI/tutorial source `{rel_arc}` (use `{chr(64)}Cosmos`)")
 
     summary = {
         "ok": len(errors) == 0,

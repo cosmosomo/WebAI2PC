@@ -1060,7 +1060,15 @@ class _HeadlessCdpPage:
             "--disable-breakpad",
         ]
         if sys.platform.startswith("linux"):
-            argv.append("--disable-dev-shm-usage")
+            if clean_env.get("DBUS_SESSION_BUS_ADDRESS", "").strip() in ("", "/dev/null"):
+                clean_env["DBUS_SESSION_BUS_ADDRESS"] = "disabled:"
+            argv.extend(
+                [
+                    "--disable-dev-shm-usage",
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                ]
+            )
             need_no_sandbox = (
                 (hasattr(os, "geteuid") and os.geteuid() == 0)
                 or os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
@@ -1108,10 +1116,16 @@ class _HeadlessCdpPage:
         self._proc_create_token = get_process_create_token(self._proc.pid)
         self._job_handle = OwnedJobHandle(assign_win32_job_kill_on_close(self._proc.pid))
 
+        is_ci_env = (
+            os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+            or os.environ.get("CI", "").lower() == "true"
+        )
+        poll_timeout_sec = 25.0 if is_ci_env else 14.0
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         ws_page_url = ""
         init_target_id = ""
-        deadline = time.monotonic() + 14.0
+        first_empty_list_at: Optional[float] = None
+        deadline = time.monotonic() + poll_timeout_sec
         while time.monotonic() < deadline:
             rc = self._proc.poll()
             if rc is not None and rc != 0:
@@ -1124,17 +1138,43 @@ class _HeadlessCdpPage:
                 if lines and lines[0].isdigit() and int(lines[0]) > 0 and int(lines[0]) not in cand_ports:
                     cand_ports.insert(0, int(lines[0]))
             for cp in cand_ports:
+                list_http_ok = False
                 with contextlib.suppress(Exception):
                     with opener.open(f"http://127.0.0.1:{cp}/json/list", timeout=1.5) as resp:
+                        if getattr(resp, "status", 200) == 200:
+                            list_http_ok = True
                         targets = json.loads(resp.read().decode("utf-8", errors="replace"))
-                        for t in targets:
-                            if isinstance(t, dict) and t.get("type") == "page" and t.get("webSocketDebuggerUrl"):
-                                ws_page_url = str(t["webSocketDebuggerUrl"])
-                                init_target_id = str(t.get("id") or "")
-                                self.cdp_port = int(cp)
-                                break
+                        if isinstance(targets, list):
+                            list_http_ok = True
+                            for t in targets:
+                                if isinstance(t, dict) and t.get("type") == "page" and t.get("webSocketDebuggerUrl"):
+                                    ws_page_url = str(t["webSocketDebuggerUrl"])
+                                    init_target_id = str(t.get("id") or "")
+                                    self.cdp_port = int(cp)
+                                    break
                 if ws_page_url:
                     break
+                if list_http_ok:
+                    now_mono = time.monotonic()
+                    if first_empty_list_at is None:
+                        first_empty_list_at = now_mono
+                    elif (now_mono - first_empty_list_at) >= 2.0:
+                        first_empty_list_at = now_mono
+                        new_url = f"http://127.0.0.1:{cp}/json/new?about:blank"
+                        created_target: Any = None
+                        for method_name in ("PUT", "GET"):
+                            try:
+                                req_new = urllib.request.Request(new_url, method=method_name)
+                                with opener.open(req_new, timeout=2.5) as new_resp:
+                                    created_target = json.loads(new_resp.read().decode("utf-8", errors="replace"))
+                                break
+                            except Exception:
+                                continue
+                        if isinstance(created_target, dict) and created_target.get("webSocketDebuggerUrl"):
+                            ws_page_url = str(created_target["webSocketDebuggerUrl"])
+                            init_target_id = str(created_target.get("id") or "")
+                            self.cdp_port = int(cp)
+                            break
             if ws_page_url:
                 break
             time.sleep(0.10)

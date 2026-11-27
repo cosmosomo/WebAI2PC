@@ -1040,7 +1040,8 @@ def test_workers_dev_synchronous_gemini_open_and_proxy_alert_ui(tmp_path: Path) 
 
 
 def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_path: Path) -> None:
-    """Verify ChatGPT '复制给 Work 模式帮我连接' stays disabled before gateway is ready, then copies Work-mode prompt without secrets/paths."""
+    """Verify ChatGPT primary open-plugins & secondary diagnostic copy buttons, showcase host-prefix copy, and /tutorials sync."""
+    at_sym = chr(64)
     state_dir = tmp_path / "state_cgpt_assist"
     ws_dir = tmp_path / "ws_cgpt_secret_path_check"
     ws_dir.mkdir(parents=True)
@@ -1056,7 +1057,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
     )
 
     with LiveStudioServer(state_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="cgpt-assist") as srv:
-        # Phase 1: Gateway is starting (NOT ready yet) -> buttons MUST stay disabled and explicitly name Work mode
+        # Phase 1: Gateway is starting (NOT ready yet) -> both primary & secondary buttons MUST stay disabled
         atomic_write_json(
             state_dir / "state" / "daemon_status.json",
             {
@@ -1084,18 +1085,29 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
 
             btn_meta_initial = driver.wait_until(
                 """() => {
-                    const f = document.getElementById('copy-chatgpt-assist-full-btn');
-                    const r = document.getElementById('copy-chatgpt-assist-ro-btn');
-                    if (!f || !r || f.disabled !== true || r.disabled !== true) return false;
-                    return { fullText: f.textContent.trim(), roText: r.textContent.trim() };
+                    const ofull = document.getElementById('open-chatgpt-plugins-full-btn');
+                    const oro = document.getElementById('open-chatgpt-plugins-ro-btn');
+                    const afull = document.getElementById('copy-chatgpt-assist-full-btn');
+                    const aro = document.getElementById('copy-chatgpt-assist-ro-btn');
+                    if (!ofull || !oro || !afull || !aro) return false;
+                    if (ofull.disabled !== true || oro.disabled !== true || afull.disabled !== true || aro.disabled !== true) {
+                        return false;
+                    }
+                    return {
+                        openFullText: ofull.textContent.trim(),
+                        openRoText: oro.textContent.trim(),
+                        assistFullText: afull.textContent.trim(),
+                        assistRoText: aro.textContent.trim(),
+                    };
                 }""",
-                description="ChatGPT Work-mode assist buttons disabled while gateway not ready",
+                description="ChatGPT primary & assist buttons disabled while gateway not ready",
             )
-            assert "Work" in btn_meta_initial["fullText"]
-            assert btn_meta_initial["fullText"] == "复制给 Work 模式帮我连接"
-            assert btn_meta_initial["roText"] == "复制给 Work 模式帮我连接"
+            assert btn_meta_initial["openFullText"] == "复制地址并打开 ChatGPT 插件页"
+            assert btn_meta_initial["openRoText"] == "复制地址并打开 ChatGPT 插件页"
+            assert btn_meta_initial["assistFullText"] == "复制给 ChatGPT 接入 / 排障"
+            assert btn_meta_initial["assistRoText"] == "复制给 ChatGPT 接入 / 排障"
 
-            # Phase 2: Gateway becomes ready -> buttons unlock and copy clean structured prompts
+            # Phase 2: Gateway becomes ready -> buttons unlock, stub window.open, verify pure URL copy & diagnostic copy
             atomic_write_json(
                 state_dir / "state" / "daemon_status.json",
                 {
@@ -1117,11 +1129,17 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             driver.trigger_poll()
             driver.wait_until(
                 """() => {
-                    const f = document.getElementById('copy-chatgpt-assist-full-btn');
-                    const r = document.getElementById('copy-chatgpt-assist-ro-btn');
-                    return f && r && f.disabled === false && r.disabled === false;
+                    const ofull = document.getElementById('open-chatgpt-plugins-full-btn');
+                    const oro = document.getElementById('open-chatgpt-plugins-ro-btn');
+                    const afull = document.getElementById('copy-chatgpt-assist-full-btn');
+                    const aro = document.getElementById('copy-chatgpt-assist-ro-btn');
+                    return Boolean(
+                        ofull && oro && afull && aro &&
+                        ofull.disabled === false && oro.disabled === false &&
+                        afull.disabled === false && aro.disabled === false
+                    );
                 }""",
-                description="ChatGPT assist buttons enabled once gateway ready",
+                description="ChatGPT primary & assist buttons enabled once gateway ready",
             )
 
             secret_meta = driver.evaluate(
@@ -1129,9 +1147,37 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     pair4: (document.getElementById('pair-code-box')?.textContent || '').trim(),
                     pair6: (document.getElementById('dynamic-pair-code-box')?.textContent || '').trim(),
                     pw: document.getElementById('conn-pw-box')?.getAttribute('data-secret') || '',
-                    copiedBefore: (window.__copiedHistory || []).length
                 })"""
             )
+
+            # 2a) Primary buttons: stub window.open synchronously & verify pure URL copy without launching external browser
+            open_calls = driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    const calls = [];
+                    const origOpen = window.open;
+                    window.open = (...args) => { calls.push(args); return null; };
+                    try {
+                        document.getElementById('open-chatgpt-plugins-full-btn').click();
+                        document.getElementById('open-chatgpt-plugins-ro-btn').click();
+                    } finally {
+                        window.open = origOpen;
+                    }
+                    return calls;
+                }"""
+            )
+            assert len(open_calls) == 2
+            assert open_calls[0][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
+            assert open_calls[1][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
+
+            copied_urls = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 2) ? window.__copiedHistory.slice() : false",
+                description="Both pure ChatGPT URLs copied by primary buttons",
+            )
+            assert copied_urls[0] == "https://cgpt-ready.srv.us/mcp"
+            assert copied_urls[1] == "https://cgpt-ready.srv.us/mcp/readonly"
+
+            # 2b) Secondary diagnostic buttons: zero-secret diagnostic prompt
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
@@ -1141,27 +1187,28 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             )
             copied_list = driver.wait_until(
                 "() => (window.__copiedHistory && window.__copiedHistory.length >= 2) ? window.__copiedHistory.slice() : false",
-                description="Both ChatGPT assist prompts copied",
+                description="Both ChatGPT diagnostic prompts copied",
             )
             full_prompt, ro_prompt = copied_list[0], copied_list[1]
 
             for p in (full_prompt, ro_prompt):
-                first_line = p.splitlines()[0]
-                assert "切换到 Work 模式" in first_line
-                assert "Chat 模式无受控浏览器" in first_line
-                assert "Take over" in p
-                assert "插件名称：WebAI2PC" in p
-                assert "装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用" in p
-                assert "授权并安装插件后调用 pc_get_status（get_status）" in p
+                assert p.splitlines()[0] == "请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。"
+                assert "认证方式：OAuth" in p
+                assert "不要默认打开云浏览器，也不要新建中转服务" in p
+                assert "https://chatgpt.com/plugins" in p
+                assert "Create plugins with MCPs" in p
+                assert "找到 pc_get_status 或 get_status，用实际参数调用一次" in p
+                assert "能分别在 Chat 和 Work 验证就分别验证" in p
+                assert f"{at_sym}WebAI2PC" in p
 
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
-            assert "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写" in full_prompt
+            assert "ChatGPT Team / Business / Enterprise / Edu 工作区，授权后可在 Chat 和 Work 中通过" in full_prompt
 
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
-            assert "ChatGPT Plus / Pro，只读" in ro_prompt
+            assert f"ChatGPT Plus / Pro，授权后可在 Chat 和 Work 中通过 {at_sym}WebAI2PC 使用该服务提供的只读工具。" in ro_prompt
 
             toast_text = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
-            assert "切换到 ChatGPT 顶部的 Work 模式" in toast_text
+            assert toast_text == "已复制 ChatGPT 接入与排障指令（可直接发给 ChatGPT 执行，不含配对码与本机路径）"
 
             # Strict zero-secret / zero-local-path leak checks
             for secret_val in (secret_meta["pair4"], secret_meta["pair6"], secret_meta["pw"], str(ws_dir)):
@@ -1169,28 +1216,94 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     assert secret_val not in full_prompt
                     assert secret_val not in ro_prompt
 
-            # Also verify `/tutorials` Module 2 assist buttons unlock on live sync and copy clean Work-mode prompt
-            driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
-            tut_btn_text = driver.wait_until(
+            # 2c) Showcase 1-click prompt button adapts prefix between Gemini (`@Cosmos `) and ChatGPT (`@WebAI2PC `)
+            driver.select_host_scene("gemini")
+            driver.evaluate(
                 """() => {
-                    const btn = document.querySelector('[data-copy-chatgpt-assist="readonly"]');
-                    return (btn && btn.disabled === false) ? btn.textContent.trim() : false;
+                    const det = document.getElementById('showcase-prompts-details');
+                    if (det) det.open = true;
+                    window.__copiedHistory = [];
+                    document.getElementById('copy-showcase-blackhole-btn').click();
+                }"""
+            )
+            gem_showcase = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Gemini showcase prompt copied",
+            )
+            assert gem_showcase.startswith(f"{at_sym}Cosmos ")
+            assert "blackhole_studio.html" in gem_showcase
+
+            driver.select_host_scene("chatgpt")
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('copy-showcase-blackhole-btn').click();
+                }"""
+            )
+            cgpt_showcase = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="ChatGPT showcase prompt copied",
+            )
+            assert cgpt_showcase.startswith(f"{at_sym}WebAI2PC ")
+            assert "blackhole_studio.html" in cgpt_showcase
+
+            # 3) Verify `/tutorials` Module 2 primary & secondary buttons unlock on live sync and stub window.open cleanly
+            driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
+            tut_meta = driver.wait_until(
+                """() => {
+                    const openBtn = document.querySelector('[data-open-chatgpt-plugins="readonly"]');
+                    const assistBtn = document.querySelector('[data-copy-chatgpt-assist="readonly"]');
+                    if (!openBtn || !assistBtn || openBtn.disabled !== false || assistBtn.disabled !== false) {
+                        return false;
+                    }
+                    return {
+                        openText: openBtn.textContent.trim(),
+                        assistText: assistBtn.textContent.trim(),
+                    };
                 }""",
                 timeout_sec=8.0,
-                description="Tutorials ChatGPT assist button unlocked on live sync",
+                description="Tutorials ChatGPT primary & assist buttons unlocked on live sync",
             )
-            assert tut_btn_text == "复制给 Work 模式帮我连接"
+            assert tut_meta["openText"] == "复制地址并打开 ChatGPT 插件页"
+            assert tut_meta["assistText"] == "复制给 ChatGPT 接入 / 排障"
+
+            tut_open_calls = driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    const calls = [];
+                    const origOpen = window.open;
+                    window.open = (...args) => { calls.push(args); return null; };
+                    try {
+                        document.querySelector('[data-open-chatgpt-plugins="readonly"]').click();
+                    } finally {
+                        window.open = origOpen;
+                    }
+                    return calls;
+                }"""
+            )
+            assert len(tut_open_calls) == 1
+            assert tut_open_calls[0][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
+            tut_copied_url = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Tutorials primary button copied readonly URL",
+            )
+            assert tut_copied_url == "https://cgpt-ready.srv.us/mcp/readonly"
+
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
                     document.querySelector('[data-copy-chatgpt-assist="readonly"]').click();
                 }"""
             )
-            tut_copied = driver.wait_until(
+            tut_copied_assist = driver.wait_until(
                 "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
-                description="Tutorials ChatGPT assist prompt copied",
+                description="Tutorials ChatGPT diagnostic prompt copied",
             )
-            assert "切换到 Work 模式" in tut_copied.splitlines()[0]
-            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied
+            assert tut_copied_assist.splitlines()[0] == "请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。"
+            assert "不要默认打开云浏览器，也不要新建中转服务" in tut_copied_assist
+            assert "https://chatgpt.com/plugins" in tut_copied_assist
+            assert "Create plugins with MCPs" in tut_copied_assist
+            assert "找到 pc_get_status 或 get_status，用实际参数调用一次" in tut_copied_assist
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied_assist
+            assert tut_copied_assist == ro_prompt
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
-
