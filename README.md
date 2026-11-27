@@ -71,39 +71,9 @@
   <img src="assets/readme/studio-console.png" alt="WebAI2PC 本地可视化控制台" width="100%" />
 </p>
 
-<details>
-<summary>展开查看：16 项内置工具、连接原理图与移动端授权实拍</summary>
+> 想看 **连接原理图、安全兜底图、16 项内置工具清单与移动端实拍**？请进入 **[二级文档中心（docs/）](docs/README.md)**。
 
-#### 连接原理与宿主边界
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/architecture-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/readme/architecture-light.svg" />
-    <img alt="WebAI2PC 连接原理图" src="assets/readme/architecture-light.svg" width="100%" />
-  </picture>
-</p>
-
-#### 同机一键 OAuth 2.1 授权页与手机端控制台
-
-<p align="center">
-  <img src="assets/readme/studio-oauth-mobile.png" alt="WebAI2PC OAuth 授权与手机端控制台" width="100%" />
-</p>
-
-#### 默认 16 项核心工具（外加可选 `browser` 受管浏览器与 Windows `desktop` 桌面操控扩展包）
-
-| 工具名称 | 功能说明 |
-| :- | :- |
-| `pc_get_status` / `pc_find_files` / `pc_search_code` | 状态查询、目录检索、跨文件正则与字面量搜索 |
-| `pc_code_intel` / `pc_batch_probe` | 工程 RepoMap、符号大纲、引用追踪、作用域重命名、只读批量探针 |
-| `pc_read_file` / `pc_edit_file` / `pc_write_file` | 文本/图片/PDF/Office 读写，写前快照与 Office 锁表保护 |
-| `pc_manage_files` | 目录与文件管理（移动、复制、回收箱删除、`undo` / `redo`） |
-| `pc_run_command` / `pc_run_python` / `pc_bg_command` | 无黑窗终端、多行 Python 执行、长耗时后台任务管理 |
-| `pc_workspace_memory` / `pc_skill_hub` / `pc_skill_manage` / `pc_web_research` | 跨会话协作记录、本地技能检索与管理、本地公开网页检索 |
-
-</details>
-
-## 详细教程与规范
+## 二级教程与文档中心（[`docs/`](docs/README.md)）
 
 | 文档 | 内容 |
 | :- | :- |
