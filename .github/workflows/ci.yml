@@ -10,10 +10,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test-and-release-gate:
     name: Pytest & Release Gate (${{ matrix.os }} / py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +34,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -39,7 +48,15 @@ jobs:
           python -m pip install -e ".[docs,dev]"
 
       - name: Run core & packaging regression suites
-        run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py
+        run: python -B -m pytest -p no:cacheprovider -q tests/test_s1_core_fs_code.py tests/test_s3_protocol.py tests/test_s3_packaging_install.py tests/test_s6_auth_hardening.py tests/test_s7_skills_deep_merge.py tests/test_conn_cfg_hardening.py tests/test_ai_accessible_tutorials.py tests/test_s9_conn_v12.py tests/test_multigw_oauth_protocol.py
+
+      - name: Run v1.1/v1.2 incremental feature suite (Windows)
+        if: runner.os == 'Windows'
+        run: python -B -m pytest -p no:cacheprovider -q tests/test_s8_v11_features.py
+
+      - name: Run v1.1/v1.2 incremental feature suite (POSIX)
+        if: runner.os != 'Windows'
+        run: python -B -m pytest -p no:cacheprovider -q tests/test_s8_v11_features.py -k "not test_longest_prefix_readonly_parent_rw_child_and_l3_hook"
 
       - name: Build release archive and run byte-level hygiene gate
         run: |

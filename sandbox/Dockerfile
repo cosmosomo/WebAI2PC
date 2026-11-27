@@ -4,27 +4,36 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUTF8=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}" \
     COSMOS_MCP_WORKSPACE=/workspace \
     COSMOS_MCP_STATE_DIR=/state \
     LOCALPC_MCP_STATE_DIR=/state
 
-# Install CA roots (outbound HTTPS/WSS gateways) and OpenSSH client (srv.us / VPS tunnels)
+# Install OS security updates, CA roots (outbound HTTPS/WSS gateways), OpenSSH client (srv.us / VPS tunnels),
+# upgrade base setuptools/pip against CVE-2024-6345 / CVE-2025-47273, and pre-create a non-root virtualenv.
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates openssh-client && \
     rm -rf /var/lib/apt/lists/* && \
+    python -m pip install --no-cache-dir --upgrade "pip>=24.3.1" "setuptools>=78.1.1" && \
     groupadd -g 1000 cosmos && \
     useradd -m -u 1000 -g 1000 -s /bin/bash cosmos && \
+    python -m venv /opt/venv && \
     mkdir -p /app /workspace /state && \
-    chown -R cosmos:cosmos /app /workspace /state
+    chown -R 1000:1000 /opt/venv /app /workspace /state
 
+# Drop root privileges BEFORE copying repo sources or executing `pip install` build/install hooks (numeric UID:GID for K8s runAsNonRoot)
+USER 1000:1000
 WORKDIR /app
-COPY --chown=cosmos:cosmos pyproject.toml README.md LICENSE /app/
-COPY --chown=cosmos:cosmos src /app/src
-COPY --chown=cosmos:cosmos host_skills /app/host_skills
+COPY --chown=1000:1000 pyproject.toml README.md LICENSE /app/
+COPY --chown=1000:1000 src /app/src
+COPY --chown=1000:1000 host_skills /app/host_skills
 
-RUN pip install --disable-pip-version-check ".[docs]"
+RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade "pip>=24.3.1" "setuptools>=78.1.1" && \
+    /opt/venv/bin/python -m pip install --no-cache-dir ".[docs]"
 
-USER cosmos
 VOLUME ["/workspace", "/state"]
 EXPOSE 8096
 

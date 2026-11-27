@@ -259,7 +259,79 @@ def extract_sha256_from_release_metadata(release_doc: Dict[str, Any], asset_name
     return ""
 
 
-def _build_url_opener(use_proxy: bool = True, target_host: str = "") -> urllib.request.OpenerDirector:
+MAX_CLOUDFLARED_META_BYTES = 4 * 1024 * 1024
+MAX_CLOUDFLARED_DOWNLOAD_BYTES = 160 * 1024 * 1024
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject protocol-downgrade or malformed redirects during binary/metadata downloads."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+        parsed = urlsplit((newurl or "").strip())
+        if parsed.scheme.lower() != "https" or not (parsed.hostname or "").strip():
+            raise URLError(f"Blocked non-HTTPS redirect target during download: {newurl!r}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _validate_https_download_url(raw_url: str, *, label: str = "cloudflared download URL") -> str:
+    clean_u = (raw_url or "").strip()
+    parsed = urlsplit(clean_u)
+    if parsed.scheme.lower() != "https" or not (parsed.hostname or "").strip():
+        raise ValueError(f"{label} must use https:// with a valid hostname: {raw_url!r}")
+    if parsed.username or parsed.password:
+        raise ValueError(f"{label} must not embed credentials in URL: {raw_url!r}")
+    return clean_u
+
+
+def _read_bounded_stream(resp_obj: Any, max_bytes: int, *, label: str = "download") -> bytes:
+    """Read up to `max_bytes` from an HTTP response or unit-test mock opener stream."""
+    cap = max(1, int(max_bytes))
+    if isinstance(resp_obj, (bytes, bytearray, memoryview)):
+        raw_b = bytes(resp_obj)
+        if len(raw_b) > cap:
+            raise ValueError(f"{label} exceeded max allowed size ({len(raw_b)} > {cap} bytes).")
+        return raw_b
+
+    hdrs = getattr(resp_obj, "headers", None)
+    if hdrs is not None and hasattr(hdrs, "get"):
+        cl_raw = hdrs.get("Content-Length") or hdrs.get("content-length")
+        if cl_raw is not None:
+            cl_int = -1
+            with contextlib.suppress(ValueError, TypeError):
+                cl_int = int(str(cl_raw).strip())
+            if cl_int > cap:
+                raise ValueError(f"{label} Content-Length exceeded max allowed size ({cl_int} > {cap} bytes).")
+
+    read_fn = getattr(resp_obj, "read", None)
+    if not callable(read_fn):
+        raise TypeError(f"Unsupported response object for {label}: {type(resp_obj).__name__}")
+
+    chunk_sz = min(65536, cap + 1)
+    try:
+        chunk = read_fn(chunk_sz)
+    except TypeError:
+        raw_all = read_fn()
+        data_all = raw_all.encode("utf-8") if isinstance(raw_all, str) else bytes(raw_all)
+        if len(data_all) > cap:
+            raise ValueError(f"{label} exceeded max allowed size ({len(data_all)} > {cap} bytes).")
+        return data_all
+
+    buf = bytearray()
+    while chunk:
+        c_bytes = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+        buf.extend(c_bytes)
+        if len(buf) > cap:
+            raise ValueError(f"{label} stream exceeded max allowed size ({cap} bytes).")
+        chunk = read_fn(chunk_sz)
+    return bytes(buf)
+
+
+def _build_url_opener(
+    use_proxy: bool = True,
+    target_host: str = "",
+    *,
+    https_only: bool = False,
+) -> urllib.request.OpenerDirector:
     handlers: List[Any] = []
     if use_proxy:
         proxy = detect_configured_proxy("https", target_host=target_host)
@@ -271,6 +343,8 @@ def _build_url_opener(use_proxy: bool = True, target_host: str = "") -> urllib.r
                 handlers.append(urllib.request.ProxyHandler({}))
     else:
         handlers.append(urllib.request.ProxyHandler({}))
+    if https_only:
+        handlers.append(_HttpsOnlyRedirectHandler())
     return urllib.request.build_opener(*handlers)
 
 
@@ -308,21 +382,25 @@ def ensure_cloudflared_binary(
 
     asset = cloudflared_asset_name()
     if download_url:
-        eff_url = download_url.strip()
+        eff_url = _validate_https_download_url(download_url, label="cloudflared download_url")
     elif env_mirror:
-        clean_m = env_mirror.rstrip("/")
+        clean_m = _validate_https_download_url(env_mirror, label="COSMOS_CLOUDFLARED_MIRROR").rstrip("/")
         eff_url = clean_m if clean_m.endswith(asset) else f"{clean_m}/{asset}"
     else:
         eff_url = f"{CLOUDFLARED_DOWNLOAD_BASE}/{asset}"
 
-    def _fetch(req: urllib.request.Request, t_sec: float) -> bytes:
+    def _fetch(req: urllib.request.Request, t_sec: float, max_bytes: int = MAX_CLOUDFLARED_META_BYTES) -> bytes:
+        _validate_https_download_url(req.full_url, label="cloudflared request URL")
         if opener is not None:
-            with opener(req, t_sec) as r:
-                return r.read()
+            opened = opener(req, t_sec)
+            if hasattr(opened, "__enter__"):
+                with opened as r:
+                    return _read_bounded_stream(r, max_bytes, label=req.full_url)
+            return _read_bounded_stream(opened, max_bytes, label=req.full_url)
         req_host = (urlsplit(req.full_url).hostname or "").strip().lower()
-        url_opener = _build_url_opener(use_proxy=True, target_host=req_host)
+        url_opener = _build_url_opener(use_proxy=True, target_host=req_host, https_only=True)
         with url_opener.open(req, timeout=t_sec) as r:
-            return r.read()
+            return _read_bounded_stream(r, max_bytes, label=req.full_url)
 
     exp_hex = expected_sha256.strip().lower()
     if not exp_hex and (env_mirror or download_url):
@@ -332,7 +410,7 @@ def ensure_cloudflared_binary(
             headers={"User-Agent": "Cosmos-MCP/1.0"},
         )
         try:
-            sha_txt_first = _fetch(sha_req_first, 12.0).decode("utf-8", errors="replace")
+            sha_txt_first = _fetch(sha_req_first, 12.0, MAX_CLOUDFLARED_META_BYTES).decode("utf-8", errors="replace")
             m_first = SHA256_HEX_RE.search(sha_txt_first)
             if m_first:
                 exp_hex = m_first.group(1).lower()
@@ -345,7 +423,7 @@ def ensure_cloudflared_binary(
             headers={"User-Agent": "Cosmos-MCP/1.0"},
         )
         try:
-            html_txt = _fetch(html_req, 15.0).decode("utf-8", errors="replace")
+            html_txt = _fetch(html_req, 15.0, MAX_CLOUDFLARED_META_BYTES).decode("utf-8", errors="replace")
             m_html = re.search(rf"{re.escape(asset)}[^a-fA-F0-9\r\n]{{0,48}}([a-fA-F0-9]{{64}})", html_txt)
             if m_html:
                 exp_hex = m_html.group(1).lower()
@@ -358,7 +436,7 @@ def ensure_cloudflared_binary(
             headers={"Accept": "application/vnd.github+json", "User-Agent": "Cosmos-MCP/1.0"},
         )
         try:
-            raw_meta = _fetch(meta_req, 15.0)
+            raw_meta = _fetch(meta_req, 15.0, MAX_CLOUDFLARED_META_BYTES)
             rel_doc = json.loads(raw_meta.decode("utf-8", errors="replace"))
             if isinstance(rel_doc, dict):
                 exp_hex = extract_sha256_from_release_metadata(rel_doc, asset)
@@ -371,7 +449,7 @@ def ensure_cloudflared_binary(
             headers={"User-Agent": "Cosmos-MCP/1.0"},
         )
         try:
-            sha_txt = _fetch(sha_req, 12.0).decode("utf-8", errors="replace")
+            sha_txt = _fetch(sha_req, 12.0, MAX_CLOUDFLARED_META_BYTES).decode("utf-8", errors="replace")
             m = SHA256_HEX_RE.search(sha_txt)
             if m:
                 exp_hex = m.group(1).lower()
@@ -381,7 +459,9 @@ def ensure_cloudflared_binary(
         raise RuntimeError(f"Unable to obtain official SHA-256 digest for `{asset}`; refusing unverified binary download.")
 
     bin_req = urllib.request.Request(eff_url, headers={"User-Agent": "Cosmos-MCP/1.0"})
-    payload = _fetch(bin_req, timeout_sec)
+    payload = _fetch(bin_req, timeout_sec, MAX_CLOUDFLARED_DOWNLOAD_BYTES)
+    if not payload:
+        raise ValueError(f"Downloaded empty payload for `{asset}`.")
     actual_hex = compute_sha256_bytes(payload)
     if actual_hex != exp_hex:
         raise ValueError(
@@ -398,10 +478,14 @@ def ensure_cloudflared_binary(
                 member = next((m for m in tar.getmembers() if m.isfile() and Path(m.name).name == exe_name), None)
                 if member is None:
                     raise RuntimeError(f"`{exe_name}` not found inside `{asset}` archive.")
+                if member.size > MAX_CLOUDFLARED_DOWNLOAD_BYTES:
+                    raise ValueError(
+                        f"Extracted `{exe_name}` size exceeded max allowed size ({member.size} > {MAX_CLOUDFLARED_DOWNLOAD_BYTES} bytes)."
+                    )
                 extracted = tar.extractfile(member)
                 if extracted is None:
                     raise RuntimeError(f"Failed extracting `{exe_name}` from `{asset}`.")
-                data_bin = extracted.read()
+                data_bin = _read_bounded_stream(extracted, MAX_CLOUDFLARED_DOWNLOAD_BYTES, label=exe_name)
             with tempfile.NamedTemporaryFile(dir=str(bin_dir), prefix=".cf_bin_", delete=False) as bf:
                 bf.write(data_bin)
                 bin_tmp = Path(bf.name)
@@ -2197,7 +2281,7 @@ def build_vps_hub_systemd_unit(
     p_num = int(hub_port)
     exec_cmd = (
         f"/bin/sh -c 'if [ -x {hub_dir}/venv/bin/python ] && "
-        f'{hub_dir}/venv/bin/python -c "import uvicorn, starlette, mcp, cosmos_mcp.launcher.app" >/dev/null 2>&1; '
+        f'{hub_dir}/venv/bin/python -c "import uvicorn, websockets, starlette, mcp, pydantic, cryptography, multipart, cosmos_mcp.launcher.app" >/dev/null 2>&1; '
         f"then exec {hub_dir}/venv/bin/python -m cosmos_mcp.launcher.app "
         f"--host 127.0.0.1 --port {p_num} --state-root {state_root}; fi; "
         f"exec /usr/bin/env python3 -B {hub_dir}/hub_gateway.py --host 127.0.0.1 --port {p_num} --state-root {state_root}'"
@@ -3105,14 +3189,41 @@ def provision_vps_hub_oneclick(
         "    os.system('apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv python3-pip >/dev/null 2>&1')\n"
         "    subprocess.run([sys.executable, '-m', 'venv', '--system-site-packages', '/opt/cosmos-mcp-hub/venv'], stdin=subprocess.DEVNULL, capture_output=True, check=False)\n"
         "if venv_py.is_file():\n"
-        "    chk_imp = subprocess.run([str(venv_py), '-c', 'import uvicorn, websockets, starlette, mcp, pydantic, anyio, httpx, cryptography, openpyxl, docx, multipart'], stdin=subprocess.DEVNULL, capture_output=True, check=False)\n"
+        "    chk_code = (\n"
+        "        'import importlib.metadata as m, uvicorn, websockets, starlette, mcp, pydantic, anyio, httpx, cryptography, multipart, PIL, pypdf, openpyxl, docx, pptx; '\n"
+        "        'v_mcp = tuple(int(x) for x in m.version(\"mcp\").split(\".\")[:2] if x.isdigit()); '\n"
+        "        'v_pyd = tuple(int(x) for x in m.version(\"pydantic\").split(\".\")[:2] if x.isdigit()); '\n"
+        "        'raise SystemExit(0 if (v_mcp >= (1, 30) and v_pyd >= (2, 11)) else 1)'\n"
+        "    )\n"
+        "    chk_imp = subprocess.run([str(venv_py), '-c', chk_code], stdin=subprocess.DEVNULL, capture_output=True, check=False)\n"
         "    if chk_imp.returncode != 0:\n"
         "        if subprocess.run([str(venv_py), '-m', 'pip', '--version'], stdin=subprocess.DEVNULL, capture_output=True, check=False).returncode != 0:\n"
         "            subprocess.run([str(venv_py), '-m', 'ensurepip', '--upgrade'], stdin=subprocess.DEVNULL, capture_output=True, check=False)\n"
-        "        pip_pkgs = ['uvicorn', 'websockets>=12.0', 'starlette', 'mcp', 'pydantic', 'anyio', 'httpx', 'cryptography', 'openpyxl', 'python-docx', 'python-multipart', 'Pillow', 'pypdf']\n"
-        "        r_pip = subprocess.run([str(venv_py), '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', *pip_pkgs], stdin=subprocess.DEVNULL, capture_output=True, timeout=90, check=False)\n"
+        "        core_pip_pkgs = [\n"
+        "            'mcp>=1.30.0,<2.0.0',\n"
+        "            \"starlette>=0.47.2; python_version < '3.14'\",\n"
+        "            \"starlette>=1.3.1; python_version >= '3.14'\",\n"
+        "            'uvicorn>=0.35.0',\n"
+        "            'h11>=0.16.0',\n"
+        "            'websockets>=15.0.1',\n"
+        "            'cryptography>=46.0.7',\n"
+        "            \"pydantic>=2.11.0,<3.0.0; python_version < '3.14'\",\n"
+        "            \"pydantic>=2.12.0,<3.0.0; python_version >= '3.14'\",\n"
+        "            'python-multipart>=0.0.20',\n"
+        "            'anyio',\n"
+        "            'httpx>=0.28.1',\n"
+        "        ]\n"
+        "        doc_pip_pkgs = [\n"
+        "            'Pillow>=10.0.0',\n"
+        "            'pypdf>=6.0.0',\n"
+        "            'openpyxl>=3.1.5',\n"
+        "            'python-docx>=1.2.0',\n"
+        "            'python-pptx>=1.0.2',\n"
+        "        ]\n"
+        "        pip_pkgs = [*core_pip_pkgs, *doc_pip_pkgs]\n"
+        "        r_pip = subprocess.run([str(venv_py), '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', *pip_pkgs], stdin=subprocess.DEVNULL, capture_output=True, timeout=110, check=False)\n"
         "        if r_pip.returncode != 0:\n"
-        "            subprocess.run([str(venv_py), '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', 'uvicorn', 'websockets>=12.0', 'starlette', 'mcp', 'pydantic', 'anyio', 'httpx', 'python-multipart'], stdin=subprocess.DEVNULL, capture_output=True, timeout=75, check=False)\n"
+        "            subprocess.run([str(venv_py), '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', *core_pip_pkgs], stdin=subprocess.DEVNULL, capture_output=True, timeout=85, check=False)\n"
         "pathlib.Path('/etc/systemd/system/cosmos-mcp-hub.service').write_text(b['systemd_unit'], encoding='utf-8')\n"
         "def _caddy_ver_ok():\n"
         "    cb = shutil.which('caddy')\n"
@@ -3138,10 +3249,23 @@ def provision_vps_hub_oneclick(
         "    if arch:\n"
         "        dl_u = 'https://' + 'caddyserver.com/api/download?os=linux&arch=' + arch\n"
         "        dest_c = pathlib.Path('/usr/local/bin/caddy')\n"
+        "        tmp_c = pathlib.Path('/usr/local/bin/.caddy.cosmos.tmp')\n"
         "        dest_c.parent.mkdir(parents=True, exist_ok=True)\n"
+        "        max_c_bytes = 160 * 1024 * 1024\n"
+        "        c_buf = bytearray()\n"
         "        with urllib.request.urlopen(dl_u, timeout=45) as r_dl:\n"
-        "            dest_c.write_bytes(r_dl.read())\n"
-        "        os.chmod(dest_c, 0o755)\n"
+        "            while True:\n"
+        "                ch_c = r_dl.read(65536)\n"
+        "                if not ch_c:\n"
+        "                    break\n"
+        "                c_buf.extend(ch_c)\n"
+        "                if len(c_buf) > max_c_bytes:\n"
+        "                    raise RuntimeError('caddy download exceeded 160 MiB limit')\n"
+        "        if len(c_buf) < 4 or bytes(c_buf[:4]) != b'\\x7fELF':\n"
+        "            raise RuntimeError('caddy download did not return a valid Linux ELF binary')\n"
+        "        tmp_c.write_bytes(bytes(c_buf))\n"
+        "        os.chmod(tmp_c, 0o755)\n"
+        "        os.replace(tmp_c, dest_c)\n"
         "        if not pathlib.Path('/usr/bin/caddy').exists():\n"
         "            try: os.symlink(str(dest_c), '/usr/bin/caddy')\n"
         "            except OSError: shutil.copy2(dest_c, '/usr/bin/caddy')\n"

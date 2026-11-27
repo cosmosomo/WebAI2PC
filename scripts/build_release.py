@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import subprocess
 import sys
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 import zipfile
@@ -169,31 +170,137 @@ _PRIVATE_CONDA_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 _PRIVATE_DEV_DRIVE_RE = re.compile(
-    r"[D-Z]:(?:\\+|/+)" + "program" + r"1?(?:\\+|/+)",
+    r"[C-Z]:(?:\\+|/+)" + "program" + r"[0-9_]*(?:\\+|/+|['\"]|$)",
     re.IGNORECASE,
 )
 _PRIVATE_PAD_PACK_RE = re.compile(
     r"['\"]" + "pad" + r"['\"]\s*:\s*['\"(\[{]|\b" + "pad" + r"_(?:adb|fleet|gui_action|reverse_engineer)\b"
 )
 
+_SENSITIVE_TOKEN_SALT: bytes = b"cosmos-mcp-release-gate-v1:"
+# Never commit hardcoded hashes of short personal usernames/hostnames to a public repo
+# (public salt + short identifier is offline dictionary-guessable). Local dev machines
+# supply extra tokens via gitignored `.env` (`COSMOS_EXTRA_FORBIDDEN_TOKENS=...`).
+_FORBIDDEN_IDENTIFIER_SHA256: frozenset[str] = frozenset()
+_ASCII_IDENT_BYTES_RE = re.compile(
+    rb"(?:[A-Za-z0-9]{6,64}(?:-[A-Za-z0-9]{2,64})*|[A-Za-z0-9]{2,5}(?:-[A-Za-z0-9]{2,64})+)"
+)
+_UTF16LE_IDENT_BYTES_RE = re.compile(rb"(?:[A-Za-z0-9-]\x00){6,64}")
+_TEXT_IDENT_TOKEN_RE = re.compile(
+    r"(?:[A-Za-z0-9]{6,64}(?:-[A-Za-z0-9]{2,64})*|[A-Za-z0-9]{2,5}(?:-[A-Za-z0-9]{2,64})+)"
+)
+_SAFE_IDENT_BYTES_CACHE: Set[bytes] = set()
 
-def _build_forbidden_archive_tokens(runtime_hostname: str, runtime_username: str, generic_names: Set[str]) -> Tuple[str, ...]:
+
+def hash_sensitive_identifier(token: str, *, salt: bytes = _SENSITIVE_TOKEN_SALT) -> str:
+    """Compute salted lowercase SHA-256 digest for identifier-level leak gating without storing plaintext."""
+    return hashlib.sha256(salt + token.strip().lower().encode("utf-8")).hexdigest()
+
+
+def _expand_identifier_candidates(raw_lower: bytes) -> List[bytes]:
+    cleaned = raw_lower.strip(b"-")
+    if not cleaned:
+        return []
+    out: List[bytes] = []
+    if 6 <= len(cleaned) <= 64:
+        out.append(cleaned)
+    if b"-" in cleaned:
+        parts = [p for p in cleaned.split(b"-") if p]
+        for part in parts:
+            if 6 <= len(part) <= 64:
+                out.append(part)
+        if len(parts) >= 3:
+            for idx in range(len(parts) - 1):
+                pair = parts[idx] + b"-" + parts[idx + 1]
+                if 6 <= len(pair) <= 64:
+                    out.append(pair)
+    return out
+
+
+def scan_bytes_forbidden_identifier_hashes(
+    data: bytes,
+    forbidden_hashes: frozenset[str] = _FORBIDDEN_IDENTIFIER_SHA256,
+) -> List[str]:
+    """Scan ASCII/UTF-8 and UTF-16LE identifier tokens in raw bytes against salted SHA-256 digests."""
+    if not data or not forbidden_hashes:
+        return []
+    use_default_cache = forbidden_hashes is _FORBIDDEN_IDENTIFIER_SHA256
+    if use_default_cache and len(_SAFE_IDENT_BYTES_CACHE) > 4096:
+        _SAFE_IDENT_BYTES_CACHE.clear()
+    candidates: Set[bytes] = set()
+    for m in _ASCII_IDENT_BYTES_RE.finditer(data):
+        candidates.update(_expand_identifier_candidates(m.group(0).lower()))
+    for m in _UTF16LE_IDENT_BYTES_RE.finditer(data):
+        candidates.update(_expand_identifier_candidates(m.group(0)[::2].lower()))
+    matched: Set[str] = set()
+    for tok in candidates:
+        if use_default_cache and tok in _SAFE_IDENT_BYTES_CACHE:
+            continue
+        digest = hashlib.sha256(_SENSITIVE_TOKEN_SALT + tok).hexdigest()
+        if digest in forbidden_hashes:
+            matched.add(f"sha256:{digest[:12]}")
+        elif use_default_cache and len(_SAFE_IDENT_BYTES_CACHE) < 4096:
+            _SAFE_IDENT_BYTES_CACHE.add(tok)
+    return sorted(matched)
+
+
+def scan_text_forbidden_identifier_hashes(
+    txt: str,
+    forbidden_hashes: frozenset[str] = _FORBIDDEN_IDENTIFIER_SHA256,
+) -> List[str]:
+    """Scan text identifier tokens against salted SHA-256 digests."""
+    if not txt or not forbidden_hashes:
+        return []
+    candidates: Set[bytes] = set()
+    for m in _TEXT_IDENT_TOKEN_RE.finditer(txt):
+        candidates.update(_expand_identifier_candidates(m.group(0).lower().encode("utf-8")))
+    matched: Set[str] = set()
+    for tok in candidates:
+        digest = hashlib.sha256(_SENSITIVE_TOKEN_SALT + tok).hexdigest()
+        if digest in forbidden_hashes:
+            matched.add(f"sha256:{digest[:12]}")
+    return sorted(matched)
+
+
+def _build_forbidden_archive_tokens(
+    runtime_hostname: Optional[str] = None,
+    runtime_username: Optional[str] = None,
+    generic_names: Optional[Set[str]] = None,
+) -> Tuple[str, ...]:
+    eff_generic = (
+        {g.lower() for g in generic_names}
+        if generic_names is not None
+        else {"localhost", "runner", "root", "user", "admin", "ubuntu", "cosmos", "pc", "test"}
+    )
+    eff_host = (socket.gethostname() or "").strip() if runtime_hostname is None else runtime_hostname.strip()
+    eff_user = (getpass.getuser() or "").strip() if runtime_username is None else runtime_username.strip()
     tokens: List[str] = [
+        ":\\" + "Anaconda",
+        ":/" + "Anaconda",
+        ":\\" + "Miniconda",
+        ":/" + "Miniconda",
         "\\" + ".py" + "env",
         "/." + "py" + "env/",
         "py" + "env-win",
     ]
-    extra_raw = os.environ.get("COSMOS_EXTRA_FORBIDDEN_TOKENS", "")
-    for extra in extra_raw.split(","):
-        tok = extra.strip()
-        if len(tok) >= 4 and tok.lower() not in generic_names and tok not in tokens:
-            tokens.append(tok)
-    if runtime_hostname and len(runtime_hostname) >= 4 and runtime_hostname.lower() not in generic_names:
-        if runtime_hostname not in tokens:
-            tokens.append(runtime_hostname)
-    if runtime_username and len(runtime_username) >= 4 and runtime_username.lower() not in generic_names:
-        if runtime_username not in tokens:
-            tokens.append(runtime_username)
+    extra_parts: List[str] = [os.environ.get("COSMOS_EXTRA_FORBIDDEN_TOKENS", "")]
+    dotenv_path = REPO_ROOT / ".env"
+    if dotenv_path.is_file():
+        for raw_ln in dotenv_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            ln_s = raw_ln.strip()
+            if ln_s.startswith("COSMOS_EXTRA_FORBIDDEN_TOKENS="):
+                extra_parts.append(ln_s.split("=", 1)[1].strip().strip("'").strip('"'))
+    for extra_raw in extra_parts:
+        for extra in extra_raw.split(","):
+            tok = extra.strip()
+            if len(tok) >= 4 and tok.lower() not in eff_generic and tok not in tokens:
+                tokens.append(tok)
+    if eff_host and len(eff_host) >= 4 and eff_host.lower() not in eff_generic:
+        if eff_host not in tokens:
+            tokens.append(eff_host)
+    if eff_user and len(eff_user) >= 4 and eff_user.lower() not in eff_generic:
+        if eff_user not in tokens:
+            tokens.append(eff_user)
     return tuple(tokens)
 
 
@@ -238,6 +345,10 @@ def scan_archive_entry_sensitive_bytes(
             )
             if re.search(u16_re, data):
                 matched.append(tok)
+    covered_prefixes = {f"sha256:{hash_sensitive_identifier(tok)[:12]}" for tok in matched}
+    for h_tag in scan_bytes_forbidden_identifier_hashes(data):
+        if h_tag not in covered_prefixes:
+            matched.append(h_tag)
     return matched
 
 
@@ -318,8 +429,14 @@ def _is_excluded_rel_parts(parts: Sequence[str]) -> bool:
             return True
         if low.endswith(".egg-info"):
             return True
-        if idx == len(parts) - 1 and any(low.endswith(sfx) for sfx in EXCLUDED_SUFFIXES):
-            return True
+        if idx == len(parts) - 1:
+            if low == ".env" or (
+                low.startswith(".env.")
+                and low not in {".env.example", ".env.sample", ".env.template"}
+            ):
+                return True
+            if any(low.endswith(sfx) for sfx in EXCLUDED_SUFFIXES):
+                return True
     return False
 
 
@@ -640,9 +757,31 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
         errors.append(f"Release archive does not exist: {eff_zip}")
         return False, errors, {"zip_path": str(eff_zip)}
 
-    # 1. Check workspace for duplicate build/lib residue and required repo-root launchers
+    # 1. Check workspace for duplicate build/lib residue, tracked .env files, and required repo-root launchers
     if (repo_root / "build" / "lib").exists():
         errors.append("Duplicate `build/lib/` residue exists in workspace.")
+    if (repo_root / ".git").exists():
+        try:
+            ls_res = subprocess.run(
+                ["git", "ls-files"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+            )
+            if ls_res.returncode == 0:
+                for tracked_rel in ls_res.stdout.splitlines():
+                    base_low = Path(tracked_rel.strip()).name.lower()
+                    if base_low == ".env" or (
+                        base_low.startswith(".env.")
+                        and base_low not in {".env.example", ".env.sample", ".env.template"}
+                    ):
+                        errors.append(f"Git-tracked local env file must not exist in repository: `{tracked_rel.strip()}`")
+        except OSError:
+            pass
     for gl in GENERATED_LAUNCHERS:
         if not (repo_root / gl).is_file():
             errors.append(f"Missing required launcher script in repository root: `{gl}`")
@@ -664,6 +803,7 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
     zip_names: List[str] = []
     embed_pth_checked: int = 0
     has_embed_entries: bool = False
+    has_bundled_wheels: bool = False
     byte_scanned_entries: int = 0
 
     with zipfile.ZipFile(eff_zip, "r") as zf:
@@ -676,6 +816,8 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             is_bundled_wheel = len(norm_parts) == 2 and norm_parts[0].lower() == "wheels" and low_arc.endswith(".whl")
             if is_embed_entry:
                 has_embed_entries = True
+            if is_bundled_wheel:
+                has_bundled_wheels = True
             if low_arc.startswith(".interface-design/"):
                 errors.append(f"Internal design draft must not be distributed in release ZIP: {arc}")
             if is_embed_entry and low_arc.startswith("python-embed/lib/site-packages/bin/") and low_arc.endswith(".exe"):
@@ -741,13 +883,14 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             or "python-embed/bin/python" in zip_name_set
         ):
             errors.append("Release ZIP contains `python-embed/` without `python-embed/python.exe` (or `bin/python3`)")
-        for req_pkg in REQUIRED_EMBED_PACKAGES:
-            pkg_init = f"python-embed/Lib/site-packages/{req_pkg}/__init__.py"
-            pkg_mod = f"python-embed/Lib/site-packages/{req_pkg}.py"
-            if pkg_init not in zip_name_set and pkg_mod not in zip_name_set:
-                errors.append(
-                    f"Embedded Python `win64-full` archive is missing required package `{req_pkg}` under `python-embed/Lib/site-packages/`"
-                )
+        if not has_bundled_wheels:
+            for req_pkg in REQUIRED_EMBED_PACKAGES:
+                pkg_init = f"python-embed/Lib/site-packages/{req_pkg}/__init__.py"
+                pkg_mod = f"python-embed/Lib/site-packages/{req_pkg}.py"
+                if pkg_init not in zip_name_set and pkg_mod not in zip_name_set:
+                    errors.append(
+                        f"Embedded Python `win64-full` archive is missing required package `{req_pkg}` under `python-embed/Lib/site-packages/`"
+                    )
 
     for req in (
         QUICKSTART_TXT_NAME,
@@ -803,6 +946,8 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             and runtime_username.lower() in txt.lower()
         ):
             errors.append(f"Local OS username leaked in repo file `{rel_arc}`")
+        if scan_text_forbidden_identifier_hashes(txt):
+            errors.append(f"Forbidden sensitive identifier hash matched in repo file `{rel_arc}`")
         if _PRIVATE_CONDA_PATH_RE.search(txt) or _PRIVATE_DEV_DRIVE_RE.search(txt):
             errors.append(f"Private local path (e.g. Anaconda / private drive path) leaked in repo file `{rel_arc}`")
         if _PRIVATE_PAD_PACK_RE.search(txt):

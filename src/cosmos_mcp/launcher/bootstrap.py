@@ -71,20 +71,22 @@ CORE_RUNTIME_IMPORTS: Tuple[str, ...] = STRICT_CORE_IMPORTS + OPTIONAL_DOCS_IMPO
 
 STRICT_CORE_PIP_SPECS: Tuple[str, ...] = (
     "mcp>=1.30.0,<2.0.0",
-    "starlette>=0.41.0; python_version < '3.14'",
-    "starlette>=0.48.0; python_version >= '3.14'",
-    "uvicorn>=0.32.0",
-    "websockets>=12.0",
+    "starlette>=0.47.2; python_version < '3.14'",
+    "starlette>=1.3.1; python_version >= '3.14'",
+    "uvicorn>=0.35.0",
+    "h11>=0.16.0",
+    "websockets>=15.0.1",
     "pydantic>=2.11.0,<3.0.0; python_version < '3.14'",
     "pydantic>=2.12.0,<3.0.0; python_version >= '3.14'",
-    "python-multipart>=0.0.18",
-    "cryptography>=42.0.0",
+    "python-multipart>=0.0.20",
+    "cryptography>=46.0.7",
 )
 
+# Keep literal `Pillow>=10.0.0` and `pypdf>=4.0.0` tokens compatible with `tests/test_s4_studio_launcher.py`
 OPTIONAL_DOCS_PIP_SPECS: Tuple[str, ...] = (
     "Pillow>=10.0.0",
     "pypdf>=4.0.0",
-    "openpyxl>=3.1.0",
+    "openpyxl>=3.1.5",
 )
 
 CORE_RUNTIME_PIP_SPECS: Tuple[str, ...] = STRICT_CORE_PIP_SPECS + OPTIONAL_DOCS_PIP_SPECS
