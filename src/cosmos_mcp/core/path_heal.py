@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-from cosmos_mcp.core.guard import WorkspaceGuard, expand_env_and_tilde, strip_file_uri
+from cosmos_mcp.core.guard import WorkspaceGuard, canonical_realpath, expand_env_and_tilde, has_ntfs_ads_stream, strip_file_uri
 
 IGNORED_HEAL_DIRS: Set[str] = {
     ".git",
@@ -51,20 +51,25 @@ _PROP_MAPPING_LINE_RE = re.compile(
 )
 
 
-def is_link_or_junction(p: Path) -> bool:
-    """Return True if `p` is a symbolic link or Windows NTFS junction/reparse point."""
+def is_link_or_junction(p: Union[Path, str]) -> bool:
+    """Return True if `p` is a symbolic link or Windows NTFS junction/mount-point (allowing OneDrive 0x9000* cloud files)."""
+    p_str = str(p)
     try:
-        if os.path.islink(p):
-            return True
-        is_junc = getattr(p, "is_junction", None)
-        if callable(is_junc) and is_junc():
-            return True
-        st = os.lstat(p)
-        if bool(getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)):
-            return True
+        st = os.lstat(p_str)
     except FileNotFoundError:
         return False
     except OSError:
+        return os.path.islink(p_str)
+    reparse_tag = int(getattr(st, "st_reparse_tag", 0) or 0)
+    if reparse_tag != 0:
+        return reparse_tag in (0xA000000C, 0xA0000003)
+    if stat.S_ISLNK(getattr(st, "st_mode", 0)) or os.path.islink(p_str):
+        return True
+    p_obj = p if isinstance(p, Path) else Path(p_str)
+    is_junc = getattr(p_obj, "is_junction", None)
+    if callable(is_junc) and is_junc():
+        return True
+    if os.name == "nt" and bool(getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)):
         return True
     return False
 
@@ -233,11 +238,12 @@ def suggest_did_you_mean(
                 roots.append(rp)
 
     def _allowed(cp: Path) -> bool:
-        if is_link_or_junction(cp):
+        target_p = canonical_realpath(cp) if is_link_or_junction(cp) else cp
+        if is_link_or_junction(cp) and not target_p.exists():
             return False
         if guard is not None:
-            return guard.check_path_access(str(cp), mode="read") is None
-        return True
+            return guard.check_path_access(str(target_p), mode="read") is None
+        return not is_link_or_junction(cp)
 
     scored: List[Tuple[float, str]] = []
     seen_disp: Set[str] = set()

@@ -321,9 +321,7 @@ _HIDDEN_COMMENT_DIRECTIVE_RE: Pattern[str] = re.compile(
     r"|you\s+are\s+now\s+(?:a|an|in)\b"
     r"|new\s+instructions?\s*:"
     r"|do\s+not\s+(?:tell|inform|mention|reveal|disclose)"
-    r"|\b(?:curl|wget|irm|iwr|Invoke-WebRequest|Invoke-RestMethod)\s+[^\n]{0,80}https?://"
-    r"|\b(?:cat|type|read|get-content|head|tail|exfil\w*)\s+[^\n]{0,60}(?:\.ssh|\.env|\.aws|\.claude|auth\.json|\.netrc|\.npmrc|id_rsa|id_ed25519|API_KEY|SECRET|Login\s+Data|Cookies)"
-    r"|\b(?:pc_run_command|pc_run_python|pc_write_file|send_message|execute_bash)\b)"
+    r"|\b(?:cat|type|read|get-content|head|tail|exfil\w*)\s+[^\n]{0,60}(?:\.ssh|\.env|\.aws|\.claude|auth\.json|\.netrc|\.npmrc|id_rsa|id_ed25519|API_KEY|SECRET|Login\s+Data|Cookies))"
 )
 
 _BIDI_AND_UNICODE_TAG_RE: Pattern[str] = re.compile(
@@ -757,7 +755,8 @@ def _analyze_python_ast(
     exec_lines: List[int] = []
     shell_true_lines: List[int] = []
     net_call_lines: List[int] = []
-    env_or_cred_lines: List[int] = []
+    single_env_lines: List[int] = []
+    bulk_env_or_cred_lines: List[int] = []
 
     store_subscript_value_ids: Set[int] = {
         id(tgt.value)
@@ -766,12 +765,21 @@ def _analyze_python_ast(
         for tgt in assign_n.targets
         if isinstance(tgt, ast.Subscript)
     }
+    single_key_environ_ids: Set[int] = set()
+    for p_nd in ast.walk(tree):
+        if isinstance(p_nd, ast.Subscript) and isinstance(getattr(p_nd, "ctx", None), ast.Load):
+            single_key_environ_ids.add(id(p_nd.value))
+        elif isinstance(p_nd, ast.Call) and isinstance(p_nd.func, ast.Attribute) and p_nd.func.attr in ("get", "setdefault", "pop"):
+            single_key_environ_ids.add(id(p_nd.func.value))
+        elif isinstance(p_nd, ast.Compare) and all(isinstance(op, (ast.In, ast.NotIn)) for op in p_nd.ops):
+            for cmp_v in p_nd.comparators:
+                single_key_environ_ids.add(id(cmp_v))
 
     cred_ast_str_re = re.compile(
-        r"(?i)(?:(?:^|[/\\])\.env(?:\.[A-Za-z0-9_-]+)?$"
-        r"|(?:^|[/\\])(?:\.netrc|\.npmrc|id_rsa|id_ed25519|id_ecdsa|authorized_keys|oauth\.sqlite3)$"
+        r"(?i)(?:(?:^|[/\\])(?:\.netrc|id_rsa|id_ed25519|id_ecdsa|authorized_keys|oauth\.sqlite3)$"
         r"|(?:\.aws[/\\]credentials|\.claude[/\\]\.credentials\.json|secrets[/\\]auth\.json|CONNECTION_INFO))"
     )
+    dotenv_ast_str_re = re.compile(r"(?i)(?:^|[/\\])\.env(?:\.[A-Za-z0-9_-]+)?$")
 
     for node in ast.walk(tree):
         n_line = int(getattr(node, "lineno", 0) or 0)
@@ -779,16 +787,25 @@ def _analyze_python_ast(
             if id(node) not in store_subscript_value_ids and node.attr == "environ" and isinstance(node.value, ast.Name):
                 base_mod = module_aliases.get(node.value.id, symbol_imports.get(node.value.id, node.value.id))
                 if base_mod in ("os", "posix", "nt"):
-                    env_or_cred_lines.append(n_line)
+                    if id(node) in single_key_environ_ids:
+                        single_env_lines.append(n_line)
+                    else:
+                        bulk_env_or_cred_lines.append(n_line)
         elif isinstance(node, ast.Name) and isinstance(getattr(node, "ctx", None), ast.Load):
             if id(node) not in store_subscript_value_ids:
                 resolved_sym = symbol_imports.get(node.id, "")
                 if resolved_sym in ("os.environ", "posix.environ", "nt.environ"):
-                    env_or_cred_lines.append(n_line)
+                    if id(node) in single_key_environ_ids:
+                        single_env_lines.append(n_line)
+                    else:
+                        bulk_env_or_cred_lines.append(n_line)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             s_val = node.value.strip()
-            if s_val and (_SCRIPT_CRED_HARVEST_RE.search(s_val) or cred_ast_str_re.search(s_val)):
-                env_or_cred_lines.append(n_line)
+            if s_val:
+                if _SCRIPT_CRED_HARVEST_RE.search(s_val) or cred_ast_str_re.search(s_val):
+                    bulk_env_or_cred_lines.append(n_line)
+                elif dotenv_ast_str_re.search(s_val):
+                    single_env_lines.append(n_line)
 
     decode_attrs = {
         "b64decode",
@@ -937,7 +954,7 @@ def _analyze_python_ast(
         if func_name in ("os.getenv", "posix.getenv", "nt.getenv", "dotenv.dotenv_values", "dotenv.load_dotenv") or (
             attr_name in ("getenv", "dotenv_values", "load_dotenv")
         ):
-            env_or_cred_lines.append(lineno)
+            single_env_lines.append(lineno)
 
         if (
             attr_name in ("urlopen", "urlretrieve", "HTTPConnection", "HTTPSConnection", "create_connection")
@@ -990,15 +1007,25 @@ def _analyze_python_ast(
             "Prefer direct argument-array subprocess calls without shell interpreters or confirm execution.",
         )
 
-    if env_or_cred_lines and net_call_lines:
-        dedup_env = list(dict.fromkeys(env_or_cred_lines))
+    if bulk_env_or_cred_lines and net_call_lines:
+        dedup_env = list(dict.fromkeys(bulk_env_or_cred_lines))
         dedup_net = list(dict.fromkeys(net_call_lines))
         report.add(
             "BLOCK",
             "PY_AST_ENV_NETWORK_EXFIL",
             rel_path,
-            f"Python AST combines environment/credential access (lines {dedup_env[:5]}) with outbound network I/O (lines {dedup_net[:5]})",
-            "Remove combined environment/credential reads and outbound network transmission.",
+            f"Python AST combines bulk environment dump or host private key/credential access (lines {dedup_env[:5]}) with outbound network I/O (lines {dedup_net[:5]})",
+            "Remove full-environment iteration/dumps (`dict(os.environ)`) and host credential store reads.",
+        )
+    elif single_env_lines and net_call_lines:
+        dedup_single = list(dict.fromkeys(single_env_lines))
+        dedup_net_w = list(dict.fromkeys(net_call_lines))
+        report.add(
+            "WARN",
+            "PY_AST_ENV_NETWORK_WARN",
+            rel_path,
+            f"Python script reads specific environment variable(s) (lines {dedup_single[:5]}) and performs outbound HTTP/network calls (lines {dedup_net_w[:5]}); user confirmation required",
+            "Verify the target API domain and environment variable names before confirming installation with confirm_warn=True.",
         )
 
     if net_call_lines:

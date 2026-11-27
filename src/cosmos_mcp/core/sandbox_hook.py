@@ -52,10 +52,12 @@ def _install_cosmos_l3_hook():
 
     _raw_multi = os.environ.get("COSMOS_L3_WORKSPACES", "").strip()
     _raw_single = os.environ.get("LOCALPC_L3_WORKSPACE", "").strip()
+    _raw_ro_multi = os.environ.get("COSMOS_L3_READONLY_WORKSPACES", "").strip()
+    _restrict_ws = os.environ.get("COSMOS_L3_RESTRICT_WS", "1").strip() != "0"
     _raw_parts = [p.strip() for p in _raw_multi.split(_pathsep) if p.strip()] if _raw_multi else []
     if _raw_single and _raw_single not in _raw_parts:
         _raw_parts.append(_raw_single)
-    if not _raw_parts:
+    if not _raw_parts and not _raw_ro_multi:
         return
 
     _sep = chr(92) if _is_win else "/"
@@ -68,10 +70,7 @@ def _install_cosmos_l3_hook():
             _wl = _wp.lower().rstrip(_strip_chars)
         if _wl and _wl not in _ws_list:
             _ws_list.append(_wl)
-    if not _ws_list:
-        return
 
-    _raw_ro_multi = os.environ.get("COSMOS_L3_READONLY_WORKSPACES", "").strip()
     _ro_ws_list = []
     if _raw_ro_multi:
         for _rwp in _raw_ro_multi.split(_pathsep):
@@ -86,6 +85,8 @@ def _install_cosmos_l3_hook():
                 _ro_ws_list.append(_rwl)
                 if _rwl not in _ws_list:
                     _ws_list.append(_rwl)
+    if not _ws_list:
+        return
     _ws_roots = _tuple(_ws_list)
     _ro_ws_roots = _tuple(_ro_ws_list)
     _ro_ws_set = frozenset(_ro_ws_roots)
@@ -197,6 +198,10 @@ def _install_cosmos_l3_hook():
 
     _prot_cred = os.environ.get("COSMOS_L3_PROTECT_CREDENTIALS", "1") != "0"
     _prot_dotenv = os.environ.get("COSMOS_L3_PROTECT_DOTENV", "0") == "1"
+    try:
+        _home_npmrc_low = _realpath(_abspath(_str(_home / ".npmrc"))).lower().rstrip(_strip_chars)
+    except _BaseExc:
+        _home_npmrc_low = _str(_home / ".npmrc").lower().rstrip(_strip_chars)
     _sens_pats = [
         r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
     ]
@@ -205,7 +210,7 @@ def _install_cosmos_l3_hook():
             r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
             r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
             r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
-            r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
+            r"(?:^|[\\/])\.(?:git-credentials|pypirc|netrc)$",
             r"(?:^|[\\/])appdata[\\/]local[\\/](?:google[\\/]chrome|microsoft[\\/]edge|bravesoftware[\\/]brave-browser|chromium)[\\/]user data(?:$|[\\/])",
         ])
     if _prot_dotenv:
@@ -239,6 +244,7 @@ def _install_cosmos_l3_hook():
         "COSMOS_L3_WORKSPACES",
         "LOCALPC_L3_WORKSPACE",
         "COSMOS_L3_READONLY_WORKSPACES",
+        "COSMOS_L3_RESTRICT_WS",
         "COSMOS_L3_SCAN_HOST_SKILLS",
         "COSMOS_L3_PROTECT_CREDENTIALS",
         "COSMOS_L3_PROTECT_DOTENV",
@@ -291,6 +297,10 @@ def _install_cosmos_l3_hook():
             return res_s
         if _any(rx.search(res_s) or rx.search(ts) for rx in _sens_rx):
             raise _PermErr("[COSMOS L3 SANDBOX]: Sensitive host credential path is isolated.")
+        if _prot_cred and tl.endswith(_sep + ".npmrc") and (
+            tl == _home_npmrc_low or (_restrict_ws and not _under_any_ws(tl))
+        ):
+            raise _PermErr("[COSMOS L3 SANDBOX]: Sensitive host credential path is isolated.")
         if _secrets_low and _under(tl, _secrets_low):
             raise _PermErr("[COSMOS L3 SANDBOX]: MCP state and secrets are isolated.")
         if _eff_sr_low and _under(tl, _eff_sr_low) and not _under(tl, _tmp_low) and not (
@@ -321,6 +331,8 @@ def _install_cosmos_l3_hook():
                         f"ERR_READONLY_WORKSPACE: [COSMOS L3 SANDBOX]: Workspace {_best_w} is mounted as read-only; write access to {res_s} is prohibited."
                     )
             return res_s
+        if not _restrict_ws:
+            return res_s
         if not is_write:
             if _any(_under(tl, r) for r in _ro_roots):
                 return res_s
@@ -336,13 +348,38 @@ def _install_cosmos_l3_hook():
                 _sp_real = _realpath(_abspath(_str(_sp_cand))).lower().rstrip(_strip_chars)
             except _BaseExc:
                 _sp_real = ""
-            if _sp_real and not _under_any_ws(_sp_real) and _sp_real not in _trusted_site_list:
-                _trusted_site_list.append(_sp_real)
+            if _sp_real and _sp_real not in _trusted_site_list:
+                if (not _under_any_ws(_sp_real)) or ((_sep + ".venv" + _sep) in _sp_real) or ((_sep + "venv" + _sep) in _sp_real):
+                    _trusted_site_list.append(_sp_real)
+    for _wr_v in _ws_roots:
+        for _vn in (".venv", "venv"):
+            _vp_base = _Path(_wr_v) / _vn
+            for _sp_sub in (_vp_base / "Lib" / "site-packages", _vp_base / "lib" / "site-packages"):
+                try:
+                    if _sp_sub.is_dir():
+                        _vs_r = _realpath(_abspath(_str(_sp_sub))).lower().rstrip(_strip_chars)
+                        if _vs_r and _vs_r not in _trusted_site_list:
+                            _trusted_site_list.append(_vs_r)
+                except _BaseExc:
+                    pass
+            try:
+                _lib_d = _vp_base / "lib"
+                if _lib_d.is_dir():
+                    for _py_ch in _lib_d.iterdir():
+                        _sp_py = _py_ch / "site-packages"
+                        if _py_ch.name.lower().startswith("python") and _sp_py.is_dir():
+                            _vs_r2 = _realpath(_abspath(_str(_sp_py))).lower().rstrip(_strip_chars)
+                            if _vs_r2 and _vs_r2 not in _trusted_site_list:
+                                _trusted_site_list.append(_vs_r2)
+            except _BaseExc:
+                pass
     _trusted_site_dirs = _tuple(_trusted_site_list)
     _raw_mod_block = frozenset({"ctypes", "_ctypes", "_winapi", "msvcrt", "winreg"})
     _ctypes_ev_block = frozenset({"ctypes.dlopen", "ctypes.dlsym", "ctypes.cdata"})
 
     def _is_trusted_internal_caller(skip_ctypes=False):
+        if not _restrict_ws:
+            return True
         f = _getframe(1)
         while f is not None:
             co = f.f_code
@@ -362,8 +399,6 @@ def _install_cosmos_l3_hook():
                 fn_real = _realpath(_abspath(fn)).lower()
             except _BaseExc:
                 return False
-            if _under_any_ws(fn_real):
-                return False
             if (fn_real.endswith("\\importlib\\__init__.py") or fn_real.endswith("/importlib/__init__.py")) and co.co_name == "import_module":
                 f = f.f_back
                 continue
@@ -371,6 +406,8 @@ def _install_cosmos_l3_hook():
                 return False
             if _under(fn_real, _stdlib_dir) or _any(_under(fn_real, sd) for sd in _trusted_site_dirs):
                 return True
+            if _under_any_ws(fn_real):
+                return False
             return False
         return False
 
@@ -431,7 +468,9 @@ def _install_cosmos_l3_hook():
                     raise _PermErr(f"[COSMOS L3 SANDBOX]: import {mn} is prohibited in Tier L3.")
             return
         if _any(ev.startswith(p) for p in _proc_block_prefixes):
-            raise _PermErr(f"[COSMOS L3 SANDBOX]: {ev} is prohibited in Tier L3; use workspace-scoped subprocesses.")
+            if _restrict_ws:
+                raise _PermErr(f"[COSMOS L3 SANDBOX]: {ev} is prohibited in Tier L3; use workspace-scoped subprocesses.")
+            return
         if ev in ("os.putenv", "os.unsetenv"):
             ek_p = _fsd(args[0]).strip().upper() if (_len(args) > 0 and _isinstance(args[0], _ptypes)) else ""
             if ek_p in _prot_env_keys:
@@ -627,7 +666,21 @@ def prepare_l3_sandbox_env(
     out_env = dict(env)
     sep = os.pathsep
 
-    if not restrict_to_workspace or not enable_audit_hook:
+    resolved_ro_roots: List[str] = []
+    if readonly_workspace_roots is not None:
+        for ro_r in readonly_workspace_roots:
+            if ro_r is not None and str(ro_r).strip():
+                ro_p = str(canonical_realpath(ro_r))
+                if ro_p and ro_p not in resolved_ro_roots:
+                    resolved_ro_roots.append(ro_p)
+    elif (out_env.get("COSMOS_L3_READONLY_WORKSPACES") or "").strip():
+        for ro_part in out_env["COSMOS_L3_READONLY_WORKSPACES"].split(sep):
+            if ro_part.strip():
+                ro_p = str(canonical_realpath(ro_part.strip()))
+                if ro_p and ro_p not in resolved_ro_roots:
+                    resolved_ro_roots.append(ro_p)
+
+    if not enable_audit_hook or (not restrict_to_workspace and not resolved_ro_roots):
         try:
             sr_cand = canonical_realpath(state_root)
             guard_cand_key = _norm_dir_key(str(sr_cand / "state" / "l3_py_guard"))
@@ -646,6 +699,7 @@ def prepare_l3_sandbox_env(
             "COSMOS_L3_WORKSPACES",
             "LOCALPC_L3_WORKSPACE",
             "COSMOS_L3_READONLY_WORKSPACES",
+            "COSMOS_L3_RESTRICT_WS",
             "COSMOS_L3_SCAN_HOST_SKILLS",
             "COSMOS_L3_PROTECT_CREDENTIALS",
             "COSMOS_L3_PROTECT_DOTENV",
@@ -663,22 +717,11 @@ def prepare_l3_sandbox_env(
             rp = str(canonical_realpath(r))
             if rp and rp not in resolved_roots:
                 resolved_roots.append(rp)
-    if not resolved_roots:
+    if restrict_to_workspace and not resolved_roots:
         raise PermissionError(f"{ERR_L3_SANDBOX_INIT_FAILED}: workspace_roots must not be empty when restrict_to_workspace=True")
-
-    resolved_ro_roots: List[str] = []
-    if readonly_workspace_roots is not None:
-        for ro_r in readonly_workspace_roots:
-            if ro_r is not None and str(ro_r).strip():
-                ro_p = str(canonical_realpath(ro_r))
-                if ro_p and ro_p not in resolved_ro_roots:
-                    resolved_ro_roots.append(ro_p)
-    elif (out_env.get("COSMOS_L3_READONLY_WORKSPACES") or "").strip():
-        for ro_part in out_env["COSMOS_L3_READONLY_WORKSPACES"].split(sep):
-            if ro_part.strip():
-                ro_p = str(canonical_realpath(ro_part.strip()))
-                if ro_p and ro_p not in resolved_ro_roots:
-                    resolved_ro_roots.append(ro_p)
+    for ro_item in resolved_ro_roots:
+        if ro_item not in resolved_roots:
+            resolved_roots.append(ro_item)
 
     if scan_host_global_skills is not None:
         eff_scan_skills = bool(scan_host_global_skills)
@@ -699,8 +742,9 @@ def prepare_l3_sandbox_env(
 
     joined_ws = sep.join(resolved_roots)
     out_env["COSMOS_L3_WORKSPACES"] = joined_ws
-    out_env["LOCALPC_L3_WORKSPACE"] = resolved_roots[0]
+    out_env["LOCALPC_L3_WORKSPACE"] = resolved_roots[0] if resolved_roots else ""
     out_env["COSMOS_L3_READONLY_WORKSPACES"] = sep.join(resolved_ro_roots)
+    out_env["COSMOS_L3_RESTRICT_WS"] = "1" if restrict_to_workspace else "0"
     out_env["COSMOS_L3_SCAN_HOST_SKILLS"] = "1" if eff_scan_skills else "0"
     out_env["COSMOS_L3_PROTECT_CREDENTIALS"] = "1" if eff_prot_cred else "0"
     out_env["COSMOS_L3_PROTECT_DOTENV"] = "1" if eff_prot_dotenv else "0"
@@ -716,7 +760,7 @@ def prepare_l3_sandbox_env(
     return out_env
 
 
-BATCH_PROBE_RUNNER_SCRIPT = r"""import ast, builtins, contextlib, fnmatch, importlib, io, json, os, re, sys, traceback
+BATCH_PROBE_RUNNER_SCRIPT = r"""import ast, builtins, contextlib, fnmatch, importlib, io, json, os, re, sys, traceback, urllib.parse
 from pathlib import Path
 
 def _bootstrap_probe():
@@ -767,6 +811,31 @@ def _bootstrap_probe():
         _ro_cands.append(Path(sr_raw) / "skills_store")
         _ro_cands.append(Path(sr_raw) / "host_skills")
         _ro_cands.append(Path(sr_raw) / "app_src" / "host_skills")
+    _venv_site_cands = []
+    _venv_base_roots = [proj] + [Path(w) for w in ws_roots_raw if w]
+    for _vb in _venv_base_roots:
+        for _vn in (".venv", "venv"):
+            _vp = _vb / _vn
+            for _sp_cand in (_vp / "Lib" / "site-packages", _vp / "lib" / "site-packages"):
+                try:
+                    if _sp_cand.is_dir() and _sp_cand not in _venv_site_cands:
+                        _venv_site_cands.append(_sp_cand)
+                except BaseException:
+                    pass
+            try:
+                _vlib = _vp / "lib"
+                if _vlib.is_dir():
+                    for _pch in _vlib.iterdir():
+                        _sp_py = _pch / "site-packages"
+                        if _pch.name.lower().startswith("python") and _sp_py.is_dir() and _sp_py not in _venv_site_cands:
+                            _venv_site_cands.append(_sp_py)
+            except BaseException:
+                pass
+    for _vsp in _venv_site_cands:
+        _ro_cands.append(_vsp)
+        _vsp_s = str(_vsp)
+        if not any(os.path.normcase(os.path.abspath(p)) == os.path.normcase(os.path.abspath(_vsp_s)) for p in sys.path if p):
+            sys.path.append(_vsp_s)
     for _sp in sys.path:
         if _sp:
             if "site-packages" in _sp.lower() or "dist-packages" in _sp.lower():
@@ -780,6 +849,7 @@ def _bootstrap_probe():
     ))
     _prot_cred = bool(payload.get("protect_host_credentials", True))
     _prot_dotenv = bool(payload.get("protect_dotenv_files", False))
+    _home_npmrc_low = os.path.realpath(os.path.abspath(str(_home / ".npmrc"))).lower().rstrip(_strip)
     _sens_pats = [
         r"(?:^|[\\/])(?:owner_password\.txt|连接信息_CONNECTION_INFO[^\\/]*\.txt|latest_consent_pair_code[^\\/]*\.txt|oauth(?:_[a-z0-9_.-]+)?\.sqlite3(?:-wal|-shm)?|\.(?:human_ui_secret|peer_hmac_secret))$",
     ]
@@ -788,7 +858,7 @@ def _bootstrap_probe():
             r"(?:^|[\\/])\.(?:ssh|aws|gnupg|kube|azure)(?:$|[\\/])",
             r"(?:^|[\\/])\.cargo[\\/]credentials(?:\.toml)?$",
             r"(?:^|[\\/])\.?huggingface[\\/](?:token|stored_tokens)(?:$|[\\/])",
-            r"(?:^|[\\/])\.(?:git-credentials|npmrc|pypirc|netrc)$",
+            r"(?:^|[\\/])\.(?:git-credentials|pypirc|netrc)$",
         ])
     if _prot_dotenv:
         _sens_pats.append(
@@ -810,6 +880,10 @@ def _bootstrap_probe():
         if any(_under(tl, rb) for rb in _read_blocked):
             raise PermissionError("[COSMOS BATCH PROBE]: MCP secrets and state files are isolated.")
         if any(rx.search(res_s) or rx.search(ts) for rx in _sens_rxs):
+            raise PermissionError("[COSMOS BATCH PROBE]: Sensitive host credential path is isolated.")
+        if _prot_cred and tl.endswith(_sep + ".npmrc") and (
+            tl == _home_npmrc_low or (restrict_ws and _ws_roots and not any(_under(tl, w) for w in _ws_roots))
+        ):
             raise PermissionError("[COSMOS BATCH PROBE]: Sensitive host credential path is isolated.")
         if not for_chdir and any(_under(tl, ap) for ap in _allowed_imp):
             return res_s
@@ -877,13 +951,26 @@ def _bootstrap_probe():
     _len = len
     _PermErr = PermissionError
     _getframe = sys._getframe
+    _urlsplit = urllib.parse.urlsplit
+    _unquote = urllib.parse.unquote
+    _is_win = sys.platform == "win32"
     _stdlib_dir = os.path.realpath(os.path.dirname(os.__file__)).lower().rstrip(_strip)
-    _trusted_site_dirs = tuple(
-        os.path.realpath(str(p)).lower().rstrip(_strip)
-        for p in sys.path
-        if p and ("site-packages" in p.lower() or "dist-packages" in p.lower())
-        and not any(_under(os.path.realpath(str(p)).lower().rstrip(_strip), w) for w in _ws_roots)
-    )
+    _trusted_site_list = []
+    for _p_sp in sys.path:
+        if _p_sp and ("site-packages" in _p_sp.lower() or "dist-packages" in _p_sp.lower()):
+            _sp_r = os.path.realpath(str(_p_sp)).lower().rstrip(_strip)
+            if _sp_r and _sp_r not in _trusted_site_list:
+                if (
+                    not any(_under(_sp_r, w) for w in _ws_roots)
+                    or ((_sep + ".venv" + _sep) in _sp_r)
+                    or ((_sep + "venv" + _sep) in _sp_r)
+                ):
+                    _trusted_site_list.append(_sp_r)
+    for _vsp_t in _venv_site_cands:
+        _vr_t = os.path.realpath(str(_vsp_t)).lower().rstrip(_strip)
+        if _vr_t and _vr_t not in _trusted_site_list:
+            _trusted_site_list.append(_vr_t)
+    _trusted_site_dirs = tuple(_trusted_site_list)
     _raw_mod_block = frozenset({
         "ctypes", "_ctypes", "_winapi", "msvcrt", "winreg",
         "subprocess", "_posixsubprocess", "shutil", "socket",
@@ -910,8 +997,6 @@ def _bootstrap_probe():
                 fn_real = os.path.realpath(fn).lower()
             except BaseException:
                 return False
-            if any(_under(fn_real, w) for w in _ws_roots):
-                return False
             if (fn_real.endswith("\\importlib\\__init__.py") or fn_real.endswith("/importlib/__init__.py")) and co.co_name == "import_module":
                 f = f.f_back
                 continue
@@ -919,6 +1004,8 @@ def _bootstrap_probe():
                 return False
             if _under(fn_real, _stdlib_dir) or any(_under(fn_real, sd) for sd in _trusted_site_dirs):
                 return True
+            if any(_under(fn_real, w) for w in _ws_roots):
+                return False
             return False
         return False
 
@@ -955,7 +1042,7 @@ def _bootstrap_probe():
         "subprocess.", "_posixsubprocess.", "shutil.",
         "socket.connect", "socket.bind", "socket.sendto", "socket.sendmsg",
         "winreg.CreateKey", "winreg.SetValue", "winreg.DeleteKey", "winreg.DeleteValue",
-        "sqlite3.connect", "urllib.request", "http.client", "ftplib.", "smtplib.", "telnetlib.",
+        "urllib.request", "http.client", "ftplib.", "smtplib.", "telnetlib.",
         "webbrowser.", "pty.",
     } | set(_os_mut))
     _blocked_imp = frozenset({
@@ -971,6 +1058,29 @@ def _bootstrap_probe():
             if not _is_trusted_internal_caller(skip_ctypes=True):
                 raise _PermErr(f"[COSMOS BATCH PROBE]: {ev} is prohibited in read-only batch_probe.")
             return
+        if ev == "sqlite3.connect":
+            db_t = args[0] if _len(args) > 0 else ""
+            if not _isinstance(db_t, _ptypes):
+                raise _PermErr("[COSMOS BATCH PROBE]: non-string sqlite3.connect target is prohibited.")
+            dbs = os.fsdecode(db_t).strip()
+            dbs_low = dbs.lower()
+            if dbs == ":memory:" or dbs_low.startswith("file::memory:") or "mode=memory" in dbs_low:
+                return
+            if dbs_low.startswith("file:"):
+                parsed_u = _urlsplit(dbs)
+                q_params = [p.strip().lower() for p in (parsed_u.query or "").split("&") if p.strip()]
+                if "mode=ro" in q_params:
+                    u_path = _unquote(parsed_u.path or "")
+                    if _is_win and _len(u_path) > 2 and u_path[0] == "/" and u_path[2] == ":":
+                        u_path = u_path[1:]
+                    if not u_path and parsed_u.netloc and parsed_u.netloc.lower() != "localhost":
+                        raise _PermErr("[COSMOS BATCH PROBE]: remote UNC sqlite3 URI is prohibited.")
+                    if u_path and u_path != ":memory:":
+                        _check_read(u_path)
+                    return
+            raise _PermErr(
+                "[COSMOS BATCH PROBE]: sqlite3.connect in read-only batch_probe requires ':memory:' or URI 'file:...?mode=ro' (with uri=True)."
+            )
         if _any(ev.startswith(bp) for bp in _blocked_ev):
             raise _PermErr(f"[COSMOS BATCH PROBE]: {ev} is prohibited in read-only batch_probe.")
         if ev in ("object.__setattr__", "object.__delattr__"):
