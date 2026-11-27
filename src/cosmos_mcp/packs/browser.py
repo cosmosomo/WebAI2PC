@@ -938,6 +938,20 @@ def _release_browser_profile_locks_win32(profile_dir: Path) -> List[int]:
     return []
 
 
+def _is_linux_snap_browser(exe_path: str) -> bool:
+    try:
+        p = Path(exe_path)
+        if "/snap/" in p.resolve().as_posix():
+            return True
+        if p.is_file() and p.stat().st_size < 16384:
+            head = p.read_bytes()[:4096]
+            if b"/snap/" in head or b"snap run" in head:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 def find_system_chromium_binary() -> Optional[str]:
     """Locate an installed Edge / Chrome / Chromium executable for zero-dependency CDP fallback."""
     for env_k in ("COSMOS_BROWSER_PATH", "LOCALPC_BROWSER_PATH"):
@@ -969,10 +983,23 @@ def find_system_chromium_binary() -> Optional[str]:
             if Path(c).is_file():
                 return c
     else:
-        for nm in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "microsoft-edge"):
+        linux_cands: List[str] = []
+        for nm in (
+            "google-chrome",
+            "google-chrome-stable",
+            "microsoft-edge",
+            "microsoft-edge-stable",
+            "chromium",
+            "chromium-browser",
+        ):
             w = shutil.which(nm)
-            if w:
-                return w
+            if w and w not in linux_cands:
+                linux_cands.append(w)
+        for cand in linux_cands:
+            if not _is_linux_snap_browser(cand):
+                return cand
+        if linux_cands:
+            return linux_cands[0]
     return None
 
 
@@ -1024,7 +1051,16 @@ class _HeadlessCdpPage:
         url_validator: Optional[Callable[[str], Tuple[Optional[str], Optional[str]]]] = None,
         download_dir: Optional[Path] = None,
     ) -> None:
-        self.profile_dir = profile_dir.resolve()
+        resolved_prof = profile_dir.resolve()
+        if (
+            sys.platform.startswith("linux")
+            and _is_linux_snap_browser(browser_exe)
+            and resolved_prof.as_posix().startswith("/tmp/")
+        ):
+            snap_safe_base = Path.home() / ".cache" / "cosmos-mcp-snap-cdp"
+            resolved_prof = (snap_safe_base / f"{resolved_prof.parent.name}_{resolved_prof.name}").resolve()
+            resolved_prof.mkdir(parents=True, exist_ok=True)
+        self.profile_dir = resolved_prof
         _mark_managed_profile_dir(self.profile_dir)
         self._url_validator = url_validator
         self._proxy_settings = dict(proxy_settings or resolve_browser_proxy_settings())
@@ -1060,8 +1096,9 @@ class _HeadlessCdpPage:
             "--disable-breakpad",
         ]
         if sys.platform.startswith("linux"):
-            if clean_env.get("DBUS_SESSION_BUS_ADDRESS", "").strip() in ("", "/dev/null"):
-                clean_env["DBUS_SESSION_BUS_ADDRESS"] = "disabled:"
+            raw_dbus = clean_env.get("DBUS_SESSION_BUS_ADDRESS", "").strip()
+            if not raw_dbus or not raw_dbus.startswith(("unix:", "tcp:")):
+                clean_env.pop("DBUS_SESSION_BUS_ADDRESS", None)
             argv.extend(
                 [
                     "--disable-dev-shm-usage",
