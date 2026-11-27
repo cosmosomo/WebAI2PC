@@ -25,6 +25,7 @@ import contextlib
 import contextvars
 import ipaddress
 import json
+import logging
 import os
 from pathlib import Path
 import queue
@@ -2229,9 +2230,17 @@ class _IsolatedBrowserWorker:
         _release_browser_profile_locks_win32(self.profile_dir)
 
 
+_LOGGER = logging.getLogger(__name__)
 _GLOBAL_WORKERS_LOCK = threading.Lock()
 _GLOBAL_WORKERS: Dict[str, _IsolatedBrowserWorker] = {}
 _LOGIN_WINDOWS: Dict[str, Dict[str, Any]] = {}
+_LAST_CLOSE_SESSION_FAILURES: List[Dict[str, str]] = []
+
+
+def get_last_close_session_failures() -> List[Dict[str, str]]:
+    """Return failure records from the most recent `close_all_browser_sessions` call."""
+    with _GLOBAL_WORKERS_LOCK:
+        return [dict(item) for item in _LAST_CLOSE_SESSION_FAILURES]
 
 
 def _stop_managed_login_window_unlocked(key: str) -> bool:
@@ -2314,27 +2323,39 @@ def _launch_managed_login_window_non_activating(
     }
 
 
-def close_all_browser_sessions(prefix_filter: str = "") -> int:
+def close_all_browser_sessions(
+    prefix_filter: str = "",
+    errors_out: Optional[List[Dict[str, str]]] = None,
+) -> int:
     clean_p = (prefix_filter or "").strip()
     closed_login = 0
+    matched_workers: List[Tuple[str, _IsolatedBrowserWorker]] = []
+    failures: List[Dict[str, str]] = []
     with _GLOBAL_WORKERS_LOCK:
         if not clean_p:
-            workers = list(_GLOBAL_WORKERS.values())
-            _GLOBAL_WORKERS.clear()
+            matched_workers = list(_GLOBAL_WORKERS.items())
             for lk in list(_LOGIN_WINDOWS.keys()):
-                if _stop_managed_login_window_unlocked(lk):
-                    closed_login += 1
+                try:
+                    if _stop_managed_login_window_unlocked(lk):
+                        closed_login += 1
+                except Exception as exc:
+                    fail_rec = {
+                        "key": str(lk),
+                        "profile_dir": str(getattr((_LOGIN_WINDOWS.get(lk) or {}).get("profile_dir"), "__str__", lambda: "")()),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                    failures.append(fail_rec)
+                    _LOGGER.warning("Failed to stop managed login window %s: %s", lk, exc)
         else:
-            workers = []
-            for k in list(_GLOBAL_WORKERS.keys()):
-                w = _GLOBAL_WORKERS[k]
+            for k, w in list(_GLOBAL_WORKERS.items()):
                 is_match = (
                     (w.profile_dir.name == "browser_profile")
                     if clean_p == "pc"
                     else (w.profile_dir.name.lower() == clean_p.lower())
                 )
                 if is_match:
-                    workers.append(_GLOBAL_WORKERS.pop(k))
+                    matched_workers.append((k, w))
             for lk in list(_LOGIN_WINDOWS.keys()):
                 lrec = _LOGIN_WINDOWS[lk]
                 pdir: Path = lrec["profile_dir"]
@@ -2343,12 +2364,45 @@ def close_all_browser_sessions(prefix_filter: str = "") -> int:
                     if clean_p == "pc"
                     else (pdir.name.lower() == clean_p.lower())
                 )
-                if is_lmatch and _stop_managed_login_window_unlocked(lk):
-                    closed_login += 1
-    for w in workers:
-        with contextlib.suppress(Exception):
+                if is_lmatch:
+                    try:
+                        if _stop_managed_login_window_unlocked(lk):
+                            closed_login += 1
+                    except Exception as exc:
+                        fail_rec = {
+                            "key": str(lk),
+                            "profile_dir": str(pdir),
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        }
+                        failures.append(fail_rec)
+                        _LOGGER.warning("Failed to stop managed login window %s: %s", lk, exc)
+
+    closed_workers = 0
+    for k, w in matched_workers:
+        try:
             w.stop()
-    return len(workers) + closed_login
+        except Exception as exc:
+            fail_rec = {
+                "key": str(k),
+                "profile_dir": str(getattr(w, "profile_dir", "")),
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+            failures.append(fail_rec)
+            _LOGGER.warning("Failed to stop browser worker %s: %s", k, exc)
+            continue
+        with _GLOBAL_WORKERS_LOCK:
+            if _GLOBAL_WORKERS.get(k) is w:
+                _GLOBAL_WORKERS.pop(k, None)
+        closed_workers += 1
+
+    with _GLOBAL_WORKERS_LOCK:
+        _LAST_CLOSE_SESSION_FAILURES.clear()
+        _LAST_CLOSE_SESSION_FAILURES.extend(dict(item) for item in failures)
+    if errors_out is not None:
+        errors_out.extend(dict(item) for item in failures)
+    return closed_workers + closed_login
 
 
 atexit.register(close_all_browser_sessions)
@@ -3190,14 +3244,13 @@ class BrowserPackPlugin:
         clean_p = (prefix_filter or "").strip()
         with self._lock:
             owned = set(self._owned_keys)
-        to_stop: List[_IsolatedBrowserWorker] = []
+        to_stop: List[Tuple[str, _IsolatedBrowserWorker]] = []
         with _GLOBAL_WORKERS_LOCK:
-            for k in list(_GLOBAL_WORKERS.keys()):
+            for k, w in list(_GLOBAL_WORKERS.items()):
                 if owned and k not in owned and clean_p == "":
                     continue
-                w = _GLOBAL_WORKERS[k]
                 if not clean_p:
-                    to_stop.append(_GLOBAL_WORKERS.pop(k))
+                    to_stop.append((k, w))
                 else:
                     is_match = (
                         (w.profile_dir.name == "browser_profile")
@@ -3205,7 +3258,7 @@ class BrowserPackPlugin:
                         else (w.profile_dir.name.lower() == clean_p.lower())
                     )
                     if is_match:
-                        to_stop.append(_GLOBAL_WORKERS.pop(k))
+                        to_stop.append((k, w))
             for lk in list(_LOGIN_WINDOWS.keys()):
                 if owned and lk not in owned and clean_p == "":
                     continue
@@ -3221,14 +3274,22 @@ class BrowserPackPlugin:
                     )
                     if is_lmatch:
                         _stop_managed_login_window_unlocked(lk)
-        with self._lock:
-            for w in to_stop:
-                self._owned_keys.discard(os.path.normcase(str(w.profile_dir.resolve())))
-            if not clean_p:
-                self._owned_keys.clear()
-        for w in to_stop:
-            with contextlib.suppress(Exception):
+        failed_keys: Set[str] = set()
+        for k, w in to_stop:
+            try:
                 w.stop()
+            except Exception as exc:
+                failed_keys.add(k)
+                _LOGGER.warning("Failed to stop browser worker %s during shutdown: %s", k, exc)
+                continue
+            with _GLOBAL_WORKERS_LOCK:
+                if _GLOBAL_WORKERS.get(k) is w:
+                    _GLOBAL_WORKERS.pop(k, None)
+            with self._lock:
+                self._owned_keys.discard(os.path.normcase(str(w.profile_dir.resolve())))
+        if not clean_p and not failed_keys:
+            with self._lock:
+                self._owned_keys.clear()
         if clean_p:
             prof = self.resolve_profile_dir(clean_p)
             _release_browser_profile_locks_win32(prof)

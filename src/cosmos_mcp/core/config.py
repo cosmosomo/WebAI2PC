@@ -18,7 +18,7 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 from urllib.parse import urlsplit
 
-from cosmos_mcp.core.fs_tx import apply_current_user_only_acl, atomic_write_json, atomic_write_text
+from cosmos_mcp.core.fs_tx import apply_current_user_only_acl, atomic_write_json, atomic_write_text, get_file_lock
 from cosmos_mcp.core.guard import (
     DEFAULT_GUARD,
     READONLY_PACKAGE_MARKERS,
@@ -663,9 +663,15 @@ def normalize_workspace_roots(
 def normalize_readonly_workspace_roots(
     readonly_roots: Any,
     active_roots: Sequence[Path],
+    *,
+    strict: bool = False,
 ) -> Tuple[Path, ...]:
-    """Filter `readonly_roots` against mounted `active_roots` (allowing single or primary root to stay read-only)."""
-    if readonly_roots is None or not active_roots:
+    """Filter `readonly_roots` against mounted `active_roots` (allowing single or primary root to stay read-only).
+
+    When `strict=True`, invalid container types, NUL-containing entries, or paths outside `active_roots`
+    raise `ValueError` instead of being silently dropped.
+    """
+    if readonly_roots is None:
         return ()
     raw_items: List[str] = []
     if isinstance(readonly_roots, Path):
@@ -673,23 +679,49 @@ def normalize_readonly_workspace_roots(
         if s:
             raw_items.append(s)
     elif isinstance(readonly_roots, str):
+        if strict and "\x00" in readonly_roots:
+            raise ValueError("Invalid readonly_workspace_roots: path contains NUL byte.")
         raw_items.extend(_split_workspace_string(readonly_roots))
+    elif isinstance(readonly_roots, (bytes, bytearray, Mapping)):
+        if strict:
+            raise ValueError(f"Invalid readonly_workspace_roots type: {type(readonly_roots).__name__}.")
+        return ()
     elif isinstance(readonly_roots, Iterable):
         for it in readonly_roots:
+            if strict and not isinstance(it, (str, Path)):
+                raise ValueError(f"Invalid readonly_workspace_roots entry type: {type(it).__name__}.")
             s = str(it or "").strip()
             if s:
                 raw_items.append(s)
+    else:
+        if strict:
+            raise ValueError(f"Invalid readonly_workspace_roots type: {type(readonly_roots).__name__}.")
+        return ()
     if not raw_items:
+        return ()
+    if not active_roots:
+        if strict:
+            raise ValueError("readonly_workspace_roots requires at least one mounted workspace root.")
         return ()
     act_map = {os.path.normcase(str(p.resolve())): p for p in active_roots}
     out: List[Path] = []
     seen: set[str] = set()
     for raw_it in raw_items:
+        if strict and "\x00" in raw_it:
+            raise ValueError(f"Invalid readonly_workspace_roots entry `{raw_it!r}`: contains NUL byte.")
         cleaned = raw_it.replace("\r", "").replace("\n", "").strip().strip("\"'")
         if not cleaned or "\x00" in cleaned:
+            if strict:
+                raise ValueError(f"Invalid readonly_workspace_roots entry `{raw_it!r}`.")
             continue
         nk = os.path.normcase(str(Path(expand_env_and_tilde(cleaned)).expanduser().resolve()))
-        if nk in act_map and nk not in seen:
+        if nk not in act_map:
+            if strict:
+                raise ValueError(
+                    f"readonly_workspace_roots entry `{raw_it}` is not among mounted workspace_roots."
+                )
+            continue
+        if nk not in seen:
             seen.add(nk)
             out.append(act_map[nk])
     return tuple(out)
@@ -2909,8 +2941,9 @@ class LiveRuntimePolicy:
                     state_root=self.state_root,
                     product_root=self._product_root,
                 )
-            except TypeError:
-                try:
+            except TypeError as exc:
+                msg = str(exc)
+                if "allow_host_global_skills" in msg or "unexpected keyword" in msg:
                     self.guard.set_workspace_policy(
                         self.workspace_roots,
                         restrict_to_workspace=self.restrict_to_workspace,
@@ -2919,10 +2952,8 @@ class LiveRuntimePolicy:
                         state_root=self.state_root,
                         product_root=self._product_root,
                     )
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                else:
+                    raise
         if self._on_ws_change is not None:
             try:
                 self._on_ws_change(self.workspace_roots, self.restrict_to_workspace, self.tier_key)
@@ -3149,7 +3180,7 @@ class LiveRuntimePolicy:
                     f"ERR_STARTUP_ENV_LOCKED: `permission_tier` is locked to `{self.tier_key}` by startup environment variable."
                 )
         if (workspace_roots is not None or workspace) and "workspace_roots" in env_locks:
-            cand_roots = normalize_workspace_roots(workspace_roots, legacy_workspace=workspace)
+            cand_roots = normalize_workspace_roots(workspace_roots, legacy_workspace=workspace, create_missing=False)
             if self._roots_norm_tuple(cand_roots) != self._roots_norm_tuple(self.workspace_roots):
                 raise ValueError(
                     "ERR_STARTUP_ENV_LOCKED: `workspace_roots` is locked by startup environment variable."
@@ -3186,6 +3217,545 @@ class LiveRuntimePolicy:
                     "ERR_STARTUP_ENV_LOCKED: `enabled_packs` is locked by startup environment variable."
                 )
 
+    def _capture_state_snapshot(self) -> Dict[str, Any]:
+        return {
+            "tool_prefix": self.tool_prefix,
+            "device_label": self.device_label,
+            "tier_key": self.tier_key,
+            "tier_cfg": dict(self.tier_cfg),
+            "previous_non_readonly_tier": self.previous_non_readonly_tier,
+            "tier_epoch": self.tier_epoch,
+            "workspace_roots": self.workspace_roots,
+            "readonly_workspace_roots": self.readonly_workspace_roots,
+            "workspace_epoch": self.workspace_epoch,
+            "toolset_profile": self.toolset_profile,
+            "prompt_profile": self.prompt_profile,
+            "enabled_tools": self.enabled_tools,
+            "disabled_tools": self.disabled_tools,
+            "_annotation_mode": self._annotation_mode,
+            "python_path": self.python_path,
+            "enabled_packs": self.enabled_packs,
+            "keep_awake": self.keep_awake,
+            "scan_host_global_skills": self.scan_host_global_skills,
+            "tray_enabled": self.tray_enabled,
+            "tunnel_mode": self.tunnel_mode,
+            "gateways": {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS if gid in self.gateways},
+            "selected_gateway": self.selected_gateway,
+            "pinned_gateway_urls": self.pinned_gateway_urls,
+            "public_gateway_base": self.public_gateway_base,
+            "public_gateway_node_id": self.public_gateway_node_id,
+            "workers_dev_account_id": self.workers_dev_account_id,
+            "workers_dev_script_name": self.workers_dev_script_name,
+            "workers_dev_subdomain": self.workers_dev_subdomain,
+            "workers_dev_custom_domain": self.workers_dev_custom_domain,
+            "_last_cfg_sig": self._last_cfg_sig,
+            "_guard_tool_prefix": getattr(self.guard, "tool_prefix", None) if self.guard is not None else None,
+        }
+
+    def _restore_state_snapshot(self, snap: Mapping[str, Any]) -> None:
+        self.tool_prefix = snap["tool_prefix"]
+        self.device_label = snap["device_label"]
+        self.tier_key = snap["tier_key"]
+        self.tier_cfg = dict(snap["tier_cfg"])
+        self.previous_non_readonly_tier = snap["previous_non_readonly_tier"]
+        self.tier_epoch = snap["tier_epoch"]
+        self.workspace_roots = snap["workspace_roots"]
+        self.readonly_workspace_roots = snap["readonly_workspace_roots"]
+        self.workspace_epoch = snap["workspace_epoch"]
+        self.toolset_profile = snap["toolset_profile"]
+        self.prompt_profile = snap["prompt_profile"]
+        self.enabled_tools = snap["enabled_tools"]
+        self.disabled_tools = snap["disabled_tools"]
+        self._annotation_mode = snap["_annotation_mode"]
+        self.python_path = snap["python_path"]
+        self.enabled_packs = snap["enabled_packs"]
+        self.keep_awake = snap["keep_awake"]
+        self.scan_host_global_skills = snap["scan_host_global_skills"]
+        self.tray_enabled = snap["tray_enabled"]
+        self.tunnel_mode = snap["tunnel_mode"]
+        self.gateways = {gid: dict(v) for gid, v in snap["gateways"].items()}
+        self.selected_gateway = snap["selected_gateway"]
+        self.pinned_gateway_urls = snap["pinned_gateway_urls"]
+        self.public_gateway_base = snap["public_gateway_base"]
+        self.public_gateway_node_id = snap["public_gateway_node_id"]
+        self.workers_dev_account_id = snap["workers_dev_account_id"]
+        self.workers_dev_script_name = snap["workers_dev_script_name"]
+        self.workers_dev_subdomain = snap["workers_dev_subdomain"]
+        self.workers_dev_custom_domain = snap["workers_dev_custom_domain"]
+        self._last_cfg_sig = snap["_last_cfg_sig"]
+        if self.guard is not None and snap["_guard_tool_prefix"] is not None:
+            self.guard.tool_prefix = snap["_guard_tool_prefix"]
+
+    @staticmethod
+    def _validate_strict_workspace_roots(
+        workspace_roots: Any = None,
+        legacy_workspace: str = "",
+    ) -> Tuple[Path, ...]:
+        """Strictly validate explicit `workspace_roots` / `workspace` inputs without touching disk."""
+        candidates: List[str] = []
+        if workspace_roots is not None:
+            if isinstance(workspace_roots, Path):
+                raw_p = str(workspace_roots).strip()
+                if "\x00" in raw_p:
+                    raise ValueError("Invalid workspace_roots: path contains NUL byte.")
+                if raw_p:
+                    candidates.append(raw_p)
+            elif isinstance(workspace_roots, str):
+                if "\x00" in workspace_roots:
+                    raise ValueError("Invalid workspace_roots: path contains NUL byte.")
+                candidates.extend(_split_workspace_string(workspace_roots))
+            elif isinstance(workspace_roots, (bytes, bytearray, Mapping)):
+                raise ValueError(f"Invalid workspace_roots type: {type(workspace_roots).__name__}.")
+            elif isinstance(workspace_roots, Iterable):
+                for item in workspace_roots:
+                    if not isinstance(item, (str, Path)):
+                        raise ValueError(f"Invalid workspace_roots entry type: {type(item).__name__}.")
+                    s = str(item).strip()
+                    if "\x00" in s:
+                        raise ValueError(f"Invalid workspace_roots entry `{s!r}`: contains NUL byte.")
+                    if s:
+                        candidates.append(s)
+            else:
+                raise ValueError(f"Invalid workspace_roots type: {type(workspace_roots).__name__}.")
+
+        if legacy_workspace:
+            if not isinstance(legacy_workspace, (str, Path)):
+                raise ValueError(f"Invalid workspace type: {type(legacy_workspace).__name__}.")
+            lw = str(legacy_workspace).strip()
+            if "\x00" in lw:
+                raise ValueError("Invalid workspace: path contains NUL byte.")
+            if lw and lw not in candidates:
+                candidates.insert(0, lw)
+
+        cleaned_count = 0
+        for raw_item in candidates:
+            cleaned = raw_item.replace("\r", "").replace("\n", "").strip().strip("\"'")
+            if not cleaned or "\x00" in cleaned:
+                raise ValueError(f"Invalid workspace_roots entry `{raw_item!r}`.")
+            cleaned_count += 1
+        if cleaned_count == 0:
+            raise ValueError("workspace_roots must contain at least one valid directory path.")
+
+        return normalize_workspace_roots(
+            workspace_roots,
+            legacy_workspace=legacy_workspace,
+            create_missing=False,
+        )
+
+    def _build_full_disk_doc(self) -> Dict[str, Any]:
+        return {
+            "permission_tier": self.tier_key,
+            "previous_non_readonly_tier": self.previous_non_readonly_tier,
+            "instance_id": self.instance_id,
+            "tool_prefix": self.tool_prefix,
+            "device_label": self.device_label,
+            "toolset_profile": self.toolset_profile,
+            "prompt_profile": self.prompt_profile,
+            "workspace": self.workspace,
+            "workspace_roots": [str(p) for p in self.workspace_roots],
+            "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
+            "scan_host_global_skills": self.scan_host_global_skills,
+            "tray_enabled": self.tray_enabled,
+            "gateways": {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS if gid in self.gateways},
+            "selected_gateway": self.selected_gateway,
+            "tunnel_mode": self.tunnel_mode,
+            "_gateways_mirrored_mode": self.tunnel_mode,
+            "pinned_gateway_urls": list(self.pinned_gateway_urls),
+            "public_gateway_base": self.public_gateway_base,
+            "public_gateway_node_id": self.public_gateway_node_id,
+            "workers_dev_account_id": self.workers_dev_account_id,
+            "workers_dev_script_name": self.workers_dev_script_name,
+            "workers_dev_subdomain": self.workers_dev_subdomain,
+            "workers_dev_custom_domain": self.workers_dev_custom_domain,
+            "enabled_tools": list(self.enabled_tools),
+            "disabled_tools": list(self.disabled_tools),
+            "enabled_packs": list(self.enabled_packs),
+            "annotation_mode": self.annotation_mode,
+            "approval_popups": self.approval_popups,
+            "python_path": self.python_path,
+            "keep_awake": self.keep_awake,
+        }
+
+    def _validate_and_plan_updates(
+        self,
+        *,
+        tier_key: str = "",
+        workspace: str = "",
+        workspace_roots: Any = None,
+        readonly_workspace_roots: Any = None,
+        tool_prefix: str = "",
+        device_label: str = "",
+        toolset_profile: str = "",
+        prompt_profile: str = "",
+        enabled_tools: Any = None,
+        disabled_tools: Any = None,
+        approval_popups: Optional[bool] = None,
+        annotation_mode: str = "",
+        python_path: Optional[str] = None,
+        enabled_packs: Any = None,
+        keep_awake: Optional[bool] = None,
+        scan_host_global_skills: Optional[bool] = None,
+        tray_enabled: Optional[bool] = None,
+        tunnel_mode: Optional[str] = None,
+        gateways: Optional[Mapping[str, Any]] = None,
+        selected_gateway: Optional[str] = None,
+        public_gateway_base: Optional[str] = None,
+        public_gateway_node_id: Optional[str] = None,
+        workers_dev_account_id: Optional[str] = None,
+        workers_dev_script_name: Optional[str] = None,
+        workers_dev_subdomain: Optional[str] = None,
+        workers_dev_custom_domain: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Validate every requested field upfront (zero memory/guard/disk side effects) and return a mutation plan."""
+        plan: Dict[str, Any] = {}
+
+        if tool_prefix is not None and str(tool_prefix).strip():
+            plan["tool_prefix"] = normalize_prefix(str(tool_prefix))
+        if device_label is not None and str(device_label).strip():
+            plan["device_label"] = str(device_label).strip()
+        if tier_key:
+            plan["tier_key"] = parse_strict_tier(tier_key)
+
+        if workspace_roots is not None or workspace:
+            plan["workspace_roots"] = self._validate_strict_workspace_roots(
+                workspace_roots, legacy_workspace=workspace
+            )
+
+        eff_ws_roots = plan.get("workspace_roots", self.workspace_roots)
+        if readonly_workspace_roots is not None:
+            plan["readonly_workspace_roots"] = normalize_readonly_workspace_roots(
+                readonly_workspace_roots, eff_ws_roots, strict=True
+            )
+            plan["_raw_readonly_workspace_roots"] = readonly_workspace_roots
+
+        if toolset_profile:
+            plan["toolset_profile"] = parse_strict_toolset_profile(toolset_profile)
+        if prompt_profile:
+            plan["prompt_profile"] = parse_strict_prompt_profile(prompt_profile)
+
+        eff_prefix = plan.get("tool_prefix", self.tool_prefix)
+        if enabled_tools is not None:
+            plan["enabled_tools"] = parse_tool_filter_spec(enabled_tools, active_prefix=eff_prefix, strict=False)
+        if disabled_tools is not None:
+            plan["disabled_tools"] = parse_tool_filter_spec(disabled_tools, active_prefix=eff_prefix, strict=False)
+
+        if annotation_mode:
+            plan["annotation_mode"] = parse_strict_annotation_mode(annotation_mode)
+        elif approval_popups is not None:
+            plan["annotation_mode"] = "strict" if bool(approval_popups) else "seamless"
+
+        if python_path is not None:
+            plan["python_path"] = normalize_python_path(python_path)
+        if enabled_packs is not None:
+            plan["enabled_packs"] = parse_pack_spec(enabled_packs, strict=True)
+        if keep_awake is not None:
+            plan["keep_awake"] = bool(keep_awake)
+        if scan_host_global_skills is not None:
+            plan["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+        if tray_enabled is not None:
+            plan["tray_enabled"] = parse_bool_flag(tray_enabled, default=True)
+        if public_gateway_base is not None:
+            pg_b = str(public_gateway_base).strip().rstrip("/")
+            plan["public_gateway_base"] = pg_b if pg_b else _default_public_gateway_base()
+        if public_gateway_node_id is not None:
+            plan["public_gateway_node_id"] = str(public_gateway_node_id).strip()
+        if workers_dev_account_id is not None:
+            plan["workers_dev_account_id"] = str(workers_dev_account_id).strip()
+        if workers_dev_script_name is not None:
+            wds = str(workers_dev_script_name).strip()
+            plan["workers_dev_script_name"] = wds if wds else DEFAULT_WORKERS_DEV_SCRIPT_NAME
+        if workers_dev_subdomain is not None:
+            plan["workers_dev_subdomain"] = str(workers_dev_subdomain).strip()
+        if workers_dev_custom_domain is not None:
+            plan["workers_dev_custom_domain"] = str(workers_dev_custom_domain).strip()
+
+        if selected_gateway is not None and str(selected_gateway).strip():
+            cand_sel = str(selected_gateway).strip().lower()
+            if cand_sel not in GATEWAY_IDS:
+                raise ValueError(f"Unknown selected_gateway `{selected_gateway}` (expected one of {GATEWAY_IDS}).")
+            plan["selected_gateway"] = cand_sel
+        if gateways is not None:
+            if not isinstance(gateways, Mapping):
+                raise ValueError(f"Invalid gateways type: {type(gateways).__name__} (expected mapping).")
+            plan["gateways"] = dict(gateways)
+        if tunnel_mode is not None and str(tunnel_mode).strip():
+            plan["tunnel_mode"] = str(tunnel_mode).strip()
+
+        self._enforce_startup_env_locks(
+            tier_key=tier_key,
+            workspace=workspace,
+            workspace_roots=workspace_roots,
+            toolset_profile=toolset_profile,
+            prompt_profile=prompt_profile,
+            tool_prefix=tool_prefix,
+            enabled_tools=enabled_tools,
+            disabled_tools=disabled_tools,
+            enabled_packs=enabled_packs,
+        )
+        return plan
+
+    def _compute_gateway_update(
+        self,
+        plan: Mapping[str, Any],
+        *,
+        base_gateways: Mapping[str, Mapping[str, Any]],
+        base_selected: str,
+        base_tunnel_mode: str,
+        base_pinned: Sequence[str],
+        wd_account_id: str,
+        wd_script_name: str,
+        wd_subdomain: str,
+        wd_custom_domain: str,
+    ) -> Tuple[Dict[str, Dict[str, Any]], str, str, Tuple[str, ...]]:
+        if "gateways" in plan:
+            synth_doc: Dict[str, Any] = {
+                "gateways": dict(plan["gateways"]),
+                "selected_gateway": plan.get("selected_gateway", base_selected),
+                "pinned_gateway_urls": list(base_pinned),
+                "workers_dev_account_id": wd_account_id,
+                "workers_dev_script_name": wd_script_name,
+                "workers_dev_subdomain": wd_subdomain,
+                "workers_dev_custom_domain": wd_custom_domain,
+            }
+            next_gws, next_sel = normalize_gateways_config(synth_doc)
+            next_tm = str(synth_doc.get("tunnel_mode") or base_tunnel_mode)
+            next_pinned = tuple(synth_doc.get("pinned_gateway_urls") or ())
+            return next_gws, next_sel, next_tm, next_pinned
+
+        if "tunnel_mode" in plan:
+            new_tm = str(plan["tunnel_mode"])
+            legacy_ctx: Dict[str, Any] = {"pinned_gateway_urls": list(base_pinned)}
+            next_slots = {gid: dict(base_gateways.get(gid) or {}) for gid in GATEWAY_IDS}
+            next_sel = _apply_legacy_mode_to_slots(next_slots, new_tm, legacy_ctx)
+            next_pinned = tuple(collect_pinned_gateway_urls(next_slots, legacy_ctx))
+            return next_slots, next_sel, new_tm, next_pinned
+
+        if "selected_gateway" in plan:
+            cand_sel = str(plan["selected_gateway"])
+            next_slots = {gid: dict(base_gateways.get(gid) or {}) for gid in GATEWAY_IDS}
+            en_ids = [gid for gid in GATEWAY_IDS if bool(next_slots.get(gid, {}).get("enabled"))]
+            next_sel = base_selected
+            next_tm = base_tunnel_mode
+            if not en_ids or cand_sel in en_ids:
+                next_sel = cand_sel
+                if en_ids:
+                    next_tm = str(next_slots[cand_sel].get("submode") or base_tunnel_mode)
+            return next_slots, next_sel, next_tm, tuple(base_pinned)
+
+        return (
+            {gid: dict(base_gateways.get(gid) or {}) for gid in GATEWAY_IDS if gid in base_gateways},
+            base_selected,
+            base_tunnel_mode,
+            tuple(base_pinned),
+        )
+
+    def _apply_plan_to_memory(
+        self,
+        plan: Mapping[str, Any],
+        *,
+        merged_doc: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[bool, Optional[bool], bool]:
+        """Commit validated `plan` (and optional disk-merged fields) into in-memory attributes.
+
+        Returns `(conn_info_dirty, keep_awake_changed_to, workspace_changed)`.
+        """
+        conn_info_dirty = False
+        keep_awake_changed_to: Optional[bool] = None
+        workspace_changed = False
+        env_locks = getattr(self, "_startup_env_locks", set())
+
+        if merged_doc is not None:
+            if "tool_prefix" in merged_doc and "tool_prefix" not in plan:
+                new_tp = _resolve_safe_tool_prefix(merged_doc.get("tool_prefix"), fallback=self.eff_prefix)
+                if new_tp != self.tool_prefix:
+                    self.tool_prefix = new_tp
+                    conn_info_dirty = True
+            if "device_label" in merged_doc and "device_label" not in plan:
+                raw_lbl = str(merged_doc.get("device_label") or "").strip()
+                if raw_lbl and raw_lbl != self.device_label:
+                    self.device_label = raw_lbl
+                    conn_info_dirty = True
+            if "permission_tier" in merged_doc and "tier_key" not in plan and "tier_key" not in env_locks:
+                disk_tier = normalize_tier(str(merged_doc.get("permission_tier") or self.tier_key))
+                if disk_tier != self.tier_key:
+                    if self.tier_key != "tier1_readonly" and disk_tier == "tier1_readonly":
+                        self.previous_non_readonly_tier = self.tier_key
+                    elif disk_tier != "tier1_readonly":
+                        self.previous_non_readonly_tier = disk_tier
+                    self.tier_epoch += 1
+                    self.tier_key = disk_tier
+                    self.tier_cfg = dict(PERMISSION_TIERS[disk_tier])
+            if "previous_non_readonly_tier" in merged_doc and "tier_key" not in plan:
+                cand_prev = str(merged_doc.get("previous_non_readonly_tier") or "").strip().lower()
+                if cand_prev in ("tier2_workspace_edit", "tier3_workspace_dev", "tier4_full_power"):
+                    self.previous_non_readonly_tier = cand_prev
+            has_ws_disk = (
+                ("workspace_roots" in merged_doc)
+                or ("workspace" in merged_doc)
+                or ("workspace_root" in merged_doc)
+            )
+            if has_ws_disk and "workspace_roots" not in plan and "workspace_roots" not in env_locks:
+                disk_roots = normalize_workspace_roots(
+                    merged_doc.get("workspace_roots"),
+                    legacy_workspace=str(merged_doc.get("workspace") or merged_doc.get("workspace_root") or ""),
+                    create_missing=False,
+                )
+                if self._roots_norm_tuple(disk_roots) != self._roots_norm_tuple(self.workspace_roots):
+                    self.workspace_epoch += 1
+                    workspace_changed = True
+                self.workspace_roots = disk_roots
+            if "readonly_workspace_roots" in merged_doc and "readonly_workspace_roots" not in plan:
+                self.readonly_workspace_roots = normalize_readonly_workspace_roots(
+                    merged_doc.get("readonly_workspace_roots"), self.workspace_roots
+                )
+            if "toolset_profile" in merged_doc and "toolset_profile" not in plan and "toolset_profile" not in env_locks:
+                self.toolset_profile = normalize_toolset_profile(str(merged_doc.get("toolset_profile") or ""))
+            if "prompt_profile" in merged_doc and "prompt_profile" not in plan and "prompt_profile" not in env_locks:
+                self.prompt_profile = normalize_prompt_profile(str(merged_doc.get("prompt_profile") or ""))
+            if "enabled_tools" in merged_doc and "enabled_tools" not in plan and "enabled_tools" not in env_locks:
+                self.enabled_tools = parse_tool_filter_spec(merged_doc.get("enabled_tools"), active_prefix=self.tool_prefix)
+            if "disabled_tools" in merged_doc and "disabled_tools" not in plan and "disabled_tools" not in env_locks:
+                self.disabled_tools = parse_tool_filter_spec(merged_doc.get("disabled_tools"), active_prefix=self.tool_prefix)
+            if "enabled_packs" in merged_doc and "enabled_packs" not in plan and "enabled_packs" not in env_locks:
+                self.enabled_packs = parse_pack_spec(merged_doc.get("enabled_packs"), strict=False)
+            if "scan_host_global_skills" in merged_doc and "scan_host_global_skills" not in plan:
+                self.scan_host_global_skills = parse_bool_flag(merged_doc.get("scan_host_global_skills"), default=False)
+            if "tray_enabled" in merged_doc and "tray_enabled" not in plan:
+                self.tray_enabled = parse_bool_flag(merged_doc.get("tray_enabled"), default=True)
+            if "annotation_mode" in merged_doc and "annotation_mode" not in plan:
+                raw_ann = str(merged_doc.get("annotation_mode") or "").strip()
+                if raw_ann:
+                    self._annotation_mode = normalize_annotation_mode(raw_ann)
+            elif "approval_popups" in merged_doc and "annotation_mode" not in plan:
+                self._annotation_mode = (
+                    "strict" if parse_bool_flag(merged_doc.get("approval_popups"), default=False) else "seamless"
+                )
+            if "python_path" in merged_doc and "python_path" not in plan:
+                self.python_path = normalize_python_path(merged_doc.get("python_path"))
+            if "keep_awake" in merged_doc and "keep_awake" not in plan:
+                new_ka_d = parse_bool_flag(merged_doc.get("keep_awake"), default=True)
+                if new_ka_d != self.keep_awake:
+                    self.keep_awake = new_ka_d
+                    keep_awake_changed_to = new_ka_d
+            if "public_gateway_base" in merged_doc and "public_gateway_base" not in plan:
+                pg_d = str(merged_doc.get("public_gateway_base") or "").strip().rstrip("/")
+                if pg_d:
+                    self.public_gateway_base = pg_d
+            if "public_gateway_node_id" in merged_doc and "public_gateway_node_id" not in plan:
+                self.public_gateway_node_id = str(merged_doc.get("public_gateway_node_id") or "").strip()
+            if "workers_dev_account_id" in merged_doc and "workers_dev_account_id" not in plan:
+                self.workers_dev_account_id = str(merged_doc.get("workers_dev_account_id") or "").strip()
+            if "workers_dev_script_name" in merged_doc and "workers_dev_script_name" not in plan:
+                sn_d = str(merged_doc.get("workers_dev_script_name") or "").strip()
+                self.workers_dev_script_name = sn_d if sn_d else DEFAULT_WORKERS_DEV_SCRIPT_NAME
+            if "workers_dev_subdomain" in merged_doc and "workers_dev_subdomain" not in plan:
+                self.workers_dev_subdomain = str(merged_doc.get("workers_dev_subdomain") or "").strip()
+            if "workers_dev_custom_domain" in merged_doc and "workers_dev_custom_domain" not in plan:
+                self.workers_dev_custom_domain = str(merged_doc.get("workers_dev_custom_domain") or "").strip()
+            if (
+                "gateways" not in plan
+                and "tunnel_mode" not in plan
+                and "selected_gateway" not in plan
+                and ("gateways" in merged_doc or "tunnel_mode" in merged_doc)
+            ):
+                gw_copy = dict(merged_doc)
+                self.gateways, self.selected_gateway = normalize_gateways_config(gw_copy)
+                self.tunnel_mode = str(gw_copy.get("tunnel_mode") or self.tunnel_mode)
+                self.pinned_gateway_urls = tuple(gw_copy.get("pinned_gateway_urls") or ())
+
+        if "tool_prefix" in plan:
+            new_tp = plan["tool_prefix"]
+            if new_tp != self.tool_prefix:
+                self.tool_prefix = new_tp
+                conn_info_dirty = True
+            if self.guard is not None:
+                self.guard.tool_prefix = self.tool_prefix
+        if "device_label" in plan:
+            new_lbl = plan["device_label"]
+            if new_lbl != self.device_label:
+                self.device_label = new_lbl
+                conn_info_dirty = True
+        if "tier_key" in plan:
+            nt = plan["tier_key"]
+            if nt != self.tier_key:
+                if self.tier_key != "tier1_readonly" and nt == "tier1_readonly":
+                    self.previous_non_readonly_tier = self.tier_key
+                elif nt != "tier1_readonly":
+                    self.previous_non_readonly_tier = nt
+                self.tier_epoch += 1
+            elif nt != "tier1_readonly":
+                self.previous_non_readonly_tier = nt
+            self.tier_key = nt
+            self.tier_cfg = dict(PERMISSION_TIERS[nt])
+        if "workspace_roots" in plan:
+            new_roots = plan["workspace_roots"]
+            if self._roots_norm_tuple(new_roots) != self._roots_norm_tuple(self.workspace_roots):
+                self.workspace_epoch += 1
+            self.workspace_roots = new_roots
+            workspace_changed = True
+            if "readonly_workspace_roots" not in plan:
+                self.readonly_workspace_roots = normalize_readonly_workspace_roots(
+                    self.readonly_workspace_roots, self.workspace_roots
+                )
+        if "readonly_workspace_roots" in plan:
+            self.readonly_workspace_roots = normalize_readonly_workspace_roots(
+                plan["readonly_workspace_roots"], self.workspace_roots, strict=True
+            )
+        if "toolset_profile" in plan:
+            self.toolset_profile = plan["toolset_profile"]
+        if "prompt_profile" in plan:
+            self.prompt_profile = plan["prompt_profile"]
+        if "enabled_tools" in plan:
+            self.enabled_tools = plan["enabled_tools"]
+        if "disabled_tools" in plan:
+            self.disabled_tools = plan["disabled_tools"]
+        if "annotation_mode" in plan:
+            self._annotation_mode = plan["annotation_mode"]
+        if "python_path" in plan:
+            self.python_path = plan["python_path"]
+        if "enabled_packs" in plan:
+            self.enabled_packs = plan["enabled_packs"]
+        if "keep_awake" in plan:
+            new_ka = bool(plan["keep_awake"])
+            if new_ka != self.keep_awake:
+                self.keep_awake = new_ka
+                keep_awake_changed_to = new_ka
+        if "scan_host_global_skills" in plan:
+            self.scan_host_global_skills = plan["scan_host_global_skills"]
+        if "tray_enabled" in plan:
+            self.tray_enabled = plan["tray_enabled"]
+        if "public_gateway_base" in plan:
+            self.public_gateway_base = plan["public_gateway_base"]
+        if "public_gateway_node_id" in plan:
+            self.public_gateway_node_id = plan["public_gateway_node_id"]
+        if "workers_dev_account_id" in plan:
+            self.workers_dev_account_id = plan["workers_dev_account_id"]
+        if "workers_dev_script_name" in plan:
+            self.workers_dev_script_name = plan["workers_dev_script_name"]
+        if "workers_dev_subdomain" in plan:
+            self.workers_dev_subdomain = plan["workers_dev_subdomain"]
+        if "workers_dev_custom_domain" in plan:
+            self.workers_dev_custom_domain = plan["workers_dev_custom_domain"]
+
+        if "gateways" in plan or "tunnel_mode" in plan or "selected_gateway" in plan:
+            next_gws, next_sel, next_tm, next_pinned = self._compute_gateway_update(
+                plan,
+                base_gateways=self.gateways,
+                base_selected=self.selected_gateway,
+                base_tunnel_mode=self.tunnel_mode,
+                base_pinned=self.pinned_gateway_urls,
+                wd_account_id=self.workers_dev_account_id,
+                wd_script_name=self.workers_dev_script_name,
+                wd_subdomain=self.workers_dev_subdomain,
+                wd_custom_domain=self.workers_dev_custom_domain,
+            )
+            self.gateways = next_gws
+            self.selected_gateway = next_sel
+            self.tunnel_mode = next_tm
+            self.pinned_gateway_urls = next_pinned
+
+        return conn_info_dirty, keep_awake_changed_to, workspace_changed
+
     def apply_direct(
         self,
         *,
@@ -3218,138 +3788,51 @@ class LiveRuntimePolicy:
         _notify_listeners: bool = True,
     ) -> Tuple[str, Dict[str, Any], str]:
         with self._lock:
-            self._enforce_startup_env_locks(
+            plan = self._validate_and_plan_updates(
                 tier_key=tier_key,
                 workspace=workspace,
                 workspace_roots=workspace_roots,
+                readonly_workspace_roots=readonly_workspace_roots,
+                tool_prefix=tool_prefix,
+                device_label=device_label,
                 toolset_profile=toolset_profile,
                 prompt_profile=prompt_profile,
                 enabled_tools=enabled_tools,
                 disabled_tools=disabled_tools,
+                approval_popups=approval_popups,
+                annotation_mode=annotation_mode,
+                python_path=python_path,
                 enabled_packs=enabled_packs,
+                keep_awake=keep_awake,
+                scan_host_global_skills=scan_host_global_skills,
+                tray_enabled=tray_enabled,
+                tunnel_mode=tunnel_mode,
+                gateways=gateways,
+                selected_gateway=selected_gateway,
+                public_gateway_base=public_gateway_base,
+                public_gateway_node_id=public_gateway_node_id,
+                workers_dev_account_id=workers_dev_account_id,
+                workers_dev_script_name=workers_dev_script_name,
+                workers_dev_subdomain=workers_dev_subdomain,
+                workers_dev_custom_domain=workers_dev_custom_domain,
             )
-            conn_info_dirty = False
-            if tool_prefix is not None and str(tool_prefix).strip():
-                new_tp = normalize_prefix(str(tool_prefix))
-                if new_tp != self.tool_prefix:
-                    self.tool_prefix = new_tp
-                    conn_info_dirty = True
-                if self.guard is not None:
-                    self.guard.tool_prefix = self.tool_prefix
-            if device_label is not None and str(device_label).strip():
-                new_lbl = str(device_label).strip()
-                if new_lbl != self.device_label:
-                    self.device_label = new_lbl
-                    conn_info_dirty = True
+            prev_snap = self._capture_state_snapshot()
+            try:
+                if "workspace_roots" in plan:
+                    for root_p in plan["workspace_roots"]:
+                        root_p.mkdir(parents=True, exist_ok=True)
+                conn_info_dirty, keep_awake_changed_to, workspace_changed = self._apply_plan_to_memory(plan)
+                self._notify_workspace_hook()
+            except BaseException:
+                self._restore_state_snapshot(prev_snap)
+                raise
 
-            if tier_key:
-                nt = parse_strict_tier(tier_key)
-                if nt != self.tier_key:
-                    if self.tier_key != "tier1_readonly" and nt == "tier1_readonly":
-                        self.previous_non_readonly_tier = self.tier_key
-                    elif nt != "tier1_readonly":
-                        self.previous_non_readonly_tier = nt
-                    self.tier_epoch += 1
-                elif nt != "tier1_readonly":
-                    self.previous_non_readonly_tier = nt
-                self.tier_key = nt
-                self.tier_cfg = dict(PERMISSION_TIERS[nt])
-
-            if workspace_roots is not None or workspace:
-                new_roots = normalize_workspace_roots(workspace_roots, legacy_workspace=workspace)
-                if self._roots_norm_tuple(new_roots) != self._roots_norm_tuple(self.workspace_roots):
-                    self.workspace_epoch += 1
-                self.workspace_roots = new_roots
+            if workspace_changed:
                 record_known_workspaces(self.state_root, self.workspace_roots)
-                if readonly_workspace_roots is None:
-                    self.readonly_workspace_roots = normalize_readonly_workspace_roots(
-                        self.readonly_workspace_roots, self.workspace_roots
-                    )
-
-            if readonly_workspace_roots is not None:
-                self.readonly_workspace_roots = normalize_readonly_workspace_roots(
-                    readonly_workspace_roots, self.workspace_roots
-                )
-
-            if toolset_profile:
-                self.toolset_profile = parse_strict_toolset_profile(toolset_profile)
-            if prompt_profile:
-                self.prompt_profile = parse_strict_prompt_profile(prompt_profile)
-            if enabled_tools is not None:
-                self.enabled_tools = parse_tool_filter_spec(enabled_tools, active_prefix=self.tool_prefix, strict=False)
-            if disabled_tools is not None:
-                self.disabled_tools = parse_tool_filter_spec(disabled_tools, active_prefix=self.tool_prefix, strict=False)
-            if annotation_mode:
-                self._annotation_mode = parse_strict_annotation_mode(annotation_mode)
-            elif approval_popups is not None:
-                self._annotation_mode = "strict" if bool(approval_popups) else "seamless"
-            if python_path is not None:
-                self.python_path = normalize_python_path(python_path)
-            if enabled_packs is not None:
-                self.enabled_packs = parse_pack_spec(enabled_packs, strict=True)
-            if keep_awake is not None:
-                new_ka = bool(keep_awake)
-                if new_ka != self.keep_awake:
-                    self.keep_awake = new_ka
-                    self._safe_apply_keep_awake(new_ka)
-            if scan_host_global_skills is not None:
-                self.scan_host_global_skills = parse_bool_flag(scan_host_global_skills, default=False)
-            if tray_enabled is not None:
-                self.tray_enabled = parse_bool_flag(tray_enabled, default=True)
-            if public_gateway_base is not None:
-                pg_b = str(public_gateway_base).strip().rstrip("/")
-                self.public_gateway_base = pg_b if pg_b else _default_public_gateway_base()
-            if public_gateway_node_id is not None:
-                self.public_gateway_node_id = str(public_gateway_node_id).strip()
-            if workers_dev_account_id is not None:
-                self.workers_dev_account_id = str(workers_dev_account_id).strip()
-            if workers_dev_script_name is not None:
-                wds = str(workers_dev_script_name).strip()
-                self.workers_dev_script_name = wds if wds else DEFAULT_WORKERS_DEV_SCRIPT_NAME
-            if workers_dev_subdomain is not None:
-                self.workers_dev_subdomain = str(workers_dev_subdomain).strip()
-            if workers_dev_custom_domain is not None:
-                self.workers_dev_custom_domain = str(workers_dev_custom_domain).strip()
-
-            if gateways is not None:
-                synth_doc: Dict[str, Any] = {
-                    "gateways": dict(gateways),
-                    "selected_gateway": (
-                        str(selected_gateway).strip().lower()
-                        if (selected_gateway is not None and str(selected_gateway).strip())
-                        else self.selected_gateway
-                    ),
-                    "pinned_gateway_urls": list(self.pinned_gateway_urls),
-                    "workers_dev_account_id": self.workers_dev_account_id,
-                    "workers_dev_script_name": self.workers_dev_script_name,
-                    "workers_dev_subdomain": self.workers_dev_subdomain,
-                    "workers_dev_custom_domain": self.workers_dev_custom_domain,
-                }
-                self.gateways, self.selected_gateway = normalize_gateways_config(synth_doc)
-                self.tunnel_mode = str(synth_doc.get("tunnel_mode") or self.tunnel_mode)
-                self.pinned_gateway_urls = tuple(synth_doc.get("pinned_gateway_urls") or ())
-            elif tunnel_mode is not None and str(tunnel_mode).strip():
-                # Legacy single-select `update_config(tunnel_mode=...)` compatibility
-                new_tm = str(tunnel_mode).strip()
-                legacy_ctx: Dict[str, Any] = {
-                    "pinned_gateway_urls": list(self.pinned_gateway_urls),
-                }
-                next_slots = {gid: dict(self.gateways.get(gid) or {}) for gid in GATEWAY_IDS}
-                self.selected_gateway = _apply_legacy_mode_to_slots(next_slots, new_tm, legacy_ctx)
-                self.gateways = next_slots
-                self.tunnel_mode = new_tm
-                self.pinned_gateway_urls = tuple(collect_pinned_gateway_urls(self.gateways, legacy_ctx))
-            elif selected_gateway is not None and str(selected_gateway).strip().lower() in GATEWAY_IDS:
-                cand_sel = str(selected_gateway).strip().lower()
-                en_ids = [gid for gid in GATEWAY_IDS if bool(self.gateways.get(gid, {}).get("enabled"))]
-                if not en_ids or cand_sel in en_ids:
-                    self.selected_gateway = cand_sel
-                    if en_ids:
-                        self.tunnel_mode = str(self.gateways[cand_sel].get("submode") or self.tunnel_mode)
-
+            if keep_awake_changed_to is not None:
+                self._safe_apply_keep_awake(keep_awake_changed_to)
             if conn_info_dirty:
                 self._sync_conn_info_prefix_text()
-            self._notify_workspace_hook()
             if _notify_listeners:
                 self._notify_policy_listeners()
             self._last_cfg_sig = self._file_sig(self.cfg_path)
@@ -3385,20 +3868,9 @@ class LiveRuntimePolicy:
         workers_dev_subdomain: Optional[str] = None,
         workers_dev_custom_domain: Optional[str] = None,
     ) -> Tuple[str, Dict[str, Any], str]:
-        """Apply policy mutations in memory, atomically persist to `cfg_path`, then notify listeners."""
+        """Validate upfront, atomically patch-merge & persist under CrossProcessFileLock, then commit memory & guard."""
         with self._lock:
-            self._enforce_startup_env_locks(
-                tier_key=tier_key,
-                workspace=workspace,
-                workspace_roots=workspace_roots,
-                toolset_profile=toolset_profile,
-                prompt_profile=prompt_profile,
-                tool_prefix=tool_prefix,
-                enabled_tools=enabled_tools,
-                disabled_tools=disabled_tools,
-                enabled_packs=enabled_packs,
-            )
-            res = self.apply_direct(
+            plan = self._validate_and_plan_updates(
                 tier_key=tier_key,
                 workspace=workspace,
                 workspace_roots=workspace_roots,
@@ -3425,59 +3897,211 @@ class LiveRuntimePolicy:
                 workers_dev_script_name=workers_dev_script_name,
                 workers_dev_subdomain=workers_dev_subdomain,
                 workers_dev_custom_domain=workers_dev_custom_domain,
-                _notify_listeners=False,
             )
-            if self.cfg_path is not None:
-                cur_doc: Dict[str, Any] = {}
-                if self.cfg_path.is_file():
-                    try:
-                        loaded = json.loads(self.cfg_path.read_text(encoding="utf-8-sig"))
+
+            if self.cfg_path is None:
+                return self.apply_direct(
+                    tier_key=tier_key,
+                    workspace=workspace,
+                    workspace_roots=workspace_roots,
+                    readonly_workspace_roots=readonly_workspace_roots,
+                    tool_prefix=tool_prefix,
+                    device_label=device_label,
+                    toolset_profile=toolset_profile,
+                    prompt_profile=prompt_profile,
+                    enabled_tools=enabled_tools,
+                    disabled_tools=disabled_tools,
+                    approval_popups=approval_popups,
+                    annotation_mode=annotation_mode,
+                    python_path=python_path,
+                    enabled_packs=enabled_packs,
+                    keep_awake=keep_awake,
+                    scan_host_global_skills=scan_host_global_skills,
+                    tray_enabled=tray_enabled,
+                    tunnel_mode=tunnel_mode,
+                    gateways=gateways,
+                    selected_gateway=selected_gateway,
+                    public_gateway_base=public_gateway_base,
+                    public_gateway_node_id=public_gateway_node_id,
+                    workers_dev_account_id=workers_dev_account_id,
+                    workers_dev_script_name=workers_dev_script_name,
+                    workers_dev_subdomain=workers_dev_subdomain,
+                    workers_dev_custom_domain=workers_dev_custom_domain,
+                )
+
+            conn_info_dirty = False
+            keep_awake_changed_to: Optional[bool] = None
+            workspace_changed = False
+            with get_file_lock(self.cfg_path):
+                had_file = self.cfg_path.is_file()
+                pre_write_bytes: Optional[bytes] = None
+                disk_doc: Dict[str, Any] = {}
+                if had_file:
+                    pre_write_bytes = self.cfg_path.read_bytes()
+                    raw_txt = pre_write_bytes.decode("utf-8-sig")
+                    if raw_txt.strip():
+                        loaded = json.loads(raw_txt)
                         if isinstance(loaded, dict):
-                            cur_doc = loaded
+                            disk_doc = loaded
+
+                merged_doc: Dict[str, Any] = dict(disk_doc) if had_file else self._build_full_disk_doc()
+
+                # Patch ONLY fields explicitly requested in `plan` onto latest disk state (A1)
+                if "tool_prefix" in plan:
+                    merged_doc["tool_prefix"] = plan["tool_prefix"]
+                    merged_doc.setdefault("instance_id", self.instance_id)
+                if "device_label" in plan:
+                    merged_doc["device_label"] = plan["device_label"]
+                if "tier_key" in plan:
+                    nt = plan["tier_key"]
+                    base_tier = normalize_tier(str(disk_doc.get("permission_tier") or self.tier_key))
+                    base_prev = str(
+                        disk_doc.get("previous_non_readonly_tier") or self.previous_non_readonly_tier
+                    ).strip().lower()
+                    if base_tier != "tier1_readonly" and nt == "tier1_readonly":
+                        next_prev = base_tier
+                    elif nt != "tier1_readonly":
+                        next_prev = nt
+                    else:
+                        next_prev = (
+                            base_prev
+                            if base_prev in ("tier2_workspace_edit", "tier3_workspace_dev", "tier4_full_power")
+                            else DEFAULT_TIER
+                        )
+                    merged_doc["permission_tier"] = nt
+                    merged_doc["previous_non_readonly_tier"] = next_prev
+
+                if "workspace_roots" in plan:
+                    ws_tuple = plan["workspace_roots"]
+                    merged_doc["workspace"] = str(ws_tuple[0])
+                    merged_doc["workspace_roots"] = [str(p) for p in ws_tuple]
+                    if "readonly_workspace_roots" not in plan:
+                        existing_ro = (
+                            disk_doc.get("readonly_workspace_roots")
+                            if (had_file and "readonly_workspace_roots" in disk_doc)
+                            else self.readonly_workspace_roots
+                        )
+                        trimmed_ro = normalize_readonly_workspace_roots(existing_ro, ws_tuple, strict=False)
+                        merged_doc["readonly_workspace_roots"] = [str(p) for p in trimmed_ro]
+
+                if "readonly_workspace_roots" in plan:
+                    if "workspace_roots" in plan:
+                        eff_disk_roots = plan["workspace_roots"]
+                    elif had_file and (
+                        "workspace_roots" in disk_doc or "workspace" in disk_doc or "workspace_root" in disk_doc
+                    ):
+                        eff_disk_roots = normalize_workspace_roots(
+                            disk_doc.get("workspace_roots"),
+                            legacy_workspace=str(disk_doc.get("workspace") or disk_doc.get("workspace_root") or ""),
+                            create_missing=False,
+                        )
+                    else:
+                        eff_disk_roots = self.workspace_roots
+                    ro_tuple = normalize_readonly_workspace_roots(
+                        plan["_raw_readonly_workspace_roots"], eff_disk_roots, strict=True
+                    )
+                    plan["readonly_workspace_roots"] = ro_tuple
+                    merged_doc["readonly_workspace_roots"] = [str(p) for p in ro_tuple]
+
+                if "toolset_profile" in plan:
+                    merged_doc["toolset_profile"] = plan["toolset_profile"]
+                if "prompt_profile" in plan:
+                    merged_doc["prompt_profile"] = plan["prompt_profile"]
+                if "enabled_tools" in plan:
+                    merged_doc["enabled_tools"] = list(plan["enabled_tools"])
+                if "disabled_tools" in plan:
+                    merged_doc["disabled_tools"] = list(plan["disabled_tools"])
+                if "enabled_packs" in plan:
+                    merged_doc["enabled_packs"] = list(plan["enabled_packs"])
+                if "annotation_mode" in plan:
+                    merged_doc["annotation_mode"] = plan["annotation_mode"]
+                    merged_doc["approval_popups"] = plan["annotation_mode"] == "strict"
+                if "python_path" in plan:
+                    merged_doc["python_path"] = plan["python_path"]
+                if "keep_awake" in plan:
+                    merged_doc["keep_awake"] = plan["keep_awake"]
+                if "scan_host_global_skills" in plan:
+                    merged_doc["scan_host_global_skills"] = plan["scan_host_global_skills"]
+                if "tray_enabled" in plan:
+                    merged_doc["tray_enabled"] = plan["tray_enabled"]
+                if "public_gateway_base" in plan:
+                    merged_doc["public_gateway_base"] = plan["public_gateway_base"]
+                if "public_gateway_node_id" in plan:
+                    merged_doc["public_gateway_node_id"] = plan["public_gateway_node_id"]
+                if "workers_dev_account_id" in plan:
+                    merged_doc["workers_dev_account_id"] = plan["workers_dev_account_id"]
+                if "workers_dev_script_name" in plan:
+                    merged_doc["workers_dev_script_name"] = plan["workers_dev_script_name"]
+                if "workers_dev_subdomain" in plan:
+                    merged_doc["workers_dev_subdomain"] = plan["workers_dev_subdomain"]
+                if "workers_dev_custom_domain" in plan:
+                    merged_doc["workers_dev_custom_domain"] = plan["workers_dev_custom_domain"]
+
+                if "gateways" in plan or "tunnel_mode" in plan or "selected_gateway" in plan:
+                    base_gws, base_sel = (
+                        normalize_gateways_config(dict(disk_doc))
+                        if (had_file and ("gateways" in disk_doc or "tunnel_mode" in disk_doc))
+                        else (self.gateways, self.selected_gateway)
+                    )
+                    base_tm = str(disk_doc.get("tunnel_mode") or self.tunnel_mode) if had_file else self.tunnel_mode
+                    base_pin = (
+                        tuple(disk_doc.get("pinned_gateway_urls") or ())
+                        if (had_file and "pinned_gateway_urls" in disk_doc)
+                        else self.pinned_gateway_urls
+                    )
+                    next_gws, next_sel, next_tm, next_pin = self._compute_gateway_update(
+                        plan,
+                        base_gateways=base_gws,
+                        base_selected=base_sel,
+                        base_tunnel_mode=base_tm,
+                        base_pinned=base_pin,
+                        wd_account_id=str(merged_doc.get("workers_dev_account_id") or self.workers_dev_account_id),
+                        wd_script_name=str(merged_doc.get("workers_dev_script_name") or self.workers_dev_script_name),
+                        wd_subdomain=str(merged_doc.get("workers_dev_subdomain") or self.workers_dev_subdomain),
+                        wd_custom_domain=str(merged_doc.get("workers_dev_custom_domain") or self.workers_dev_custom_domain),
+                    )
+                    merged_doc["gateways"] = {gid: dict(next_gws[gid]) for gid in GATEWAY_IDS}
+                    merged_doc["selected_gateway"] = next_sel
+                    merged_doc["tunnel_mode"] = next_tm
+                    merged_doc["_gateways_mirrored_mode"] = next_tm
+                    merged_doc["pinned_gateway_urls"] = list(collect_pinned_gateway_urls(next_gws, merged_doc))
+
+                merged_doc["policy_updated_at"] = round(time.time(), 6)
+
+                # Durability BEFORE in-memory & guard privilege mutation (A2)
+                atomic_write_json(self.cfg_path, merged_doc)
+
+                prev_snap = self._capture_state_snapshot()
+                try:
+                    if "workspace_roots" in plan:
+                        for root_p in plan["workspace_roots"]:
+                            root_p.mkdir(parents=True, exist_ok=True)
+                    conn_info_dirty, keep_awake_changed_to, workspace_changed = self._apply_plan_to_memory(
+                        plan, merged_doc=merged_doc if had_file else None
+                    )
+                    self._notify_workspace_hook()
+                except BaseException:
+                    self._restore_state_snapshot(prev_snap)
+                    try:
+                        if had_file and pre_write_bytes is not None:
+                            atomic_write_text(self.cfg_path, pre_write_bytes.decode("utf-8"))
+                        elif not had_file and self.cfg_path.exists():
+                            self.cfg_path.unlink()
                     except Exception:
-                        cur_doc = {}
-                cur_doc["permission_tier"] = self.tier_key
-                cur_doc["previous_non_readonly_tier"] = self.previous_non_readonly_tier
-                cur_doc["instance_id"] = self.instance_id
-                cur_doc["tool_prefix"] = self.tool_prefix
-                cur_doc["device_label"] = self.device_label
-                cur_doc["toolset_profile"] = self.toolset_profile
-                cur_doc["prompt_profile"] = self.prompt_profile
-                cur_doc["workspace"] = self.workspace
-                cur_doc["workspace_roots"] = [str(p) for p in self.workspace_roots]
-                cur_doc["readonly_workspace_roots"] = [str(p) for p in self.readonly_workspace_roots]
-                cur_doc["scan_host_global_skills"] = self.scan_host_global_skills
-                cur_doc["tray_enabled"] = self.tray_enabled
-                if gateways is not None or (tunnel_mode is not None and str(tunnel_mode).strip()) or selected_gateway is not None or "gateways" not in cur_doc:
-                    cur_doc["gateways"] = {gid: dict(self.gateways[gid]) for gid in GATEWAY_IDS}
-                    cur_doc["selected_gateway"] = self.selected_gateway
-                    cur_doc["tunnel_mode"] = self.tunnel_mode
-                    cur_doc["_gateways_mirrored_mode"] = self.tunnel_mode
-                    self.pinned_gateway_urls = tuple(collect_pinned_gateway_urls(self.gateways, cur_doc))
-                    cur_doc["pinned_gateway_urls"] = list(self.pinned_gateway_urls)
-                else:
-                    # Keep disk gateways untouched if another caller updated gateway slots while we persisted non-tunnel fields
-                    self.gateways, self.selected_gateway = normalize_gateways_config(cur_doc)
-                    self.tunnel_mode = str(cur_doc.get("tunnel_mode") or self.tunnel_mode)
-                    self.pinned_gateway_urls = tuple(cur_doc.get("pinned_gateway_urls") or ())
-                cur_doc["public_gateway_base"] = self.public_gateway_base
-                cur_doc["public_gateway_node_id"] = self.public_gateway_node_id
-                cur_doc["workers_dev_account_id"] = self.workers_dev_account_id
-                cur_doc["workers_dev_script_name"] = self.workers_dev_script_name
-                cur_doc["workers_dev_subdomain"] = self.workers_dev_subdomain
-                cur_doc["workers_dev_custom_domain"] = self.workers_dev_custom_domain
-                cur_doc["enabled_tools"] = list(self.enabled_tools)
-                cur_doc["disabled_tools"] = list(self.disabled_tools)
-                cur_doc["enabled_packs"] = list(self.enabled_packs)
-                cur_doc["annotation_mode"] = self.annotation_mode
-                cur_doc["approval_popups"] = self.approval_popups
-                cur_doc["python_path"] = self.python_path
-                cur_doc["keep_awake"] = self.keep_awake
-                cur_doc["policy_updated_at"] = round(time.time(), 6)
-                atomic_write_json(self.cfg_path, cur_doc)
+                        pass
+                    self._last_cfg_sig = self._file_sig(self.cfg_path)
+                    raise
+
                 self._last_cfg_sig = self._file_sig(self.cfg_path)
+
+            if workspace_changed:
+                record_known_workspaces(self.state_root, self.workspace_roots)
+            if keep_awake_changed_to is not None:
+                self._safe_apply_keep_awake(keep_awake_changed_to)
+            if conn_info_dirty:
+                self._sync_conn_info_prefix_text()
             self._notify_policy_listeners()
-        return res
+            return self.tier_key, dict(self.tier_cfg), self.workspace
 
     def update_config(
         self,

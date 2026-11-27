@@ -1062,6 +1062,7 @@ def spawn_detached_daemon(
     vps_ssh_port: int = 22,
     vps_identity_file: str = "",
     wait_ready_sec: float = 20.0,
+    clear_user_stop: bool = False,
 ) -> Dict[str, Any]:
     """Spawn a terminal-independent background supervisor process (`pythonw.exe` on Windows)."""
     st_root = Path(state_root).expanduser().resolve()
@@ -1070,6 +1071,22 @@ def spawn_detached_daemon(
     state_dir = st_root / "state"
     logs_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
+
+    stop_flag = daemon_stop_flag_path(st_root, eff_p)
+    if _is_stop_active(st_root, eff_p) and not clear_user_stop:
+        sup_log = logs_dir / (f"supervisor_{eff_p}.log" if eff_p != "pc" else "supervisor.log")
+        with sup_log.open("a", encoding="utf-8", errors="replace") as lf:
+            lf.write(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} [INFO] spawn_detached_daemon blocked by persistent user STOP lock "
+                f"(prefix={eff_p}, stop_flag={stop_flag})\n"
+            )
+        return {
+            "ok": False,
+            "blocked_by_user_stop": True,
+            "error": "blocked_by_user_stop",
+            "detail": "服务已被用户手动停止并锁定（存在持久 STOP 锁）；请通过显式启动命令（clear_user_stop=True）重新拉起。",
+            "stop_flag_path": str(stop_flag),
+        }
 
     if tunnel_token and normalize_tunnel_token(tunnel_token):
         save_tunnel_token(st_root, tunnel_token, prefix=eff_p)
@@ -1106,8 +1123,8 @@ def spawn_detached_daemon(
             "detail": "未检测到系统 ssh 客户端，请先安装 OpenSSH Client 后再使用 --mode vps。",
         }
 
-    stop_flag = daemon_stop_flag_path(st_root, eff_p)
-    atomic_write_text(stop_flag, f"CLEAR:{time.time()}\n")
+    if clear_user_stop or not _is_stop_active(st_root, eff_p):
+        atomic_write_text(stop_flag, f"CLEAR:{time.time()}\n")
 
     exe_detached = resolve_windowless_python(python_exe)
     argv = [

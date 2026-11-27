@@ -461,7 +461,7 @@ def is_raw_pid_alive(pid: int) -> bool:
 
             h = kernel32.OpenProcess(0x1000, False, int(pid))
             if not h:
-                return False
+                return int(ctypes.get_last_error()) == 5
             try:
                 ec = wintypes.DWORD(0)
                 if kernel32.GetExitCodeProcess(h, ctypes.byref(ec)):
@@ -571,41 +571,113 @@ def _terminate_single_pid_win32(pid: int) -> bool:
         return False
 
 
+_LAST_KILL_DIAGNOSTICS = threading.local()
+
+
+def get_last_kill_diagnostics() -> Dict[str, Any]:
+    """Return structured diagnostics from the most recent process-tree termination call on this thread."""
+    raw = getattr(_LAST_KILL_DIAGNOSTICS, "value", None)
+    if not isinstance(raw, dict):
+        return {"terminated": False, "pid_reused": False, "still_running": [], "errors": []}
+    return {
+        "terminated": bool(raw.get("terminated")),
+        "pid_reused": bool(raw.get("pid_reused")),
+        "still_running": list(raw.get("still_running") or []),
+        "errors": list(raw.get("errors") or []),
+    }
+
+
+def _record_kill_diagnostics(
+    *,
+    terminated: bool,
+    pid_reused: bool,
+    still_running: Sequence[int],
+    errors: Sequence[str],
+    diagnostics: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload: Dict[str, Any] = {
+        "terminated": bool(terminated),
+        "pid_reused": bool(pid_reused),
+        "still_running": [int(p) for p in still_running],
+        "errors": [str(e) for e in errors],
+    }
+    _LAST_KILL_DIAGNOSTICS.value = payload
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update(payload)
+
+
+def _safe_is_pid_alive(pid: int, errors: List[str]) -> bool:
+    """Fail-closed liveness check: if exit cannot be confirmed, treat the PID as still running."""
+    try:
+        return bool(is_raw_pid_alive(pid))
+    except Exception as exc:
+        errors.append(f"liveness_check({pid}) error={exc}")
+        return True
+
+
 def _kill_process_tree_win32(
     pid: int,
     expected_create_token: Optional[str] = None,
     job_handle: Optional[OwnedJobHandle] = None,
     wait_timeout_sec: float = 1.0,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, bool]:
     """Verify `(pid, expected_create_token)`, kill child/grandchild tree windowlessly, and confirm exit within `<=1.0s`."""
+    errors: List[str] = []
     alive, reused = verify_pid_alive(pid, expected_create_token)
     if reused:
         if job_handle is not None:
             job_handle.detach(survive_daemon_exit=True).close()
+        _record_kill_diagnostics(
+            terminated=False,
+            pid_reused=True,
+            still_running=[],
+            errors=errors,
+            diagnostics=diagnostics,
+        )
         return False, True
 
     eff_tok = expected_create_token or (get_process_create_token(pid) if alive else None)
     desc_before = _collect_descendant_pids_win32(pid, eff_tok) if pid > 0 else []
 
+    any_terminate_ok = False
     killed_via_job = False
     if job_handle is not None:
         raw_jh = job_handle.handle
         if raw_jh:
-            killed_via_job = _terminate_win32_job(raw_jh, 1)
+            killed_via_job = bool(_terminate_win32_job(raw_jh, 1))
+            if killed_via_job:
+                any_terminate_ok = True
+            else:
+                errors.append(f"TerminateJobObject({pid}) failed")
         job_handle.close()
 
     if not alive and not desc_before and not killed_via_job:
+        _record_kill_diagnostics(
+            terminated=False,
+            pid_reused=False,
+            still_running=[],
+            errors=errors,
+            diagnostics=diagnostics,
+        )
         return False, False
 
     if alive and pid > 0:
-        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-            subprocess.run(
+        try:
+            tk_res = subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=3.0,
                 creationflags=CREATE_NO_WINDOW,
             )
+            if getattr(tk_res, "returncode", 1) == 0:
+                any_terminate_ok = True
+            else:
+                errors.append(f"taskkill({pid}) rc={getattr(tk_res, 'returncode', -1)}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"taskkill({pid}) error={exc}")
 
     desc_after = _collect_descendant_pids_win32(pid, eff_tok) if pid > 0 else []
     target_pids = [
@@ -613,29 +685,48 @@ def _kill_process_tree_win32(
         if p > 0 and p != os.getpid()
     ]
     for t_pid in target_pids:
-        if is_raw_pid_alive(t_pid):
-            _terminate_single_pid_win32(t_pid)
+        if _safe_is_pid_alive(t_pid, errors):
+            if _terminate_single_pid_win32(t_pid):
+                any_terminate_ok = True
+            else:
+                errors.append(f"TerminateProcess({t_pid}) failed")
             if t_pid != pid:
-                with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-                    subprocess.run(
+                try:
+                    tk_child = subprocess.run(
                         ["taskkill", "/F", "/T", "/PID", str(t_pid)],
                         stdin=subprocess.DEVNULL,
                         capture_output=True,
                         timeout=2.0,
                         creationflags=CREATE_NO_WINDOW,
                     )
+                    if getattr(tk_child, "returncode", 1) == 0:
+                        any_terminate_ok = True
+                    else:
+                        errors.append(f"taskkill({t_pid}) rc={getattr(tk_child, 'returncode', -1)}")
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    errors.append(f"taskkill({t_pid}) error={exc}")
 
     if target_pids and wait_timeout_sec > 0:
         deadline = time.monotonic() + max(0.05, min(2.0, float(wait_timeout_sec)))
         while time.monotonic() < deadline:
-            survivors = [p for p in target_pids if is_raw_pid_alive(p)]
+            survivors = [p for p in target_pids if _safe_is_pid_alive(p, errors)]
             if not survivors:
                 break
             for spid in survivors:
-                _terminate_single_pid_win32(spid)
+                if _terminate_single_pid_win32(spid):
+                    any_terminate_ok = True
             time.sleep(0.03)
 
-    return True, False
+    remaining = [p for p in target_pids if _safe_is_pid_alive(p, errors)]
+    terminated = bool(any_terminate_ok and not remaining)
+    _record_kill_diagnostics(
+        terminated=terminated,
+        pid_reused=False,
+        still_running=remaining,
+        errors=errors,
+        diagnostics=diagnostics,
+    )
+    return terminated, False
 
 
 def terminate_verified_pid_tree(
@@ -644,6 +735,7 @@ def terminate_verified_pid_tree(
     job_handle: Optional[OwnedJobHandle] = None,
     pgid: Optional[int] = None,
     wait_timeout_sec: float = 1.0,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, bool]:
     """
     Safely terminate a process tree ONLY after verifying `(pid, expected_create_token)`.
@@ -655,26 +747,66 @@ def terminate_verified_pid_tree(
             expected_create_token=expected_create_token,
             job_handle=job_handle,
             wait_timeout_sec=wait_timeout_sec,
+            diagnostics=diagnostics,
         )
+    errors: List[str] = []
     alive, reused = verify_pid_alive(pid, expected_create_token)
     if reused:
         if job_handle is not None:
             job_handle.detach(survive_daemon_exit=True).close()
+        _record_kill_diagnostics(
+            terminated=False,
+            pid_reused=True,
+            still_running=[],
+            errors=errors,
+            diagnostics=diagnostics,
+        )
         return False, True
     if job_handle is not None:
         job_handle.close()
     if not alive:
+        _record_kill_diagnostics(
+            terminated=False,
+            pid_reused=False,
+            still_running=[],
+            errors=errors,
+            diagnostics=diagnostics,
+        )
         return False, False
+    any_signal_ok = False
     eff_pgid = pgid
     if eff_pgid is None:
         with contextlib.suppress(Exception):
             eff_pgid = os.getpgid(pid)
+    sig_val = getattr(signal, "SIGKILL", signal.SIGTERM)
     if eff_pgid and eff_pgid > 1 and eff_pgid != os.getpgid(0):
-        with contextlib.suppress(OSError):
-            os.killpg(eff_pgid, getattr(signal, "SIGKILL", signal.SIGTERM))
-    with contextlib.suppress(OSError):
-        os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
-    return True, False
+        try:
+            os.killpg(eff_pgid, sig_val)
+            any_signal_ok = True
+        except OSError as exc:
+            errors.append(f"os.killpg({eff_pgid}) error={exc}")
+    try:
+        os.kill(pid, sig_val)
+        any_signal_ok = True
+    except OSError as exc:
+        errors.append(f"os.kill({pid}) error={exc}")
+    if wait_timeout_sec > 0:
+        deadline = time.monotonic() + max(0.05, min(2.0, float(wait_timeout_sec)))
+        while time.monotonic() < deadline:
+            if not _safe_is_pid_alive(pid, errors):
+                break
+            time.sleep(0.03)
+    still_alive = _safe_is_pid_alive(pid, errors)
+    remaining = [pid] if still_alive else []
+    terminated = bool(any_signal_ok and not remaining)
+    _record_kill_diagnostics(
+        terminated=terminated,
+        pid_reused=False,
+        still_running=remaining,
+        errors=errors,
+        diagnostics=diagnostics,
+    )
+    return terminated, False
 
 
 # --- Healthy Target Project `.venv` & Rich Host Python Discovery ---
@@ -1997,10 +2129,15 @@ class ProcessManager:
                     started_at = float(rec.get("started_at") or now)
                     if now - started_at > ttl:
                         jh = live.get("job_handle") if live else None
-                        terminate_verified_pid_tree(pid, tok, job_handle=jh, pgid=rec.get("pgid"))
+                        _LAST_KILL_DIAGNOSTICS.value = None
+                        killed_ttl, reused_ttl = terminate_verified_pid_tree(pid, tok, job_handle=jh, pgid=rec.get("pgid"))
+                        diag_ttl = get_last_kill_diagnostics()
                         rec["timed_out"] = True
-                        rec["exit_code"] = -9
-                        rec["ended_at"] = now
+                        if killed_ttl or reused_ttl or not diag_ttl.get("still_running"):
+                            if reused_ttl:
+                                rec["pid_reused"] = True
+                            rec["exit_code"] = -9 if killed_ttl else (_read_rc_file_int(rec.get("rc_path")) or -1)
+                            rec["ended_at"] = now
                         dirty = True
 
             if rec.get("exit_code") is not None:
@@ -2817,38 +2954,62 @@ class ProcessManager:
                 was_exited = rec.get("exit_code") is not None
                 killed = False
                 pid_reused = bool(rec.get("pid_reused", False))
+                still_running = False
+                still_running_pids: List[int] = []
+                kill_errors: List[str] = []
                 if not was_exited and pid > 0:
                     live_h = self._live_bg_handles.get(jid)
                     jh = live_h.get("job_handle") if live_h else None
+                    _LAST_KILL_DIAGNOSTICS.value = None
                     killed, pid_reused = terminate_verified_pid_tree(pid, tok, job_handle=jh, pgid=rec.get("pgid"))
-                    with self._bg_lock:
-                        stored = self._persisted_jobs.get(jid)
-                        if stored is not None:
-                            stored["ended_at"] = stored.get("ended_at") or time.time()
-                            if pid_reused:
-                                stored["pid_reused"] = True
-                                stored["exit_code"] = _read_rc_file_int(stored.get("rc_path"))
-                                if stored["exit_code"] is None:
-                                    stored["exit_code"] = -1
-                            else:
-                                stored["exit_code"] = -9 if killed else (_read_rc_file_int(stored.get("rc_path")) or -1)
-                            self._save_persisted_ledger()
+                    diag = get_last_kill_diagnostics()
+                    kill_errors = list(diag.get("errors") or [])
+                    if not killed and not pid_reused:
+                        still_running_pids = list(diag.get("still_running") or [])
+                        if still_running_pids:
+                            still_running = True
+                        else:
+                            alive_after, reused_after = verify_pid_alive(pid, tok)
+                            if reused_after:
+                                pid_reused = True
+                            elif alive_after:
+                                still_running = True
+                                still_running_pids = [pid]
+                    if not still_running:
+                        with self._bg_lock:
+                            stored = self._persisted_jobs.get(jid)
+                            if stored is not None:
+                                stored["ended_at"] = stored.get("ended_at") or time.time()
+                                if pid_reused:
+                                    stored["pid_reused"] = True
+                                    stored["exit_code"] = _read_rc_file_int(stored.get("rc_path"))
+                                    if stored["exit_code"] is None:
+                                        stored["exit_code"] = -1
+                                else:
+                                    stored["exit_code"] = -9 if killed else (_read_rc_file_int(stored.get("rc_path")) or -1)
+                                self._save_persisted_ledger()
                 refreshed = self._refresh_job_record(jid) or rec
                 tail_txt, tail_bytes = self._read_combined_job_tail(refreshed, tail_lines=tail_lines)
-                return {
-                    "ok": True,
+                kill_resp: Dict[str, Any] = {
+                    "ok": not still_running,
                     "action": "kill",
                     "job_id": jid,
                     "pid": pid,
                     "killed": killed,
-                    "already_exited": was_exited or (not killed),
+                    "already_exited": (was_exited or (not killed)) and (not still_running),
                     "pid_reused": pid_reused,
-                    "running": False,
-                    "exit_code": refreshed.get("exit_code"),
+                    "running": still_running,
+                    "still_running": still_running,
+                    "still_running_pids": still_running_pids,
+                    "errors": kill_errors,
+                    "exit_code": None if still_running else refreshed.get("exit_code"),
                     "log_path": str(refreshed.get("log_path") or rec.get("log_path") or ""),
                     "log_tail": tail_txt,
                     "tail_bytes_read": tail_bytes,
                 }
+                if still_running:
+                    kill_resp["error"] = "; ".join(kill_errors) if kill_errors else f"Failed to terminate process {pid}; still running."
+                return kill_resp
 
             waited_s = 0.0
             eff_wait = float(wait_seconds if wait_seconds else (15.0 if act == "wait" else 0.0))
@@ -2905,18 +3066,33 @@ class ProcessManager:
             include_persisted_bg = True
         clean_pfx = (prefix_filter or "").strip()
         fg_killed: List[int] = []
+        fg_still_running: List[int] = []
+        kill_errors: List[str] = []
         with self._fg_lock:
             fg_items = list(self._active_fg_procs.items())
         for pid, (proc, jh, tok, _pfx) in fg_items:
             if clean_pfx and _pfx and _pfx != clean_pfx:
                 continue
-            if proc.poll() is None:
-                fg_killed.append(pid)
+            was_running = proc.poll() is None
             for stream_c in (proc.stdin, proc.stdout, proc.stderr):
                 cancel_win32_handle_io(stream_c)
-            terminate_verified_pid_tree(pid, tok, job_handle=jh)
-            with self._fg_lock:
-                self._active_fg_procs.pop(pid, None)
+            _LAST_KILL_DIAGNOSTICS.value = None
+            terminated, reused = terminate_verified_pid_tree(pid, tok, job_handle=jh)
+            diag = get_last_kill_diagnostics()
+            is_still_running = bool(
+                was_running
+                and not terminated
+                and not reused
+                and (diag.get("still_running") or proc.poll() is None)
+            )
+            if is_still_running:
+                fg_still_running.append(pid)
+                kill_errors.extend(list(diag.get("errors") or []))
+            else:
+                if was_running and terminated:
+                    fg_killed.append(pid)
+                with self._fg_lock:
+                    self._active_fg_procs.pop(pid, None)
 
         norm_reason = (reason or "").strip().lower()
         graceful_reasons = {
@@ -2930,6 +3106,7 @@ class ProcessManager:
         should_kill_bg = bool(include_persisted_bg) and norm_reason not in graceful_reasons
 
         bg_killed: List[int] = []
+        bg_still_running: List[int] = []
         if should_kill_bg:
             with self._bg_lock:
                 self._load_persisted_ledger()
@@ -2951,27 +3128,42 @@ class ProcessManager:
                     res_k = self.manage_bg_command(action="kill", job_id=jid)
                     if res_k.get("killed") and pid_cand > 0:
                         bg_killed.append(pid_cand)
+                    elif res_k.get("still_running") and pid_cand > 0:
+                        if pid_cand not in bg_still_running:
+                            bg_still_running.append(pid_cand)
+                        errs_k = res_k.get("errors") or ([res_k.get("error")] if res_k.get("error") else [])
+                        kill_errors.extend(str(e) for e in errs_k if e)
                 elif sys.platform == "win32" and (pid_cand > 0 or (jh_cand is not None and jh_cand.handle)):
-                    killed_extra, _ = _kill_process_tree_win32(
+                    _LAST_KILL_DIAGNOSTICS.value = None
+                    killed_extra, reused_extra = _kill_process_tree_win32(
                         pid_cand,
                         expected_create_token=tok_cand,
                         job_handle=jh_cand,
                         wait_timeout_sec=1.0,
                     )
+                    diag_extra = get_last_kill_diagnostics()
                     if killed_extra and pid_cand > 0 and pid_cand not in bg_killed:
                         bg_killed.append(pid_cand)
+                    elif not reused_extra and diag_extra.get("still_running"):
+                        for sp in diag_extra.get("still_running") or []:
+                            if int(sp) > 0 and int(sp) not in bg_still_running:
+                                bg_still_running.append(int(sp))
+                        kill_errors.extend(list(diag_extra.get("errors") or []))
+        still_running = list(dict.fromkeys(fg_still_running + bg_still_running))
         self._sync_bg_sleep_inhibitor()
         self.guard.record_security_event(
             "active_commands_killed",
-            f"fg={fg_killed},bg={bg_killed},include_persisted_bg={should_kill_bg}",
+            f"fg={fg_killed},bg={bg_killed},still_running={still_running},include_persisted_bg={should_kill_bg}",
             reason,
         )
         return {
-            "ok": True,
+            "ok": not still_running,
             "reason": reason,
             "persisted_bg_killed": should_kill_bg,
             "fg_killed": fg_killed,
             "bg_killed": bg_killed,
+            "still_running": still_running,
+            "errors": kill_errors,
         }
 
     def run_batch_probe(

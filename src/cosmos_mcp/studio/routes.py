@@ -1001,46 +1001,60 @@ def _resolve_studio_gateways_view(
         consec_f = 0
         slot_err = ""
         public_https_ready = False
+        observed_state = "unknown"
 
         if not enabled:
             status = "disabled"
             status_label_zh = "未开启"
+            observed_state = "disabled"
         else:
+            has_slot_obs = False
             if slot_d is not None:
                 consec_f = int(slot_d.get("consecutive_failures") or 0)
                 raw_le = str(slot_d.get("last_error") or "").strip()
                 raw_disc = str(slot_d.get("last_disconnect_reason_zh") or "").strip()
                 d_phase = str(slot_d.get("phase") or "").strip().lower()
                 d_tready = slot_d.get("tunnel_ready")
-                if slot_d.get("enabled") is False or d_phase == "disabled":
-                    public_https_ready = False
-                    slot_err = raw_le or raw_disc
-                elif d_tready is True and d_phase not in ("reconnecting", "error", "starting", "probing") and bool(cand_url):
-                    public_https_ready = True
-                    slot_err = ""
-                elif d_tready is False or d_phase in ("reconnecting", "error", "starting", "probing") or not cand_url:
-                    public_https_ready = False
-                    slot_err = raw_le or raw_disc
-                else:
-                    slot_err = raw_le or (raw_disc if consec_f >= 1 else "")
-                    public_https_ready = bool(cand_url and not slot_err)
-            elif d_running:
-                if gid == "self_hosted" and submode == "custom" and bool(cand_url):
-                    public_https_ready = True
-                else:
-                    public_https_ready = False
-            else:
-                public_https_ready = bool(cand_url)
+                has_slot_obs = bool(
+                    d_tready is not None
+                    or d_phase
+                    or raw_le
+                    or raw_disc
+                    or d_slot_pub
+                    or slot_d.get("enabled") is False
+                    or (isinstance(slot_d.get("subchannels"), dict) and bool(slot_d.get("subchannels")))
+                )
+                if has_slot_obs:
+                    if slot_d.get("enabled") is False or d_phase == "disabled":
+                        public_https_ready = False
+                        slot_err = raw_le or raw_disc
+                    elif d_tready is True and d_phase not in ("reconnecting", "error", "starting", "probing") and bool(cand_url):
+                        public_https_ready = True
+                        slot_err = ""
+                    elif d_tready is False or d_phase in ("reconnecting", "error", "starting", "probing") or not cand_url:
+                        public_https_ready = False
+                        slot_err = raw_le or raw_disc
+                    else:
+                        slot_err = raw_le or (raw_disc if consec_f >= 1 else "")
+                        public_https_ready = bool(cand_url and not slot_err)
 
-            if public_https_ready:
+            if not has_slot_obs:
+                public_https_ready = False
+                status = "unknown"
+                status_label_zh = "未确认"
+                observed_state = "unknown"
+            elif public_https_ready:
                 status = "ready"
                 status_label_zh = "已连通"
+                observed_state = "ready"
             elif slot_err:
                 status = "error"
                 status_label_zh = "异常"
+                observed_state = "error"
             else:
                 status = "connecting"
                 status_label_zh = "连接中"
+                observed_state = "connecting"
 
         if gid == "instant":
             trycf_backup = bool(
@@ -1079,8 +1093,10 @@ def _resolve_studio_gateways_view(
             ).strip().lower()
             if not enabled:
                 srv_st = "disabled"
-            elif srv_st_raw in ("ready", "connecting", "error", "disabled"):
+            elif srv_st_raw in ("ready", "connecting", "error", "disabled", "unknown"):
                 srv_st = srv_st_raw
+            elif status == "unknown":
+                srv_st = "unknown"
             elif raw_srv_u and public_https_ready:
                 srv_st = "ready"
             elif raw_srv_u:
@@ -1112,8 +1128,10 @@ def _resolve_studio_gateways_view(
             ).strip().lower()
             if not cf_enabled:
                 cf_st = "disabled"
-            elif cf_st_raw in ("ready", "connecting", "error", "disabled"):
+            elif cf_st_raw in ("ready", "connecting", "error", "disabled", "unknown"):
                 cf_st = cf_st_raw
+            elif status == "unknown":
+                cf_st = "unknown"
             elif raw_cf_u and (public_https_ready or srv_st == "ready"):
                 cf_st = "ready"
             elif raw_cf_u:
@@ -1134,6 +1152,7 @@ def _resolve_studio_gateways_view(
                 public_https_ready = True
                 status = "ready"
                 status_label_zh = "已连通"
+                observed_state = "ready"
                 slot_err = ""
 
             srv_disp_u = (
@@ -1231,6 +1250,7 @@ def _resolve_studio_gateways_view(
             "effective_mode": eff_mode,
             "status": status,
             "status_label_zh": status_label_zh,
+            "observed_state": observed_state,
             "public_https_ready": public_https_ready,
             "public_url": eff_ready_disp or (disp_cfg_with_sec if enabled else ""),
             "configured_url": disp_cfg_pub,
@@ -1299,7 +1319,7 @@ def _resolve_studio_gateways_view(
         top_ro = str(disp_slot["readonly_mcp_url"])
         top_skill = str(disp_slot["skill_url"])
         top_err = str(disp_slot["last_error"] or "")
-        top_connecting = bool(not top_ready and not top_err)
+        top_connecting = bool(not top_ready and not top_err and str(disp_slot.get("status") or "") != "unknown")
         top_fallback = bool(disp_slot["instant_fallback_active"]) if display_gateway_id == "instant" else False
 
     inst_view = gateways_view["instant"]

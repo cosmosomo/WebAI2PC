@@ -2092,6 +2092,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
         vps_remote_port=int(init_info.get("vps_remote_port") or 18096),
         vps_ssh_port=int(init_info.get("vps_ssh_port") or 22),
         vps_identity_file=str(init_info.get("vps_identity_file") or ""),
+        clear_user_stop=True,
     )
 
     if daemon_res.get("ok"):
