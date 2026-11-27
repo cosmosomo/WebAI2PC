@@ -13,8 +13,8 @@ import os
 from pathlib import Path
 import re
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
-from urllib.parse import urlsplit
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from urllib.parse import parse_qsl, urlsplit
 
 try:
     from mcp.server.auth.handlers.token import TokenHandler
@@ -188,6 +188,9 @@ from cosmos_mcp.protocol.oauth import (
     OAuthStoreBusyError,
     RegisterGrantCompatASGI,
     TrustedGatewayEndpoint,
+    _normalize_url_authority,
+    _with_public_prefix,
+    _without_public_prefix,
     extract_request_client_ip,
     get_current_request_gateway,
     identify_client_platform,
@@ -207,6 +210,7 @@ from cosmos_mcp.core.config import (
     LiveRuntimePolicy,
     emit_kill_signal,
     ensure_initialized,
+    load_endpoint_secret,
     normalize_annotation_mode,
     normalize_prefix,
 )
@@ -773,8 +777,73 @@ _REQUEST_TRANSPORT_CTX: contextvars.ContextVar[RequestTransportContext] = contex
 )
 
 
+_INBOUND_TENANT_PATH_RE = re.compile(r"^(/u/[a-zA-Z0-9_-]{2,64})(/.*)?$")
+_INBOUND_WELL_KNOWN_TENANT_RE = re.compile(
+    r"^/\.well-known/(?:oauth-authorization-server|oauth-protected-resource)(/u/[a-zA-Z0-9_-]{2,64})(?:/.*)?$",
+    re.IGNORECASE,
+)
+
+
+def _is_strict_loopback_scope(scope: Mapping[str, Any], port: int) -> bool:
+    cli_t = scope.get("client")
+    peer_h = str(cli_t[0] or "").strip().lower() if isinstance(cli_t, (list, tuple)) and cli_t else ""
+    if peer_h not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return False
+    hdr_map: Dict[str, str] = {}
+    for hk, hv in scope.get("headers") or ():
+        kl = hk.decode("latin-1", errors="replace").strip().lower()
+        if kl in STRICT_TUNNEL_HEADERS or kl in PROXY_HEADER_EXACT or kl.startswith(PROXY_HEADER_PREFIXES):
+            return False
+        hdr_map[kl] = hv.decode("latin-1", errors="replace").strip()
+    raw_h = hdr_map.get("host", "").strip().lower()
+    lb_hosts = {
+        f"127.0.0.1:{port}",
+        f"localhost:{port}",
+        f"[::1]:{port}",
+        "127.0.0.1",
+        "localhost",
+        "[::1]",
+    }
+    if os.environ.get("PYTEST_CURRENT_TEST") and peer_h == "testclient":
+        lb_hosts.add("testserver")
+    return raw_h in lb_hosts
+
+
+def _authority_matches_gateway(res_url: str, gw: TrustedGatewayEndpoint, provider: OAuthProvider) -> bool:
+    clean = str(res_url or "").strip().rstrip("/")
+    if not clean:
+        return True
+    tok_auth = _normalize_url_authority(clean)
+    if not tok_auth:
+        return False
+    if tok_auth == gw.authority:
+        return True
+    eff_map = provider.get_effective_trusted_gateways()
+    gw_ep = eff_map.get((gw.authority, gw.public_prefix.lower())) or eff_map.get((gw.authority, ""))
+    for (m_auth, _), m_ep in eff_map.items():
+        if m_auth == tok_auth and gw_ep is not None:
+            gid_a = str(getattr(m_ep, "gateway_id", "") or "").strip()
+            gid_b = str(getattr(gw_ep, "gateway_id", "") or "").strip()
+            if gid_a and gid_a == gid_b and gid_a not in ("default", "grace"):
+                return True
+    return False
+
+
+def _rewrite_scope_with_prefix(scope: Dict[str, Any], new_path: str, prefix: str) -> Dict[str, Any]:
+    eff_p = new_path if new_path.startswith("/") else f"/{new_path}"
+    new_hdrs = [(k, v) for k, v in (scope.get("headers") or ()) if k.lower() != b"x-cosmos-public-prefix"]
+    if prefix:
+        new_hdrs.append((b"x-cosmos-public-prefix", prefix.encode("latin-1")))
+    return {
+        **scope,
+        "path": eff_p,
+        "raw_path": eff_p.encode("latin-1", errors="replace"),
+        "headers": new_hdrs,
+    }
+
+
 class GatewayContextASGI:
-    """Outermost ASGI gate binding `TrustedGatewayEndpoint` to `_REQUEST_GATEWAY_VAR` and rejecting unknown Hosts with 421."""
+    """Outermost ASGI gate binding `TrustedGatewayEndpoint`, enforcing Stealth 404 on `/u/<secret>`, and rejecting unknown Hosts with 421."""
 
     def __init__(
         self,
@@ -783,11 +852,17 @@ class GatewayContextASGI:
         provider: OAuthProvider,
         local_port: int = 8096,
         sync_hook_box: Optional[List[Optional[Callable[[bool], None]]]] = None,
+        policy: Optional[LiveRuntimePolicy] = None,
+        store: Optional[OAuthSQLiteStore] = None,
+        bearer_backend: Optional[Any] = None,
     ) -> None:
         self.app = app
         self.provider = provider
         self.local_port = int(local_port)
         self.sync_hook_box = sync_hook_box
+        self.policy = policy
+        self.store = store
+        self.bearer_backend = bearer_backend
 
     def _maybe_sync(self, force: bool = False) -> None:
         if self.sync_hook_box and self.sync_hook_box[0] is not None:
@@ -796,34 +871,53 @@ class GatewayContextASGI:
             except Exception:
                 pass
 
+    def _active_endpoint_secret(self) -> str:
+        if self.policy is not None:
+            sec = load_endpoint_secret(self.policy.state_root, prefix=self.policy.eff_prefix)
+            if sec:
+                return sec
+        if hasattr(self.provider, "get_active_endpoint_secret"):
+            return str(self.provider.get_active_endpoint_secret() or "")
+        return ""
+
+    def _register_allowed_res(self, *urls: str) -> None:
+        for raw in urls:
+            clean = str(raw or "").strip().rstrip("/")
+            if clean:
+                self.provider.allowed_resources.add(clean)
+                if self.bearer_backend is not None and hasattr(self.bearer_backend, "allowed_resources"):
+                    self.bearer_backend.allowed_resources.add(clean)
+
     async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
         self._maybe_sync(False)
         eff_port = int(getattr(self.provider, "local_port", self.local_port) or self.local_port)
+        eff_map = self.provider.get_effective_trusted_gateways()
         gw = resolve_trusted_gateway_from_scope(
             scope,
-            self.provider.get_effective_trusted_gateways(),
+            eff_map,
             local_port=eff_port,
             default_endpoint=self.provider._default_gateway_endpoint(),
         )
         if gw is None:
             self._maybe_sync(True)
+            eff_map = self.provider.get_effective_trusted_gateways()
             gw = resolve_trusted_gateway_from_scope(
                 scope,
-                self.provider.get_effective_trusted_gateways(),
+                eff_map,
                 local_port=eff_port,
                 default_endpoint=self.provider._default_gateway_endpoint(),
             )
         if gw is None:
             req_path = str(scope.get("path") or "")
             if req_path.startswith(("/api/studio/", "/static/", "/tutorials.md", "/llms.txt")):
-                hdr_map = {
+                hdr_map_fb = {
                     k.decode("latin-1").lower(): v.decode("latin-1", errors="replace").strip()
                     for k, v in (scope.get("headers") or ())
                 }
-                raw_h = hdr_map.get("host", "").lower()
+                raw_h = hdr_map_fb.get("host", "").lower()
                 lb_hosts = {
                     f"127.0.0.1:{eff_port}",
                     f"localhost:{eff_port}",
@@ -832,7 +926,7 @@ class GatewayContextASGI:
                     "localhost",
                     "[::1]",
                 }
-                if raw_h in lb_hosts and not hdr_map.get("x-forwarded-host") and not hdr_map.get("forwarded"):
+                if raw_h in lb_hosts and not hdr_map_fb.get("x-forwarded-host") and not hdr_map_fb.get("forwarded"):
                     gw = self.provider._default_gateway_endpoint()
         if gw is None:
             resp = JSONResponse(
@@ -842,6 +936,135 @@ class GatewayContextASGI:
             )
             await resp(scope, receive, send)
             return
+
+        raw_path = str(scope.get("path") or "/")
+        hdr_map = {
+            k.decode("latin-1", errors="replace").strip().lower(): v.decode("latin-1", errors="replace").strip()
+            for k, v in (scope.get("headers") or ())
+        }
+        cli_t = scope.get("client")
+        peer_h = str(cli_t[0] or "").strip().lower() if isinstance(cli_t, (list, tuple)) and cli_t else ""
+
+        m_u = _INBOUND_TENANT_PATH_RE.match(raw_path)
+        url_pfx = m_u.group(1).lower() if m_u else ""
+        inner_after_u = (m_u.group(2) or "/") if m_u else raw_path
+
+        m_wk = _INBOUND_WELL_KNOWN_TENANT_RE.match(raw_path)
+        wk_pfx = m_wk.group(1).lower() if m_wk else ""
+
+        hdr_pfx = (
+            _normalize_public_prefix_header(hdr_map.get("x-cosmos-public-prefix", "")).lower()
+            if peer_h in ("127.0.0.1", "::1", "localhost", "testclient")
+            else ""
+        )
+        req_pfx = url_pfx or wk_pfx or hdr_pfx
+
+        is_lb_req = _is_strict_loopback_scope(scope, eff_port)
+        active_ep_sec = self._active_endpoint_secret()
+
+        if active_ep_sec and not is_lb_req:
+            active_pfx = f"/u/{active_ep_sec}"
+            if req_pfx == active_pfx:
+                gw = _with_public_prefix(gw, active_pfx)
+                self._register_allowed_res(gw.base_url, gw.resource, gw.readonly_resource)
+                if url_pfx == active_pfx:
+                    scope = _rewrite_scope_with_prefix(scope, inner_after_u, active_pfx)
+            else:
+                cand_inner = inner_after_u if url_pfx else raw_path
+                cand_clean = cand_inner.rstrip("/") or "/"
+                cand_pfx = url_pfx or hdr_pfx
+                eff_store = self.store or getattr(self.provider, "store", None)
+                grace_allowed = False
+
+                if cand_clean in ("/mcp", "/mcp/readonly") and eff_store is not None:
+                    raw_auth = hdr_map.get("authorization", "")
+                    if raw_auth.lower().startswith("bearer "):
+                        cand_tok = raw_auth[7:].strip()
+                        tok_rec = eff_store.get("access", cand_tok) if cand_tok else None
+                        if tok_rec is not None:
+                            tok_res = str(tok_rec.get("resource") or "").strip().rstrip("/")
+                            if _authority_matches_gateway(tok_res, gw, self.provider):
+                                grace_allowed = True
+                                cand_gw_ep = _with_public_prefix(gw, cand_pfx) if cand_pfx else _without_public_prefix(gw)
+                                self._register_allowed_res(
+                                    tok_res,
+                                    cand_gw_ep.base_url,
+                                    cand_gw_ep.resource,
+                                    cand_gw_ep.readonly_resource,
+                                )
+                                gw = cand_gw_ep
+                                if url_pfx:
+                                    scope = _rewrite_scope_with_prefix(scope, cand_inner, cand_pfx)
+                elif cand_clean == "/token" and str(scope.get("method") or "").upper() == "POST" and eff_store is not None:
+                    body_chunks: List[bytes] = []
+                    total_b = 0
+                    too_large = False
+                    while True:
+                        msg = await receive()
+                        body_part = msg.get("body", b"")
+                        if body_part:
+                            total_b += len(body_part)
+                            if total_b > 65536:
+                                too_large = True
+                                break
+                            body_chunks.append(body_part)
+                        if not msg.get("more_body", False):
+                            break
+                    if not too_large:
+                        full_body = b"".join(body_chunks)
+                        replayed = False
+
+                        async def _replay_receive() -> Dict[str, Any]:
+                            nonlocal replayed
+                            if not replayed:
+                                replayed = True
+                                return {"type": "http.request", "body": full_body, "more_body": False}
+                            return {"type": "http.request", "body": b"", "more_body": False}
+
+                        form_map = dict(parse_qsl(full_body.decode("utf-8", errors="replace"), keep_blank_values=True))
+                        if str(form_map.get("grant_type") or "").strip() == "refresh_token":
+                            cand_rt = str(form_map.get("refresh_token") or "").strip()
+                            rt_rec = (
+                                (eff_store.get("refresh", cand_rt) or eff_store.get("refresh_replay", cand_rt))
+                                if cand_rt
+                                else None
+                            )
+                            if rt_rec is not None:
+                                rt_res = str(rt_rec.get("base_resource") or rt_rec.get("resource") or "").strip().rstrip("/")
+                                if _authority_matches_gateway(rt_res, gw, self.provider):
+                                    grace_allowed = True
+                                    cand_gw_ep = _with_public_prefix(gw, cand_pfx) if cand_pfx else _without_public_prefix(gw)
+                                    self._register_allowed_res(
+                                        rt_res,
+                                        cand_gw_ep.base_url,
+                                        cand_gw_ep.resource,
+                                        cand_gw_ep.readonly_resource,
+                                    )
+                                    gw = cand_gw_ep
+                                    if url_pfx:
+                                        scope = _rewrite_scope_with_prefix(scope, "/token", cand_pfx)
+                                    receive = _replay_receive
+
+                if not grace_allowed:
+                    stealth_404 = Response(
+                        "404 Not Found",
+                        status_code=404,
+                        media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"},
+                    )
+                    await stealth_404(scope, receive, send)
+                    return
+        elif url_pfx:
+            known_pfx = (
+                (gw.authority, url_pfx) in eff_map
+                or gw.public_prefix.lower() == url_pfx
+                or (active_ep_sec and url_pfx == f"/u/{active_ep_sec}")
+            )
+            if known_pfx:
+                gw = _with_public_prefix(gw, url_pfx)
+                self._register_allowed_res(gw.base_url, gw.resource, gw.readonly_resource)
+                scope = _rewrite_scope_with_prefix(scope, inner_after_u, url_pfx)
+
         tok = set_current_request_gateway(gw)
         try:
             await self.app(scope, receive, send)
@@ -1341,6 +1564,10 @@ class McpTransportEnvelopeASGI:
                     bound_node_id = m_u.group(1)
         if not bound_node_id and raw_node_hdr and re.match(r"^[a-zA-Z0-9_-]{1,64}$", raw_node_hdr):
             bound_node_id = raw_node_hdr
+        if bound_node_id:
+            active_ep_sec_ctx = load_endpoint_secret(self.policy.state_root, prefix=self.policy.eff_prefix)
+            if active_ep_sec_ctx and bound_node_id.lower() == active_ep_sec_ctx.lower():
+                bound_node_id = ""
 
         sess_hint = mcp_sid or (f"tok:{auth_fp}" if auth_fp else (req_ua[:24] or "http"))
         is_remote_req = not is_direct_local
@@ -1777,6 +2004,9 @@ def create_protocol_app(
         node_id_cfg = str(getattr(pol, "public_gateway_node_id", "") or "").strip()
         if node_id_cfg:
             trusted_pfxs.add(_normalize_public_prefix_header(f"/u/{node_id_cfg}"))
+        ep_sec_cfg = load_endpoint_secret(pol.state_root, prefix=eff_prefix)
+        if ep_sec_cfg:
+            trusted_pfxs.add(_normalize_public_prefix_header(f"/u/{ep_sec_cfg}"))
         if request is not None:
             hdr_pfx_req = _normalize_public_prefix_header(request.headers.get("x-cosmos-public-prefix", ""))
             peer_h = ((request.client.host if request.client else "") or "").strip().lower()
@@ -2504,7 +2734,15 @@ def create_protocol_app(
     app = Starlette(
         routes=routes,
         middleware=[
-            Middleware(GatewayContextASGI, provider=eff_provider, local_port=port, sync_hook_box=gateway_sync_hook_box),
+            Middleware(
+                GatewayContextASGI,
+                provider=eff_provider,
+                local_port=port,
+                sync_hook_box=gateway_sync_hook_box,
+                policy=pol,
+                store=eff_store,
+                bearer_backend=bearer_backend,
+            ),
             Middleware(RequestBodyLimitMiddleware, max_body_size=4 * 1024 * 1024),
             Middleware(OAuthStoreBusyMiddleware),
             Middleware(AuthenticationMiddleware, backend=bearer_backend),

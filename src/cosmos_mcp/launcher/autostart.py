@@ -21,9 +21,11 @@ import tempfile
 from typing import Any, Dict, List, Optional, Sequence
 
 from cosmos_mcp.core.fs_tx import safe_trash_file
-from cosmos_mcp.core.proc import CREATE_NO_WINDOW
+from cosmos_mcp.core.proc import CREATE_NO_WINDOW, resolve_console_python
 from cosmos_mcp.launcher.bootstrap import (
+    atomic_write_text,
     find_embedded_python_exe,
+    find_repo_src_dir,
     resolve_persisted_src_dir,
     resolve_windows_system_exe,
     resolve_windowless_python,
@@ -31,6 +33,7 @@ from cosmos_mcp.launcher.bootstrap import (
 )
 
 WIN_RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+WIN_UNINSTALL_KEY_ROOT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
 
 def _popen_flags() -> int:
@@ -43,6 +46,11 @@ def _norm_prefix(prefix: str) -> str:
 
 
 def autostart_entry_id(prefix: str = "pc") -> str:
+    eff = _norm_prefix(prefix)
+    return "Cosmos-MCP" if eff == "pc" else f"Cosmos-MCP-{eff}"
+
+
+def uninstall_entry_id(prefix: str = "pc") -> str:
     eff = _norm_prefix(prefix)
     return "Cosmos-MCP" if eff == "pc" else f"Cosmos-MCP-{eff}"
 
@@ -642,3 +650,401 @@ def get_autostart_status(
         "linger_enabled": linger,
         "boundary_notice": session_boundary_notice("linux", linger_enabled=linger),
     }
+
+
+def _windows_uninstall_script_path(state_root: Path, prefix: str = "pc") -> Path:
+    st_root = Path(state_root).expanduser().resolve()
+    eff = _norm_prefix(prefix)
+    fname = "uninstall_cosmos_mcp.cmd" if eff == "pc" else f"uninstall_cosmos_mcp_{eff}.cmd"
+    return st_root / "bin" / fname
+
+
+def _build_windows_uninstall_cmd_script(
+    state_root: Path,
+    *,
+    prefix: str = "pc",
+    python_exe: Optional[str | Path] = None,
+) -> str:
+    st_root = Path(state_root).expanduser().resolve()
+    eff = _norm_prefix(prefix)
+    persisted_src = resolve_persisted_src_dir(st_root) or find_repo_src_dir()
+    src_str = str(persisted_src) if persisted_src is not None else ""
+    st_str = str(st_root)
+    venv_dir_str = str(st_root / ".venv")
+    embed_exe_str = str(st_root / "python-embed" / "python.exe")
+    venv_exe_str = str(st_root / ".venv" / "Scripts" / "python.exe")
+    prefix_arg = f" --prefix {eff}" if eff != "pc" else ""
+
+    ext_py_hint = ""
+    if python_exe is not None and str(python_exe).strip():
+        cand_con = resolve_console_python(str(python_exe).strip())
+        try:
+            cand_norm = os.path.normcase(str(Path(cand_con).resolve()))
+            venv_norm = os.path.normcase(str((st_root / ".venv").resolve()))
+            if not cand_norm.startswith(venv_norm + os.sep):
+                ext_py_hint = cand_con
+        except OSError:
+            ext_py_hint = ""
+
+    lines: List[str] = [
+        "@echo off",
+        "chcp 65001 >nul",
+        "setlocal EnableExtensions",
+        'set "PYTHONDONTWRITEBYTECODE=1"',
+        'set "PYTHONUTF8=1"',
+        f'set "COSMOS_MCP_STATE_DIR={st_str}"',
+        f'set "LOCALPC_MCP_STATE_DIR={st_str}"',
+    ]
+    if src_str:
+        lines.append(f'set "COSMOS_REPO_SRC={src_str}"')
+        lines.append(f'set "PYTHONPATH={src_str};%PYTHONPATH%"')
+
+    lines.extend(
+        [
+            'set "_COSMOS_UN_PY="',
+            'set "_COSMOS_UN_PYL="',
+        ]
+    )
+    if ext_py_hint:
+        lines.append(f'call :probe_ext_py "{ext_py_hint}"')
+
+    lines.extend(
+        [
+            "if not defined _COSMOS_UN_PY (",
+            "    for /f \"delims=\" %%L in ('where py 2^>nul') do (",
+            '        if not defined _COSMOS_UN_PYL call :probe_py_launcher "%%~fL"',
+            "    )",
+            ")",
+            "if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL (",
+            "    for /f \"delims=\" %%P in ('where python 2^>nul') do (",
+            '        if not defined _COSMOS_UN_PY call :probe_ext_py "%%~fP"',
+            "    )",
+            ")",
+            "if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL (",
+            "    for %%V in (313 312 311 310 314) do (",
+            '        if not defined _COSMOS_UN_PY if defined LOCALAPPDATA call :probe_ext_py "%LOCALAPPDATA%\\Programs\\Python\\Python%%V\\python.exe"',
+            '        if not defined _COSMOS_UN_PY if defined ProgramFiles call :probe_ext_py "%ProgramFiles%\\Python%%V\\python.exe"',
+            '        if not defined _COSMOS_UN_PY call :probe_ext_py "C:\\Python%%V\\python.exe"',
+            "    )",
+            ")",
+            'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL if defined USERPROFILE call :probe_ext_py "%USERPROFILE%\\anaconda3\\python.exe"',
+            'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL if defined USERPROFILE call :probe_ext_py "%USERPROFILE%\\miniconda3\\python.exe"',
+            'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL call :probe_ext_py "C:\\ProgramData\\anaconda3\\python.exe"',
+            'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL call :probe_ext_py "C:\\ProgramData\\miniconda3\\python.exe"',
+            f'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL if exist "{embed_exe_str}" set "_COSMOS_UN_PY={embed_exe_str}"',
+            f'if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL if exist "{venv_exe_str}" set "_COSMOS_UN_PY={venv_exe_str}"',
+            "if not defined _COSMOS_UN_PY if not defined _COSMOS_UN_PYL (",
+            "    echo 未检测到可用的 Python 3.10~3.14 环境，无法执行卸载程序。",
+            "    if not defined COSMOS_NO_PAUSE if not defined PYTEST_CURRENT_TEST pause",
+            "    exit /b 1",
+            ")",
+            'if /i "%~1"=="--quiet" goto :run_quiet',
+            'if /i "%~1"=="/quiet" goto :run_quiet',
+            'if /i "%~1"=="-q" goto :run_quiet',
+            'if not "%~1"=="" goto :run_passthrough',
+            "if defined COSMOS_NO_PAUSE goto :run_quiet",
+            "if defined PYTEST_CURRENT_TEST goto :run_quiet",
+            "echo ============================================================",
+            "echo  WebAI2PC (Cosmos MCP) 卸载向导",
+            "echo ============================================================",
+            "echo  本操作仅移除软件运行环境与连接配置，不会改动您的个人项目代码目录。",
+            "echo.",
+            "echo  [1] 彻底卸载并粉碎凭据（默认：停止服务与隧道、取消自启、0x00 覆写销毁全部本地密钥与令牌）",
+            "echo  [2] 标准卸载保留修改快照（停止服务与自启，保留 .undo_history 与回收箱修改快照）",
+            "echo  [Q] 取消",
+            "echo.",
+            'set "_UN_CHOICE=1"',
+            'set /p "_UN_CHOICE=请输入选项 [1/2/Q] (直接回车默认 1): "',
+            'if /i "%_UN_CHOICE%"=="Q" (',
+            "    echo 已取消卸载。",
+            "    exit /b 0",
+            ")",
+            'if "%_UN_CHOICE%"=="2" (',
+            f'    call :invoke_cli uninstall --state-dir "{st_str}"{prefix_arg} -y',
+            "    set \"_UN_RC=%ERRORLEVEL%\"",
+            "    echo 标准卸载已完成。",
+            "    pause",
+            "    exit /b %_UN_RC%",
+            ")",
+            f'call :invoke_cli uninstall --state-dir "{st_str}"{prefix_arg} --purge -y',
+            'set "_UN_RC=%ERRORLEVEL%"',
+            "echo 彻底卸载与凭据销毁已完成。",
+            "pause",
+            "exit /b %_UN_RC%",
+            "",
+            ":run_quiet",
+            f'call :invoke_cli uninstall --state-dir "{st_str}"{prefix_arg} --purge -y',
+            "exit /b %ERRORLEVEL%",
+            "",
+            ":run_passthrough",
+            f'call :invoke_cli uninstall --state-dir "{st_str}"{prefix_arg} %*',
+            "exit /b %ERRORLEVEL%",
+            "",
+            ":invoke_cli",
+            "if defined _COSMOS_UN_PYL (",
+            '    "%_COSMOS_UN_PYL%" -3 -B -c "import os,sys; p=os.environ.get(\'COSMOS_REPO_SRC\',\'\'); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" %*',
+            "    exit /b %ERRORLEVEL%",
+            ")",
+            '"%_COSMOS_UN_PY%" -B -c "import os,sys; p=os.environ.get(\'COSMOS_REPO_SRC\',\'\'); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" %*',
+            "exit /b %ERRORLEVEL%",
+            "",
+            ":probe_py_launcher",
+            'set "_PYL=%~1"',
+            'if not defined _PYL exit /b 1',
+            'if not exist "%_PYL%" exit /b 1',
+            'echo "%_PYL%" | findstr /i /c:"\\WindowsApps\\" >nul',
+            "if not errorlevel 1 exit /b 1",
+            '"%_PYL%" -3 -B -c "import sys; raise SystemExit(0 if \'windowsapps\' not in sys.executable.lower() and (3,10)<=sys.version_info[:2]<=(3,14) else 1)" >nul 2>nul',
+            "if errorlevel 1 exit /b 1",
+            'set "_COSMOS_UN_PYL=%_PYL%"',
+            "exit /b 0",
+            "",
+            ":probe_ext_py",
+            'set "_CAND=%~1"',
+            'if not defined _CAND exit /b 1',
+            'if not exist "%_CAND%" exit /b 1',
+            'echo "%_CAND%" | findstr /i /c:"\\WindowsApps\\" >nul',
+            "if not errorlevel 1 exit /b 1",
+            f'echo "%_CAND%" | findstr /i /c:"{venv_dir_str}" >nul',
+            "if not errorlevel 1 exit /b 1",
+            '"%_CAND%" -B -c "import sys; raise SystemExit(0 if \'windowsapps\' not in sys.executable.lower() and (3,10)<=sys.version_info[:2]<=(3,14) else 1)" >nul 2>nul',
+            "if errorlevel 1 exit /b 1",
+            'set "_COSMOS_UN_PY=%_CAND%"',
+            "exit /b 0",
+            "",
+        ]
+    )
+    return "\r\n".join(lines)
+
+
+def _uninstall_entry_belongs_to_state_root(
+    entry_values: Dict[str, Any],
+    state_root: Optional[Path],
+    *,
+    is_default_state_root: bool = True,
+    primary_state_exists: bool = False,
+) -> bool:
+    if state_root is None:
+        return True
+    st_resolved = Path(state_root).expanduser().resolve()
+    st_norm = os.path.normcase(str(st_resolved)).replace("/", "\\").rstrip("\\")
+
+    raw_loc = str(entry_values.get("InstallLocation") or "").strip()
+    if raw_loc:
+        try:
+            loc_resolved = Path(raw_loc).expanduser().resolve()
+            loc_norm = os.path.normcase(str(loc_resolved)).replace("/", "\\").rstrip("\\")
+        except OSError:
+            loc_norm = os.path.normcase(raw_loc).replace("/", "\\").rstrip("\\")
+        return loc_norm == st_norm
+
+    cmd_txt = str(entry_values.get("UninstallString") or entry_values.get("QuietUninstallString") or "").strip()
+    if not cmd_txt:
+        return False
+    txt_norm = os.path.normcase(cmd_txt).replace("/", "\\")
+    if st_norm and re.search(re.escape(st_norm) + r'(?:\\|"|\'|\s|$)', txt_norm):
+        return True
+    parsed_sd = _extract_state_dir_from_cmd(cmd_txt)
+    if parsed_sd is not None:
+        return os.path.normcase(str(parsed_sd)).replace("/", "\\").rstrip("\\") == st_norm
+    if re.search(r"[a-z]:\\", txt_norm, re.IGNORECASE):
+        return False
+    return _autostart_cmd_belongs_to_state_root(
+        cmd_txt,
+        state_root,
+        is_default_state_root=is_default_state_root,
+        primary_state_exists=primary_state_exists,
+    )
+
+
+def register_windows_uninstall_entry(
+    state_root: Path,
+    *,
+    python_exe: Optional[str | Path] = None,
+    prefix: str = "pc",
+    display_version: str = "1.2.1",
+    platform_name: Optional[str] = None,
+    uninstall_reg_store: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Idempotently register per-user (`HKCU`, zero UAC/admin) Windows 'Installed Apps' uninstall entry."""
+    plat = platform_name or sys.platform
+    eff = _norm_prefix(prefix)
+    entry_id = uninstall_entry_id(eff)
+    if plat != "win32":
+        return {
+            "ok": True,
+            "registered": False,
+            "platform": plat,
+            "entry_id": entry_id,
+            "reason": "non_windows",
+        }
+
+    st_root = Path(state_root).expanduser().resolve()
+    script_path = _windows_uninstall_script_path(st_root, eff)
+    script_content = _build_windows_uninstall_cmd_script(st_root, prefix=eff, python_exe=python_exe)
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(script_path, script_content)
+
+    cmd_exe = resolve_windows_system_exe("cmd.exe") or "cmd.exe"
+    display_name = "WebAI2PC (Cosmos MCP)" if eff == "pc" else f"WebAI2PC (Cosmos MCP - {eff})"
+    uninstall_str = f'"{cmd_exe}" /s /d /c ""{script_path}""'
+    quiet_uninstall_str = f'"{cmd_exe}" /s /d /c ""{script_path}" --quiet"'
+
+    entry_values: Dict[str, Any] = {
+        "DisplayName": display_name,
+        "DisplayVersion": str(display_version or "1.2.1"),
+        "Publisher": "WebAI2PC",
+        "InstallLocation": str(st_root),
+        "UninstallString": uninstall_str,
+        "QuietUninstallString": quiet_uninstall_str,
+        "NoModify": 1,
+        "NoRepair": 1,
+    }
+
+    if uninstall_reg_store is not None:
+        uninstall_reg_store[entry_id] = dict(entry_values)
+        return {
+            "ok": True,
+            "registered": True,
+            "platform": "win32",
+            "entry_id": entry_id,
+            "key_path": f"HKCU\\{WIN_UNINSTALL_KEY_ROOT}\\{entry_id}",
+            "script_path": str(script_path),
+            "values": dict(entry_values),
+        }
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return {
+            "ok": True,
+            "registered": False,
+            "skipped_pytest": True,
+            "platform": "win32",
+            "entry_id": entry_id,
+            "key_path": f"HKCU\\{WIN_UNINSTALL_KEY_ROOT}\\{entry_id}",
+            "script_path": str(script_path),
+            "values": dict(entry_values),
+        }
+
+    import winreg  # type: ignore[import-not-found]
+
+    subkey_path = f"{WIN_UNINSTALL_KEY_ROOT}\\{entry_id}"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, subkey_path) as key:
+        for val_name, val_data in entry_values.items():
+            if isinstance(val_data, int):
+                winreg.SetValueEx(key, val_name, 0, winreg.REG_DWORD, int(val_data))
+            else:
+                winreg.SetValueEx(key, val_name, 0, winreg.REG_SZ, str(val_data))
+
+    return {
+        "ok": True,
+        "registered": True,
+        "platform": "win32",
+        "entry_id": entry_id,
+        "key_path": f"HKCU\\{subkey_path}",
+        "script_path": str(script_path),
+        "values": dict(entry_values),
+    }
+
+
+def unregister_windows_uninstall_entry(
+    state_root: Optional[Path] = None,
+    *,
+    prefix: str = "pc",
+    platform_name: Optional[str] = None,
+    uninstall_reg_store: Optional[Dict[str, Dict[str, Any]]] = None,
+    is_default_state_root: bool = True,
+    primary_state_exists: bool = False,
+) -> Dict[str, Any]:
+    """Idempotently remove per-user Windows 'Installed Apps' uninstall entry if owned by `state_root`."""
+    plat = platform_name or sys.platform
+    eff = _norm_prefix(prefix)
+    entry_id = uninstall_entry_id(eff)
+    legacy_id = _legacy_autostart_entry_id(eff)
+
+    if plat != "win32":
+        return {
+            "ok": True,
+            "platform": plat,
+            "entry_id": entry_id,
+            "removed": False,
+        }
+
+    if uninstall_reg_store is not None:
+        removed = False
+        for cid in (entry_id, legacy_id):
+            cur = uninstall_reg_store.get(cid)
+            if not isinstance(cur, dict):
+                continue
+            if not _uninstall_entry_belongs_to_state_root(
+                cur,
+                state_root,
+                is_default_state_root=is_default_state_root,
+                primary_state_exists=primary_state_exists,
+            ):
+                continue
+            uninstall_reg_store.pop(cid, None)
+            removed = True
+        return {
+            "ok": True,
+            "platform": "win32",
+            "entry_id": entry_id,
+            "removed": removed,
+        }
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return {
+            "ok": True,
+            "platform": "win32",
+            "entry_id": entry_id,
+            "removed": False,
+            "skipped_pytest": True,
+        }
+
+    import winreg  # type: ignore[import-not-found]
+
+    removed = False
+    for cid in (entry_id, legacy_id):
+        subkey_path = f"{WIN_UNINSTALL_KEY_ROOT}\\{cid}"
+        loaded_vals: Dict[str, Any] = {}
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, subkey_path, 0, winreg.KEY_QUERY_VALUE) as skey:
+                for qname in ("InstallLocation", "UninstallString", "QuietUninstallString", "Publisher", "DisplayName"):
+                    try:
+                        v_raw, _ = winreg.QueryValueEx(skey, qname)
+                        loaded_vals[qname] = v_raw
+                    except FileNotFoundError:
+                        continue
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+
+        if not _uninstall_entry_belongs_to_state_root(
+            loaded_vals,
+            state_root,
+            is_default_state_root=is_default_state_root,
+            primary_state_exists=primary_state_exists,
+        ):
+            continue
+
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                WIN_UNINSTALL_KEY_ROOT,
+                0,
+                winreg.KEY_WRITE | winreg.KEY_QUERY_VALUE,
+            ) as parent_key:
+                winreg.DeleteKey(parent_key, cid)
+                removed = True
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+
+    return {
+        "ok": True,
+        "platform": "win32",
+        "entry_id": entry_id,
+        "removed": removed,
+    }
+

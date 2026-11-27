@@ -32,6 +32,7 @@ import sqlite3
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
@@ -54,7 +55,11 @@ from cosmos_mcp.core.contracts import (
 from cosmos_mcp.core.fs_tx import atomic_write_json
 from cosmos_mcp.core.guard import expand_env_and_tilde
 from cosmos_mcp.core.proc import CREATE_NO_WINDOW, resolve_console_python
-from cosmos_mcp.launcher.autostart import enable_autostart, get_autostart_status
+from cosmos_mcp.launcher.autostart import (
+    enable_autostart,
+    get_autostart_status,
+    register_windows_uninstall_entry,
+)
 from cosmos_mcp.launcher.bootstrap import (
     atomic_write_text,
     ensure_runtime_environment,
@@ -82,6 +87,7 @@ from cosmos_mcp.launcher.cf_workers_gateway import (
     PNG_SIGNATURE,
     _decrypt_recovery_bytes_scrypt_aesgcm,
     _encrypt_recovery_bytes_scrypt_aesgcm,
+    delete_cloudflare_workers_gateway,
     ensure_master_seed_identity,
     probe_public_gateway_online,
 )
@@ -1132,6 +1138,13 @@ def ensure_standalone_state(
         port=eff_port,
         prefix=eff_p,
     )
+    if sys.platform == "win32":
+        register_windows_uninstall_entry(
+            st_root,
+            python_exe=venv_py if venv_py.is_file() else None,
+            prefix=eff_p,
+            display_version=CLI_VERSION,
+        )
     pair_code = read_current_pair_code(st_root, eff_p, fallback_token=str(creds["local_api_token"]))
     dynamic_pair_code = derive_dynamic_pair_code(str(creds.get("password_hash") or ""), str(creds.get("salt") or ""))
     studio_local_url = f"http://127.0.0.1:{eff_port}/"
@@ -2215,10 +2228,44 @@ def _cmd_agent_setup(args: argparse.Namespace) -> int:
     return 0
 
 
-DEFAULT_CLI_RECOVERY_PASSPHRASE = "cosmos-mcp-cli-default-recovery-v2"
+_LEGACY_V2_CLI_RECOVERY_PASSPHRASE_READONLY = "cosmos-mcp-cli-default-recovery-v2"
 
 
-def _resolve_recovery_passphrase(args: argparse.Namespace, *, prompt_label: str) -> Tuple[str, str]:
+def _resolve_local_cli_recovery_key_path(st_root: Path) -> Path:
+    st_resolved = Path(st_root).expanduser().resolve()
+    home_resolved = Path.home().expanduser().resolve()
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        temp_root_norm = os.path.normcase(str(Path(tempfile.gettempdir()).resolve()))
+        st_norm = os.path.normcase(str(st_resolved))
+        if st_norm.startswith(temp_root_norm + os.sep) or st_resolved.parent != home_resolved:
+            return st_resolved.parent / ".cosmos-mcp-cli-recovery.key"
+    return home_resolved / ".cosmos-mcp-cli-recovery.key"
+
+
+def _get_or_create_local_cli_recovery_secret(st_root: Path) -> str:
+    key_path = _resolve_local_cli_recovery_key_path(st_root)
+    if key_path.is_file():
+        try:
+            existing = key_path.read_text(encoding="utf-8", errors="replace").strip()
+            if len(existing) >= 32:
+                return existing
+        except OSError:
+            pass
+    generated = secrets.token_urlsafe(32)
+    atomic_write_text(key_path, generated + "\n", mode_override=0o600)
+    try:
+        os.chmod(key_path, 0o600)
+    except OSError:
+        pass
+    return generated
+
+
+def _resolve_recovery_passphrase(
+    args: argparse.Namespace,
+    *,
+    prompt_label: str,
+    st_root: Optional[Path] = None,
+) -> Tuple[str, str]:
     raw_pw = getattr(args, "passphrase", None)
     if raw_pw is not None and str(raw_pw).strip():
         return str(raw_pw).strip(), "explicit"
@@ -2234,7 +2281,8 @@ def _resolve_recovery_passphrase(args: argparse.Namespace, *, prompt_label: str)
         entered = getpass.getpass(prompt_label).strip()
         if entered:
             return entered, "interactive"
-    return DEFAULT_CLI_RECOVERY_PASSPHRASE, "default_cli"
+    eff_st = st_root if st_root is not None else resolve_cli_state_root(getattr(args, "state_dir", ""))
+    return _get_or_create_local_cli_recovery_secret(eff_st), "local_machine_key"
 
 
 def _run_export_identity(
@@ -2311,8 +2359,11 @@ def _run_export_identity(
         "scan_host_global_skills": policy_doc["scan_host_global_skills"],
         "passphrase_mode": passphrase_mode,
     }
-    if passphrase_mode == "default_cli":
-        res["security_notice_zh"] = "当前未传入 --passphrase，已使用默认 CLI 口令封装；若需跨公网传输该图片，建议附加 --passphrase <自定义口令>。"
+    if passphrase_mode == "local_machine_key":
+        res["security_notice_zh"] = (
+            "当前未传入 --passphrase，已使用本机专属随机密钥（.cosmos-mcp-cli-recovery.key）加密；"
+            "若需跨设备迁移恢复，请附加 --passphrase <自定义口令>。"
+        )
     return res
 
 
@@ -2329,14 +2380,27 @@ def _run_import_identity(
     if not src.is_file():
         raise ValueError(f"未找到身份恢复卡文件: {src}")
     png_bytes = src.read_bytes()
+    eff_used_passphrase = passphrase
     try:
         restored = import_identity_recovery_png(png_bytes, passphrase, st_root, prefix=eff_p)
     except ValueError as exc:
-        if passphrase_mode == "default_cli" and "passphrase" in str(exc).lower():
-            raise ValueError("身份恢复卡解密失败：该恢复卡设置了自定义加密口令，请通过 `--passphrase <口令>` 传入。") from exc
-        raise
+        if passphrase_mode in ("local_machine_key", "default_cli") and "passphrase" in str(exc).lower():
+            try:
+                restored = import_identity_recovery_png(
+                    png_bytes,
+                    _LEGACY_V2_CLI_RECOVERY_PASSPHRASE_READONLY,
+                    st_root,
+                    prefix=eff_p,
+                )
+                eff_used_passphrase = _LEGACY_V2_CLI_RECOVERY_PASSPHRASE_READONLY
+            except ValueError:
+                raise ValueError(
+                    "身份恢复卡解密失败：该恢复卡由其他设备密钥或自定义加密口令保护，请通过 `--passphrase <口令>` 传入。"
+                ) from exc
+        else:
+            raise
 
-    policy_doc = _extract_policy_chunk_from_png(png_bytes, passphrase)
+    policy_doc = _extract_policy_chunk_from_png(png_bytes, eff_used_passphrase)
     skipped_ws: List[str] = []
     valid_ws: List[str] = []
     valid_ro: List[str] = []
@@ -2419,7 +2483,11 @@ def _cmd_export_identity(args: argparse.Namespace) -> int:
             print(msg, file=sys.stderr)
         return 2
     try:
-        pw, pw_mode = _resolve_recovery_passphrase(args, prompt_label="请输入恢复卡加密口令 (回车使用默认 CLI 口令): ")
+        pw, pw_mode = _resolve_recovery_passphrase(
+            args,
+            prompt_label="请输入恢复卡加密口令 (回车使用本机专属随机密钥): ",
+            st_root=st_root,
+        )
         res = _run_export_identity(st_root, prefix=args.prefix, out_path=Path(out_raw), passphrase=pw, passphrase_mode=pw_mode)
     except ValueError as exc:
         if args.json:
@@ -2447,7 +2515,11 @@ def _cmd_import_identity(args: argparse.Namespace) -> int:
             print(msg, file=sys.stderr)
         return 2
     try:
-        pw, pw_mode = _resolve_recovery_passphrase(args, prompt_label="请输入恢复卡解密口令 (若导出时未设口令可直接回车): ")
+        pw, pw_mode = _resolve_recovery_passphrase(
+            args,
+            prompt_label="请输入恢复卡解密口令 (若在本机导出且未设口令可直接回车): ",
+            st_root=st_root,
+        )
         res = _run_import_identity(st_root, prefix=args.prefix, in_path=Path(in_raw), passphrase=pw, passphrase_mode=pw_mode)
     except ValueError as exc:
         if args.json:
@@ -2563,7 +2635,20 @@ def _cmd_stop(args: argparse.Namespace) -> int:
 
 def _cmd_uninstall(args: argparse.Namespace) -> int:
     st_root = resolve_cli_state_root(args.state_dir)
+    cf_tok = (getattr(args, "cf_api_token", "") or os.environ.get("COSMOS_CF_API_TOKEN") or "").strip()
+    cf_cleanup_res: Optional[Dict[str, Any]] = None
+    if cf_tok:
+        if args.dry_run:
+            cf_cleanup_res = {"ok": True, "dry_run": True, "planned": True}
+        else:
+            cf_cleanup_res = delete_cloudflare_workers_gateway(
+                api_token=cf_tok,
+                state_root=st_root,
+                prefix=args.prefix or "pc",
+            )
     res = run_uninstall(st_root, prefix=args.prefix or "", purge=bool(args.purge), dry_run=bool(args.dry_run))
+    if cf_cleanup_res is not None:
+        res["cloudflare_worker_cleanup"] = cf_cleanup_res
     if args.json:
         print(json.dumps(res, ensure_ascii=False, indent=2))
     else:
@@ -2805,6 +2890,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     sp_un.add_argument("--purge", action="store_true", help="彻底粉碎状态目录内全部凭据、令牌、回收站与 .venv")
     sp_un.add_argument("--dry-run", action="store_true", help="仅预演将清理的路径，不执行修改")
     sp_un.add_argument("-y", "--yes", action="store_true", help="跳过确认提示（兼容无人值守命令行调用）")
+    sp_un.add_argument("--cf-api-token", default="", help="卸载前可选同步销毁云端 Cloudflare Worker 中继（或设环境变量 COSMOS_CF_API_TOKEN）")
 
     sp_stdio = sub.add_parser("stdio", help="运行绑定父进程生命周期的 Stdio MCP 服务", parents=[sub_common])
     sp_stdio.add_argument("--workspace", default="", help="工作目录")

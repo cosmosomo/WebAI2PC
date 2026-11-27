@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import atexit
+import base64
+import ctypes
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,7 +18,7 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 from urllib.parse import urlsplit
 
-from cosmos_mcp.core.fs_tx import atomic_write_json, atomic_write_text
+from cosmos_mcp.core.fs_tx import apply_current_user_only_acl, atomic_write_json, atomic_write_text
 from cosmos_mcp.core.guard import (
     DEFAULT_GUARD,
     READONLY_PACKAGE_MARKERS,
@@ -1077,8 +1080,574 @@ def format_dynamic_tier_label(
     return f"L4 全盘顺畅开发（不限目录）（跨目录读写与代码执行·{mode_l4}，保留回收站与密钥隔离{pack_part}{cnt_part}{awake_part}）"
 
 
-def generate_readable_password() -> str:
-    return "-".join("".join(secrets.choice(UNAMBIGUOUS_PW_ALPHABET) for _ in range(5)) for _ in range(4))
+WIPED_PASSWORD_PLACEHOLDER_ZH = "(已受本机加密保险箱保护，请在本地控制台按需查看或重置)"
+ENDPOINT_SECRET_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+ENDPOINT_SECRET_RE = re.compile(r"^[a-z0-9]{24}$")
+_VALID_ENDPOINT_SECRET_RE = re.compile(r"^[a-z0-9]{16,64}$")
+_EP_SECRET_CACHE_LOCK = threading.Lock()
+_EP_SECRET_CACHE: Dict[str, Tuple[int, int, str]] = {}
+
+
+def generate_readable_password(length: int = 20) -> str:
+    eff_len = max(16, int(length))
+    if eff_len == 20:
+        return "-".join("".join(secrets.choice(UNAMBIGUOUS_PW_ALPHABET) for _ in range(5)) for _ in range(4))
+    if eff_len == 24:
+        return "-".join("".join(secrets.choice(UNAMBIGUOUS_PW_ALPHABET) for _ in range(6)) for _ in range(4))
+    raw_chars = "".join(secrets.choice(UNAMBIGUOUS_PW_ALPHABET) for _ in range(eff_len))
+    return "-".join(raw_chars[idx : idx + 5] for idx in range(0, eff_len, 5))
+
+
+def dpapi_connection_vault_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff_p = normalize_prefix(prefix)
+    fname = f"connection_{eff_p}.dpapi" if eff_p != "pc" else "connection.dpapi"
+    return Path(state_root) / "secrets" / fname
+
+
+def enc_connection_vault_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff_p = normalize_prefix(prefix)
+    fname = f"connection_{eff_p}.enc" if eff_p != "pc" else "connection.enc"
+    return Path(state_root) / "secrets" / fname
+
+
+def plaintext_wiped_flag_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff_p = normalize_prefix(prefix)
+    fname = f"plaintext_pw_wiped_{eff_p}.flag" if eff_p != "pc" else "plaintext_pw_wiped.flag"
+    return Path(state_root) / "secrets" / fname
+
+
+def _dpapi_protect_bytes(plain_bytes: bytes, entropy_bytes: bytes = b"") -> bytes:
+    """Encrypt `plain_bytes` with Windows `CryptProtectData` (`CRYPTPROTECT_UI_FORBIDDEN = 0x1`, 64-bit safe)."""
+    if sys.platform != "win32":
+        raise OSError("Windows DPAPI is only available on win32")
+    from ctypes import wintypes
+
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
+
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),
+        wintypes.LPCWSTR,
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_DATA_BLOB),
+    ]
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+
+    in_buf = ctypes.create_string_buffer(plain_bytes, len(plain_bytes))
+    in_blob = _DATA_BLOB(len(plain_bytes), ctypes.cast(in_buf, ctypes.POINTER(ctypes.c_char)))
+
+    ent_buf = ctypes.create_string_buffer(entropy_bytes, len(entropy_bytes)) if entropy_bytes else None
+    ent_blob = (
+        _DATA_BLOB(len(entropy_bytes), ctypes.cast(ent_buf, ctypes.POINTER(ctypes.c_char)))
+        if ent_buf is not None
+        else None
+    )
+    out_blob = _DATA_BLOB(0, None)
+    CRYPTPROTECT_UI_FORBIDDEN = 0x1
+
+    ok = crypt32.CryptProtectData(
+        ctypes.byref(in_blob),
+        "CosmosMCP-ConnectionPassword",
+        ctypes.byref(ent_blob) if ent_blob is not None else None,
+        None,
+        None,
+        CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(out_blob),
+    )
+    if not ok:
+        err_code = ctypes.get_last_error()
+        raise OSError(err_code, f"CryptProtectData failed with error {err_code}")
+    try:
+        return ctypes.string_at(out_blob.pbData, int(out_blob.cbData)) if out_blob.cbData else b""
+    finally:
+        if out_blob.pbData:
+            kernel32.LocalFree(ctypes.cast(out_blob.pbData, wintypes.HLOCAL))
+
+
+def _dpapi_unprotect_bytes(cipher_bytes: bytes, entropy_bytes: bytes = b"") -> bytes:
+    """Decrypt `cipher_bytes` with Windows `CryptUnprotectData` (`CRYPTPROTECT_UI_FORBIDDEN = 0x1`, 64-bit safe)."""
+    if sys.platform != "win32":
+        raise OSError("Windows DPAPI is only available on win32")
+    if not cipher_bytes:
+        raise ValueError("Empty DPAPI ciphertext")
+    from ctypes import wintypes
+
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
+
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_DATA_BLOB),
+    ]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+
+    in_buf = ctypes.create_string_buffer(cipher_bytes, len(cipher_bytes))
+    in_blob = _DATA_BLOB(len(cipher_bytes), ctypes.cast(in_buf, ctypes.POINTER(ctypes.c_char)))
+
+    ent_buf = ctypes.create_string_buffer(entropy_bytes, len(entropy_bytes)) if entropy_bytes else None
+    ent_blob = (
+        _DATA_BLOB(len(entropy_bytes), ctypes.cast(ent_buf, ctypes.POINTER(ctypes.c_char)))
+        if ent_buf is not None
+        else None
+    )
+    out_blob = _DATA_BLOB(0, None)
+    CRYPTPROTECT_UI_FORBIDDEN = 0x1
+
+    ok = crypt32.CryptUnprotectData(
+        ctypes.byref(in_blob),
+        None,
+        ctypes.byref(ent_blob) if ent_blob is not None else None,
+        None,
+        None,
+        CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(out_blob),
+    )
+    if not ok:
+        err_code = ctypes.get_last_error()
+        raise OSError(err_code, f"CryptUnprotectData failed with error {err_code}")
+    try:
+        return ctypes.string_at(out_blob.pbData, int(out_blob.cbData)) if out_blob.cbData else b""
+    finally:
+        if out_blob.pbData:
+            kernel32.LocalFree(ctypes.cast(out_blob.pbData, wintypes.HLOCAL))
+
+
+def _load_or_create_local_vault_key(secrets_dir: Path, eff_prefix: str = "pc") -> bytes:
+    """Resolve 32-byte key material for pure-stdlib encrypted vault (`master_seed*.bin` or `local_vault.key`)."""
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    apply_current_user_only_acl(secrets_dir)
+    cands = []
+    if eff_prefix != "pc":
+        cands.append(secrets_dir / f"master_seed_{eff_prefix}.bin")
+    cands.append(secrets_dir / "master_seed.bin")
+    for bp in cands:
+        if bp.is_file():
+            try:
+                raw_b = bp.read_bytes()
+                if len(raw_b) == 32:
+                    return raw_b
+            except OSError:
+                pass
+    seed_hex_p = secrets_dir / "master_seed"
+    if seed_hex_p.is_file():
+        try:
+            raw_h = seed_hex_p.read_text(encoding="utf-8").strip()
+            if len(raw_h) >= 64:
+                return bytes.fromhex(raw_h[:64])
+        except Exception:
+            pass
+    vault_k_p = secrets_dir / "local_vault.key"
+    if vault_k_p.is_file():
+        try:
+            kb = vault_k_p.read_bytes()
+            if len(kb) == 32:
+                return kb
+            if len(kb) >= 64:
+                return bytes.fromhex(kb.decode("ascii", errors="ignore").strip()[:64])
+        except Exception:
+            pass
+    fresh_k = secrets.token_bytes(32)
+    atomic_write_text(vault_k_p, fresh_k.hex() + "\n", mode_override=0o600)
+    apply_current_user_only_acl(vault_k_p)
+    return fresh_k
+
+
+def _vault_ctr_stream(enc_key: bytes, nonce: bytes, length: int) -> bytes:
+    out = bytearray()
+    counter = 0
+    while len(out) < length:
+        out.extend(hmac.new(enc_key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest())
+        counter += 1
+    return bytes(out[:length])
+
+
+def _stdlib_vault_encrypt(plain_text: str, key_bytes: bytes, aad_str: str) -> Dict[str, Any]:
+    salt = secrets.token_bytes(16)
+    nonce = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", key_bytes, salt, 60000, dklen=64)
+    enc_key, mac_key = dk[:32], dk[32:]
+    pt_bytes = plain_text.encode("utf-8")
+    ks = _vault_ctr_stream(enc_key, nonce, len(pt_bytes))
+    ct = bytes(a ^ b for a, b in zip(pt_bytes, ks))
+    aad_b = aad_str.encode("utf-8")
+    mac = hmac.new(mac_key, aad_b + salt + nonce + ct, hashlib.sha256).hexdigest()
+    return {
+        "v": 1,
+        "alg": "pbkdf2-hmac-ctr-sha256",
+        "salt": base64.urlsafe_b64encode(salt).decode("ascii").rstrip("="),
+        "nonce": base64.urlsafe_b64encode(nonce).decode("ascii").rstrip("="),
+        "ct": base64.urlsafe_b64encode(ct).decode("ascii").rstrip("="),
+        "tag": mac,
+    }
+
+
+def _stdlib_vault_decrypt(doc: Mapping[str, Any], key_bytes: bytes, aad_str: str) -> str:
+    def _b64d(val: str) -> bytes:
+        s = str(val or "").strip()
+        pad = "=" * (-len(s) % 4)
+        return base64.urlsafe_b64decode(s + pad)
+
+    salt = _b64d(str(doc.get("salt") or ""))
+    nonce = _b64d(str(doc.get("nonce") or ""))
+    ct = _b64d(str(doc.get("ct") or ""))
+    tag = str(doc.get("tag") or "").strip()
+    if len(salt) != 16 or len(nonce) != 16 or not tag:
+        raise ValueError("Invalid vault envelope")
+    dk = hashlib.pbkdf2_hmac("sha256", key_bytes, salt, 60000, dklen=64)
+    enc_key, mac_key = dk[:32], dk[32:]
+    aad_b = aad_str.encode("utf-8")
+    exp_tag = hmac.new(mac_key, aad_b + salt + nonce + ct, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(tag, exp_tag):
+        raise ValueError("Vault authentication tag mismatch")
+    ks = _vault_ctr_stream(enc_key, nonce, len(ct))
+    pt_bytes = bytes(a ^ b for a, b in zip(ct, ks))
+    return pt_bytes.decode("utf-8")
+
+
+def save_encrypted_connection_password(
+    state_root: Union[str, Path],
+    password_plain: str,
+    prefix: str = "pc",
+    *,
+    force_stdlib_enc: bool = False,
+) -> Path:
+    """Persist `password_plain` in OS-bound DPAPI (`connection.dpapi`) on Windows or stdlib AEAD (`connection.enc`)."""
+    clean_pw = str(password_plain or "").strip()
+    if not clean_pw or clean_pw.startswith("("):
+        raise ValueError("Refusing to store empty or placeholder password in encrypted vault")
+    st_root = Path(state_root).expanduser().resolve()
+    eff_p = normalize_prefix(prefix)
+    sec_dir = st_root / "secrets"
+    sec_dir.mkdir(parents=True, exist_ok=True)
+    apply_current_user_only_acl(sec_dir)
+
+    entropy = f"cosmos-mcp:connection-password:v1:{eff_p}".encode("utf-8")
+    if sys.platform == "win32" and not force_stdlib_enc:
+        try:
+            ct_bytes = _dpapi_protect_bytes(clean_pw.encode("utf-8"), entropy)
+            dpapi_p = dpapi_connection_vault_path(st_root, eff_p)
+            env_doc = {
+                "v": 1,
+                "alg": "win32-dpapi",
+                "ct": base64.b64encode(ct_bytes).decode("ascii"),
+            }
+            atomic_write_json(dpapi_p, env_doc, mode_override=0o600)
+            apply_current_user_only_acl(dpapi_p)
+            return dpapi_p
+        except Exception:
+            pass
+
+    key_b = _load_or_create_local_vault_key(sec_dir, eff_prefix=eff_p)
+    enc_p = enc_connection_vault_path(st_root, eff_p)
+    aad = f"cosmos-vault-v1:{eff_p}"
+    enc_doc = _stdlib_vault_encrypt(clean_pw, key_b, aad)
+    atomic_write_json(enc_p, enc_doc, mode_override=0o600)
+    apply_current_user_only_acl(enc_p)
+    return enc_p
+
+
+def load_encrypted_connection_password(state_root: Union[str, Path], prefix: str = "pc") -> str:
+    """Decrypt and return the stored owner connection password from `connection.dpapi` or `connection.enc`."""
+    st_root = Path(state_root).expanduser().resolve()
+    eff_p = normalize_prefix(prefix)
+    sec_dir = st_root / "secrets"
+    entropy = f"cosmos-mcp:connection-password:v1:{eff_p}".encode("utf-8")
+
+    if sys.platform == "win32":
+        for cand_p, cand_ent in (
+            (dpapi_connection_vault_path(st_root, eff_p), entropy),
+            (dpapi_connection_vault_path(st_root, "pc"), b"cosmos-mcp:connection-password:v1:pc"),
+        ):
+            if cand_p != dpapi_connection_vault_path(st_root, eff_p) and eff_p != "pc":
+                continue
+            if cand_p.is_file():
+                try:
+                    raw_b = cand_p.read_bytes()
+                    ct_b = raw_b
+                    if raw_b.lstrip().startswith(b"{"):
+                        parsed = json.loads(raw_b.decode("utf-8"))
+                        if isinstance(parsed, dict) and parsed.get("ct"):
+                            ct_b = base64.b64decode(str(parsed["ct"]))
+                    pt = _dpapi_unprotect_bytes(ct_b, cand_ent).decode("utf-8").strip()
+                    if pt and not pt.startswith("("):
+                        return pt
+                except Exception:
+                    pass
+
+    enc_p = enc_connection_vault_path(st_root, eff_p)
+    if enc_p.is_file():
+        try:
+            doc = json.loads(enc_p.read_text(encoding="utf-8"))
+            if isinstance(doc, Mapping):
+                key_b = _load_or_create_local_vault_key(sec_dir, eff_prefix=eff_p)
+                pt = _stdlib_vault_decrypt(doc, key_b, f"cosmos-vault-v1:{eff_p}").strip()
+                if pt and not pt.startswith("("):
+                    return pt
+        except Exception:
+            pass
+    return ""
+
+
+def is_plaintext_connection_password_wiped(state_root: Union[str, Path], prefix: str = "pc") -> bool:
+    st_root = Path(state_root).expanduser().resolve()
+    eff_p = normalize_prefix(prefix)
+    if plaintext_wiped_flag_path(st_root, eff_p).is_file():
+        return True
+    conn_fn = conn_info_filename_for_prefix(eff_p)
+    sec_fn = f"connection_{eff_p}.txt" if eff_p != "pc" else "connection.txt"
+    for fp in (st_root / conn_fn, st_root / "secrets" / sec_fn):
+        if fp.is_file():
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="replace")
+                if WIPED_PASSWORD_PLACEHOLDER_ZH in txt:
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+def wipe_plaintext_connection_password(state_root: Union[str, Path], prefix: str = "pc") -> Dict[str, Any]:
+    """Ensure encrypted vault holds the recoverable password, then scrub plaintext password lines on disk."""
+    st_root = Path(state_root).expanduser().resolve()
+    eff_p = normalize_prefix(prefix)
+    sec_dir = st_root / "secrets"
+    conn_fn = conn_info_filename_for_prefix(eff_p)
+    sec_fn = f"connection_{eff_p}.txt" if eff_p != "pc" else "connection.txt"
+
+    cand_files = [st_root / conn_fn, sec_dir / sec_fn]
+    if eff_p == "pc":
+        legacy_f = st_root / "CONNECTION_INFO.txt"
+        if legacy_f.is_file():
+            cand_files.append(legacy_f)
+
+    vault_pw = load_encrypted_connection_password(st_root, prefix=eff_p)
+    if not vault_pw:
+        for cf in cand_files:
+            found_pw = _extract_existing_password_line(cf)
+            if found_pw:
+                save_encrypted_connection_password(st_root, found_pw, prefix=eff_p)
+                vault_pw = load_encrypted_connection_password(st_root, prefix=eff_p)
+                if vault_pw:
+                    break
+
+    if not vault_pw:
+        return {
+            "ok": False,
+            "error": "本机加密保险箱中未找到可恢复的连接口令，已拒绝擦除文本文件以防口令丢失。",
+            "wiped_files": [],
+        }
+
+    sec_dir.mkdir(parents=True, exist_ok=True)
+    flag_p = plaintext_wiped_flag_path(st_root, eff_p)
+    atomic_write_text(flag_p, "1\n", mode_override=0o600)
+    apply_current_user_only_acl(flag_p)
+
+    wiped_files: List[str] = []
+    for cf in cand_files:
+        if not cf.is_file():
+            continue
+        try:
+            old_txt = cf.read_text(encoding="utf-8", errors="replace")
+            new_txt = re.sub(
+                r"(授权页连接口令\s*:\s*)([^\r\n]+)",
+                lambda m: f"{m.group(1)}{WIPED_PASSWORD_PLACEHOLDER_ZH}",
+                old_txt,
+            )
+            if new_txt != old_txt:
+                atomic_write_text(cf, new_txt, mode_override=0o600)
+                apply_current_user_only_acl(cf)
+            wiped_files.append(str(cf))
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "plaintext_password_wiped": True,
+        "wiped_files": wiped_files,
+    }
+
+
+def generate_endpoint_secret(length: int = 24) -> str:
+    """Generate high-entropy lowercase alphanumeric endpoint secret (`>=124 bits` at default `length=24`)."""
+    eff_len = max(16, int(length))
+    return "".join(secrets.choice(ENDPOINT_SECRET_ALPHABET) for _ in range(eff_len))
+
+
+def endpoint_secret_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff_p = normalize_prefix(prefix)
+    fname = f"endpoint_secret_{eff_p}.txt" if eff_p != "pc" else "endpoint_secret.txt"
+    return Path(state_root) / "secrets" / fname
+
+
+def load_endpoint_secret(state_root: Union[str, Path], prefix: str = "pc") -> str:
+    st_root = Path(state_root)
+    ep_p = endpoint_secret_path(st_root, prefix=prefix)
+    norm_k = os.path.normcase(str(ep_p))
+    try:
+        st = ep_p.stat()
+    except OSError:
+        with _EP_SECRET_CACHE_LOCK:
+            _EP_SECRET_CACHE.pop(norm_k, None)
+        return ""
+    mtime_ns = int(getattr(st, "st_mtime_ns", 0))
+    fsize = int(st.st_size)
+    with _EP_SECRET_CACHE_LOCK:
+        cached = _EP_SECRET_CACHE.get(norm_k)
+        if cached is not None and cached[0] == mtime_ns and cached[1] == fsize:
+            return cached[2]
+    try:
+        raw_val = ep_p.read_text(encoding="utf-8", errors="replace").strip().lower()
+    except OSError:
+        return ""
+    clean_val = raw_val if _VALID_ENDPOINT_SECRET_RE.fullmatch(raw_val) else ""
+    with _EP_SECRET_CACHE_LOCK:
+        _EP_SECRET_CACHE[norm_k] = (mtime_ns, fsize, clean_val)
+    return clean_val
+
+
+def save_endpoint_secret(state_root: Union[str, Path], secret: str, prefix: str = "pc") -> str:
+    clean = str(secret or "").strip().lower()
+    if not _VALID_ENDPOINT_SECRET_RE.fullmatch(clean):
+        raise ValueError("Invalid endpoint_secret: expected 16..64 lowercase [a-z0-9] characters")
+    st_root = Path(state_root).expanduser().resolve()
+    ep_p = endpoint_secret_path(st_root, prefix=prefix)
+    ep_p.parent.mkdir(parents=True, exist_ok=True)
+    apply_current_user_only_acl(ep_p.parent)
+    atomic_write_text(ep_p, clean + "\n", mode_override=0o600)
+    apply_current_user_only_acl(ep_p)
+    norm_k = os.path.normcase(str(ep_p))
+    try:
+        st = ep_p.stat()
+        with _EP_SECRET_CACHE_LOCK:
+            _EP_SECRET_CACHE[norm_k] = (int(getattr(st, "st_mtime_ns", 0)), int(st.st_size), clean)
+    except OSError:
+        with _EP_SECRET_CACHE_LOCK:
+            _EP_SECRET_CACHE.pop(norm_k, None)
+    return clean
+
+
+def clear_endpoint_secret(state_root: Union[str, Path], prefix: str = "pc") -> None:
+    st_root = Path(state_root).expanduser().resolve()
+    ep_p = endpoint_secret_path(st_root, prefix=prefix)
+    norm_k = os.path.normcase(str(ep_p))
+    if ep_p.exists():
+        try:
+            sz = max(32, int(ep_p.stat().st_size))
+            ep_p.write_bytes(b"\x00" * sz)
+        except OSError:
+            pass
+        try:
+            ep_p.unlink()
+        except OSError:
+            pass
+    with _EP_SECRET_CACHE_LOCK:
+        _EP_SECRET_CACHE.pop(norm_k, None)
+
+
+def _is_ip_or_single_tenant_gateway_host(host: str) -> bool:
+    h = (host or "").strip().lower().strip("[]")
+    if not h:
+        return False
+    if any(
+        h.endswith(sfx)
+        for sfx in (".srv.us", ".workers.dev", ".trycloudflare.com", ".sslip.io", ".lhr.life", ".localhost.run")
+    ):
+        return True
+    try:
+        ipaddress.ip_address(h)
+        return True
+    except ValueError:
+        return False
+
+
+def apply_endpoint_secret_to_url(raw_public_url: str, endpoint_secret: str, *, previous_secret: str = "") -> str:
+    """Attach `/u/<endpoint_secret>` to non-loopback `https://` gateway URLs while preserving shared hub `/u/<node_id>`."""
+    raw = str(raw_public_url or "").strip().rstrip("/")
+    sec = str(endpoint_secret or "").strip().lower()
+    if not raw or not sec or not _VALID_ENDPOINT_SECRET_RE.fullmatch(sec):
+        return raw
+    u = urlsplit(raw)
+    scheme = (u.scheme or "").strip().lower()
+    host = (u.hostname or "").strip().lower()
+    if scheme != "https" or not u.netloc or host in ("", "127.0.0.1", "localhost", "::1"):
+        return raw
+
+    path_s = (u.path or "").rstrip("/")
+    had_mcp_ro = False
+    had_mcp = False
+    if path_s.endswith("/mcp/readonly"):
+        path_s = path_s[: -len("/mcp/readonly")].rstrip("/")
+        had_mcp_ro = True
+    elif path_s.endswith("/mcp"):
+        path_s = path_s[: -len("/mcp")].rstrip("/")
+        had_mcp = True
+
+    prev_clean = str(previous_secret or "").strip().lower()
+    m_u = re.fullmatch(r"/u/([a-zA-Z0-9_-]{2,64})", path_s)
+    if m_u:
+        existing_seg = m_u.group(1).lower()
+        is_single_tenant = _is_ip_or_single_tenant_gateway_host(host)
+        is_prev_or_24sec = (prev_clean and existing_seg == prev_clean) or bool(ENDPOINT_SECRET_RE.fullmatch(existing_seg))
+        if not is_single_tenant and not is_prev_or_24sec:
+            base_out = f"https://{u.netloc}{path_s}"
+        else:
+            base_out = f"https://{u.netloc}/u/{sec}"
+    elif not path_s:
+        base_out = f"https://{u.netloc}/u/{sec}"
+    else:
+        base_out = f"https://{u.netloc}{path_s}/u/{sec}"
+
+    if had_mcp_ro:
+        return f"{base_out}/mcp/readonly"
+    if had_mcp:
+        return f"{base_out}/mcp"
+    return base_out
+
+
+def strip_endpoint_secret_from_url(raw_public_url: str, old_secret: str = "") -> str:
+    """Remove `/u/<old_secret>` (or 24-char endpoint secret) from a gateway base URL when disabling secret path."""
+    raw = str(raw_public_url or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    u = urlsplit(raw)
+    if (u.scheme or "").lower() != "https" or not u.netloc:
+        return raw
+    path_s = (u.path or "").rstrip("/")
+    m_u = re.fullmatch(r"(.*)/u/([a-zA-Z0-9_-]{2,64})", path_s)
+    if not m_u:
+        return raw
+    prefix_before, seg = m_u.group(1), m_u.group(2).lower()
+    old_clean = str(old_secret or "").strip().lower()
+    host = (u.hostname or "").strip().lower()
+    if (old_clean and seg == old_clean) or ENDPOINT_SECRET_RE.fullmatch(seg) or _is_ip_or_single_tenant_gateway_host(host):
+        return f"https://{u.netloc}{prefix_before}".rstrip("/")
+    return raw
 
 
 def _extract_existing_password_line(info_path: Path) -> str:
@@ -1563,6 +2132,8 @@ def ensure_initialized(
     secrets_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
     cfg_dir.mkdir(parents=True, exist_ok=True)
+    apply_current_user_only_acl(secrets_dir)
+    apply_current_user_only_acl(state_dir)
 
     eff_prefix = normalize_prefix(prefix)
     cfg_path = resolve_service_cfg_path(state_root, eff_prefix)
@@ -1744,23 +2315,37 @@ def ensure_initialized(
     root_info_path = state_root / conn_filename
     sec_info_path = secrets_dir / sec_filename
 
+    was_pw_wiped = is_plaintext_connection_password_wiped(state_root, eff_prefix)
     if auth_path.is_file() and not reset_password:
+        apply_current_user_only_acl(auth_path)
         creds = json.loads(auth_path.read_text(encoding="utf-8"))
-        password_display = ""
+        pw_found = ""
         for cand_f in (
             sec_info_path,
             secrets_dir / "connection.txt",
             root_info_path,
             state_root / "连接信息_CONNECTION_INFO.txt",
         ):
-            pw_found = _extract_existing_password_line(cand_f)
-            if pw_found:
-                password_display = pw_found
+            cand_pw = _extract_existing_password_line(cand_f)
+            if cand_pw:
+                pw_found = cand_pw
                 break
-        if not password_display:
+        if pw_found:
+            try:
+                save_encrypted_connection_password(state_root, pw_found, prefix=eff_prefix)
+            except Exception:
+                pass
+        vault_pw = load_encrypted_connection_password(state_root, prefix=eff_prefix)
+        if was_pw_wiped:
+            password_display = WIPED_PASSWORD_PLACEHOLDER_ZH
+        elif pw_found:
+            password_display = pw_found
+        elif vault_pw:
+            password_display = vault_pw
+        else:
             password_display = "(已初始化，如需重置请运行 cosmos-mcp --reset-password)"
     else:
-        password_display = generate_readable_password()
+        raw_new_pw = generate_readable_password()
         salt = secrets.token_bytes(16)
         existing_tok = ""
         if auth_path.is_file() and not reset_password:
@@ -1771,15 +2356,23 @@ def ensure_initialized(
         local_api_token = existing_tok or ("cmcp_" + secrets.token_urlsafe(24))
         creds = {
             "salt": salt.hex(),
-            "password_hash": hashlib.scrypt(password_display.encode("utf-8"), salt=salt, n=16384, r=8, p=1).hex(),
+            "password_hash": hashlib.scrypt(raw_new_pw.encode("utf-8"), salt=salt, n=16384, r=8, p=1).hex(),
             "local_api_token": local_api_token,
         }
         atomic_write_json(auth_path, creds, mode_override=0o600)
+        apply_current_user_only_acl(auth_path)
+        try:
+            save_encrypted_connection_password(state_root, raw_new_pw, prefix=eff_prefix)
+        except Exception:
+            pass
+        password_display = WIPED_PASSWORD_PLACEHOLDER_ZH if was_pw_wiped else raw_new_pw
         if reset_password:
             emit_kill_signal(state_root=state_root, reason="reset_password", prefix_filter=eff_prefix)
 
+    active_ep_sec = load_endpoint_secret(state_root, prefix=eff_prefix)
     if eff_tunnel_mode == "public_gateway" and not eff_public_base:
         eff_url = ""
+        eff_disp_url = ""
         is_loopback_url = False
         mcp_endpoint = "(启动后由内置加密通道自动分配 HTTPS 地址)"
         readonly_endpoint = "(启动后由内置加密通道自动分配 HTTPS 地址)"
@@ -1788,9 +2381,14 @@ def ensure_initialized(
         eff_url = (eff_public_base or f"http://127.0.0.1:{port}").rstrip("/")
         eff_host = (urlsplit(eff_url).hostname or "").strip().lower()
         is_loopback_url = eff_host in ("127.0.0.1", "localhost", "::1")
-        mcp_endpoint = f"{eff_url}/mcp"
-        readonly_endpoint = f"{eff_url}/mcp/readonly"
-        skill_endpoint = f"{eff_url}/skill"
+        eff_disp_url = (
+            apply_endpoint_secret_to_url(eff_url, active_ep_sec)
+            if (active_ep_sec and not is_loopback_url)
+            else eff_url
+        )
+        mcp_endpoint = f"{eff_disp_url}/mcp"
+        readonly_endpoint = f"{eff_disp_url}/mcp/readonly"
+        skill_endpoint = f"{eff_disp_url}/skill"
     local_endpoint = f"http://127.0.0.1:{port}/mcp"
     tier_lbl = format_dynamic_tier_label(
         norm_tier,
@@ -1813,6 +2411,7 @@ def ensure_initialized(
         f" 注解确认模式   : {eff_ann_mode}\n"
         f" 当前设备标识   : {eff_label} (工具前缀: {eff_tool_prefix}_*)\n\n"
         "【网页版 Google Gemini（任务模式）/ 网页版 ChatGPT 连接参数】\n"
+        "  [防外发提醒] : 复制下方的连接地址或口令后，仅限粘贴到您本人的网页端账号，切勿发往微信群、公开论坛、GitHub Issue 或截图外传！\n"
         f"  主连接器地址   : {mcp_endpoint}\n"
         f"  纯只读端点地址 : {readonly_endpoint}  (供个人订阅只读连接器或只读检索会话安全挂载)\n"
         f"  动态守则地址   : {skill_endpoint}\n"
@@ -1826,6 +2425,7 @@ def ensure_initialized(
     )
     for info_t in (root_info_path, sec_info_path):
         atomic_write_text(info_t, info_text, mode_override=0o600)
+        apply_current_user_only_acl(info_t)
 
     return {
         **creds,
@@ -1846,9 +2446,9 @@ def ensure_initialized(
         "workers_dev_subdomain": eff_wd_subdomain,
         "workers_dev_custom_domain": eff_wd_custom_domain,
         "public_base": eff_public_base,
-        "public_url": eff_url,
-        "mcp_url": f"{eff_url}/mcp" if eff_url else "",
-        "readonly_mcp_url": f"{eff_url}/mcp/readonly" if eff_url else "",
+        "public_url": eff_disp_url,
+        "mcp_url": f"{eff_disp_url}/mcp" if eff_disp_url else "",
+        "readonly_mcp_url": f"{eff_disp_url}/mcp/readonly" if eff_disp_url else "",
         "toolset_profile": eff_toolset,
         "annotation_mode": eff_ann_mode,
         "python_path": eff_py_path,

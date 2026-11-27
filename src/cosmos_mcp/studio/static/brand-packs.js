@@ -2497,6 +2497,8 @@
     "后台静默跑测试与打包": "Silent Background Test & Build",
     "多台电脑环境对比": "Multi-PC Environment Diff",
     "换机恢复后的状态核验": "Post-Migration Status Check",
+    "查看 4 步实拍截图教程": "View 4-Step Screenshot Guide",
+    "点击展开，支持点击放大": "Click to expand & zoom",
   });
 
   var PATTERNS = [
@@ -2687,5 +2689,163 @@
     toggleLang: toggleLang,
     apply: apply,
     ZH_TO_EN: ZH_TO_EN
+  };
+})(typeof window !== "undefined" ? window : globalThis);
+
+(function (global) {
+  "use strict";
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+
+  var SHOTS = [
+    {"zh": "1. 左下角点 Personal Intelligence", "en": "1. Click Personal Intelligence at bottom-left", "src": "/static/tutorials/gemini-step1-personal-intelligence.png"},
+    {"zh": "2. 进入 Connected Apps", "en": "2. Open Connected Apps", "src": "/static/tutorials/gemini-step2-connected-apps.png"},
+    {"zh": "3. 点右上角 + Custom 添加自定义连接器", "en": "3. Click + Custom at top-right", "src": "/static/tutorials/gemini-step3-connectors-custom.png"},
+    {"zh": "4. 粘贴 /mcp 地址到 MCP Server URL 并点 Next", "en": "4. Paste /mcp into MCP Server URL and click Next", "src": "/static/tutorials/gemini-step4-mcp-server-url.png"}
+  ];
+  var lightboxEl = null;
+  var currentIdx = 0;
+
+  function isEn() {
+    return (document.documentElement.getAttribute("data-lang") || "zh") === "en";
+  }
+
+  function injectStyles() {
+    if (document.getElementById("w2p-shot-gallery-style")) return;
+    var st = document.createElement("style");
+    st.id = "w2p-shot-gallery-style";
+    st.textContent = [
+      ".tut-shot-fold { margin-top: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; }",
+      ".tut-shot-summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--primary); user-select: none; transition: background-color 120ms ease; }",
+      ".tut-shot-summary::-webkit-details-marker { display: none; }",
+      ".tut-shot-summary:hover { background: var(--primary-soft); }",
+      ".tut-shot-summary-left { display: inline-flex; align-items: center; gap: 7px; }",
+      ".tut-shot-chev { width: 14px; height: 14px; flex-shrink: 0; transition: transform 160ms ease; }",
+      ".tut-shot-fold[open] .tut-shot-chev { transform: rotate(90deg); }",
+      ".tut-shot-hint { font-size: 11.8px; font-weight: 500; color: var(--muted); }",
+      ".tut-shot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border-top: 1px solid var(--border); background: var(--surface-alt); }",
+      ".tut-shot-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: zoom-in; text-align: left; transition: border-color 120ms ease, transform 120ms ease; }",
+      ".tut-shot-card:hover { border-color: var(--primary); transform: translateY(-1px); }",
+      ".tut-shot-thumb-wrap { width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden; background: var(--surface-inset); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }",
+      ".tut-shot-thumb { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }",
+      ".tut-shot-cap { font-size: 12.2px; font-weight: 600; color: var(--text-secondary); line-height: 1.4; }",
+      ".tut-lb-backdrop { position: fixed; inset: 0; z-index: 12000; background: rgba(10, 14, 20, 0.84); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; padding: 20px; }",
+      ".tut-lb-backdrop.open { display: flex; }",
+      ".tut-lb-dialog { max-width: min(980px, 96vw); max-height: 92vh; width: auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 13px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }",
+      ".tut-lb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-alt); }",
+      ".tut-lb-title { font-size: 13.8px; font-weight: 650; color: var(--text); }",
+      ".tut-lb-stage { padding: 14px; display: flex; align-items: center; justify-content: center; background: #0B0E13; min-height: 220px; overflow: auto; }",
+      ".tut-lb-img { max-width: 100%; max-height: 70vh; width: auto; height: auto; border-radius: 6px; display: block; }",
+      ".tut-lb-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface-alt); }",
+      ".tut-lb-counter { font-size: 12.5px; font-weight: 600; color: var(--muted); }",
+      "@media (max-width: 680px) { .tut-shot-grid { grid-template-columns: minmax(0, 1fr); } }"
+    ].join("\n");
+    document.head.appendChild(st);
+  }
+
+  function ensureLightbox() {
+    if (lightboxEl) return lightboxEl;
+    var el = document.createElement("div");
+    el.className = "tut-lb-backdrop";
+    el.id = "w2p-shot-lightbox";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.innerHTML =
+      '<div class="tut-lb-dialog">' +
+      '  <div class="tut-lb-head">' +
+      '    <span class="tut-lb-title" id="w2p-lb-title"></span>' +
+      '    <button type="button" class="btn btn-sm" id="w2p-lb-close" aria-label="Close">×</button>' +
+      '  </div>' +
+      '  <div class="tut-lb-stage"><img class="tut-lb-img" id="w2p-lb-img" alt=""></div>' +
+      '  <div class="tut-lb-foot">' +
+      '    <button type="button" class="btn btn-sm" id="w2p-lb-prev">← 上一张</button>' +
+      '    <span class="tut-lb-counter" id="w2p-lb-counter">1 / 4</span>' +
+      '    <button type="button" class="btn btn-primary btn-sm" id="w2p-lb-next">下一张 →</button>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(el);
+
+    el.addEventListener("click", function (ev) {
+      if (ev.target === el) closeLightbox();
+    });
+    el.querySelector("#w2p-lb-close").addEventListener("click", closeLightbox);
+    el.querySelector("#w2p-lb-prev").addEventListener("click", function () {
+      openLightbox((currentIdx - 1 + SHOTS.length) % SHOTS.length);
+    });
+    el.querySelector("#w2p-lb-next").addEventListener("click", function () {
+      openLightbox((currentIdx + 1) % SHOTS.length);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (!lightboxEl || !lightboxEl.classList.contains("open")) return;
+      if (ev.key === "Escape") closeLightbox();
+      else if (ev.key === "ArrowLeft") openLightbox((currentIdx - 1 + SHOTS.length) % SHOTS.length);
+      else if (ev.key === "ArrowRight") openLightbox((currentIdx + 1) % SHOTS.length);
+    });
+    lightboxEl = el;
+    return el;
+  }
+
+  function openLightbox(idx) {
+    currentIdx = Math.max(0, Math.min(SHOTS.length - 1, idx));
+    var el = ensureLightbox();
+    var item = SHOTS[currentIdx];
+    var en = isEn();
+    el.querySelector("#w2p-lb-title").textContent = en ? item.en : item.zh;
+    var img = el.querySelector("#w2p-lb-img");
+    img.src = item.src;
+    img.alt = en ? item.en : item.zh;
+    el.querySelector("#w2p-lb-counter").textContent = (currentIdx + 1) + " / " + SHOTS.length;
+    el.querySelector("#w2p-lb-prev").textContent = en ? "← Prev" : "← 上一张";
+    el.querySelector("#w2p-lb-next").textContent = en ? "Next →" : "下一张 →";
+    el.classList.add("open");
+  }
+
+  function closeLightbox() {
+    if (lightboxEl) lightboxEl.classList.remove("open");
+  }
+
+  function populateContainer(detailsEl) {
+    if (!detailsEl || detailsEl.dataset.shotsMounted === "1") return;
+    detailsEl.dataset.shotsMounted = "1";
+    var grid = document.createElement("div");
+    grid.className = "tut-shot-grid";
+    SHOTS.forEach(function (item, idx) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tut-shot-card";
+      btn.setAttribute("data-shot-idx", String(idx));
+      btn.innerHTML =
+        '<div class="tut-shot-thumb-wrap"><img class="tut-shot-thumb" loading="lazy" alt=""></div>' +
+        '<span class="tut-shot-cap"></span>';
+      var img = btn.querySelector("img");
+      img.src = item.src;
+      img.alt = item.zh;
+      var cap = btn.querySelector(".tut-shot-cap");
+      cap.textContent = item.zh;
+      btn.addEventListener("click", function () {
+        openLightbox(idx);
+      });
+      grid.appendChild(btn);
+    });
+    detailsEl.appendChild(grid);
+  }
+
+  function mountAll() {
+    injectStyles();
+    var nodes = document.querySelectorAll("[data-gemini-shot-gallery]");
+    for (var i = 0; i < nodes.length; i++) {
+      populateContainer(nodes[i]);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mountAll);
+  } else {
+    mountAll();
+  }
+
+  global.WebAI2PCGeminiShots = {
+    SHOTS: SHOTS,
+    openLightbox: openLightbox,
+    mountAll: mountAll
   };
 })(typeof window !== "undefined" ? window : globalThis);

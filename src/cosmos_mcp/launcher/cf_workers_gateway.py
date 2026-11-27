@@ -1409,6 +1409,14 @@ def export_identity_recovery_png(
         with contextlib.suppress(OSError):
             vps_sec = vps_sec_p.read_text(encoding="utf-8", errors="replace").strip()
 
+    ep_sec_raw = ""
+    ep_sec_p = endpoint_secret_path(st_root, prefix=eff_prefix)
+    if ep_sec_p.is_file():
+        with contextlib.suppress(OSError):
+            cand_ep = ep_sec_p.read_text(encoding="utf-8", errors="replace")
+            if cand_ep.strip():
+                ep_sec_raw = cand_ep
+
     cfg_doc = _read_merged_service_config(st_root, eff_prefix)
     svc_bundle: Dict[str, Any] = {}
     wd_url = str(cfg_doc.get("workers_dev_url") or "").strip()
@@ -1466,6 +1474,8 @@ def export_identity_recovery_png(
         bundle_doc["workers_tunnel_secret"] = wt_sec
     if vps_sec:
         bundle_doc["vps_node_secret"] = vps_sec
+    if ep_sec_raw:
+        bundle_doc["endpoint_secret"] = ep_sec_raw
     if svc_bundle:
         bundle_doc["service_config"] = svc_bundle
     if srvus_bundle:
@@ -1559,6 +1569,15 @@ def import_identity_recovery_png(
         vps_fn = f"vps_node_secret_{eff_prefix}.txt" if eff_prefix != "pc" else "vps_node_secret.txt"
         _atomic_write_secret_text(st_root / "secrets" / vps_fn, vps_sec_restored + "\n")
 
+    has_endpoint_secret = False
+    raw_ep_restored = bundle.get("endpoint_secret")
+    if isinstance(raw_ep_restored, str) and raw_ep_restored.strip():
+        ep_dst = endpoint_secret_path(st_root, prefix=eff_prefix)
+        _atomic_write_bytes(ep_dst, raw_ep_restored.encode("utf-8"), mode_override=0o600)
+        with contextlib.suppress(OSError):
+            os.chmod(ep_dst, 0o600)
+        has_endpoint_secret = True
+
     srvus_obj = bundle.get("srvus_ed25519")
     has_srvus_key = False
     if isinstance(srvus_obj, dict):
@@ -1639,6 +1658,7 @@ def import_identity_recovery_png(
     restored["workers_dev_url"] = restored_workers_url
     restored["workers_custom_domain"] = restored_custom_domain
     restored["has_srvus_key"] = has_srvus_key
+    restored["has_endpoint_secret"] = has_endpoint_secret
     restored["restored_tunnel_mode"] = restored_tunnel_mode
     return restored
 
@@ -1646,6 +1666,12 @@ def import_identity_recovery_png(
 # ---------------------------------------------------------------------------
 # Card 2A: Secret Helpers & Cloudflare v4 REST API 4-Step Idempotent Deployer
 # ---------------------------------------------------------------------------
+
+def endpoint_secret_path(state_root: Path, prefix: str = "pc") -> Path:
+    eff = _norm_prefix(prefix)
+    fn = f"endpoint_secret_{eff}.txt" if eff != "pc" else "endpoint_secret.txt"
+    return Path(state_root).expanduser().resolve() / "secrets" / fn
+
 
 def cloudflare_api_token_secret_path(state_root: Path, prefix: str = "pc") -> Path:
     eff = _norm_prefix(prefix)
@@ -1679,6 +1705,11 @@ def shred_cloudflare_api_token(state_root: Path, prefix: str = "pc") -> bool:
                 if cand.is_file() or cand.is_symlink():
                     _shred_secret_file(cand)
     return shredded
+
+
+def purge_cloudflare_api_token(state_root: Path, prefix: str = "pc") -> bool:
+    """Alias for `shred_cloudflare_api_token` ensuring zero Cloudflare API token residue on disk."""
+    return shred_cloudflare_api_token(state_root, prefix=prefix)
 
 
 def load_cloudflare_api_token(state_root: Path, prefix: str = "pc") -> str:
@@ -2286,6 +2317,194 @@ def save_workers_custom_domain_local(
         "custom_domain": clean_custom,
         "tokenless_local_update": True,
     }
+
+
+class _CallableOpenerAdapter:
+    """Adapt a plain callable `(req, timeout=...) -> response` into a `urllib.request.OpenerDirector`-like object."""
+
+    def __init__(self, fn: Callable[..., Any]) -> None:
+        self._fn = fn
+
+    def open(self, req: urllib.request.Request, timeout: float = 35.0) -> Any:
+        try:
+            return self._fn(req, timeout=timeout)
+        except TypeError:
+            return self._fn(req)
+
+
+def delete_cloudflare_workers_gateway(
+    *,
+    api_token: str,
+    account_id: str = "",
+    script_name: str = "",
+    state_root: Optional[Path] = None,
+    prefix: str = "pc",
+    opener_override: Optional[Callable[..., Any]] = None,
+    api_base_url: str = "https://api.cloudflare.com/client/v4",
+    timeout_sec: float = 35.0,
+) -> Dict[str, Any]:
+    """Delete a deployed Cloudflare Worker relay script (200 / 404 / code 10007 idempotent) and purge any stored API token."""
+    st_root = Path(state_root).expanduser().resolve() if state_root is not None else None
+    eff_prefix = _norm_prefix(prefix)
+    tok = _normalize_api_token(api_token) or (
+        load_cloudflare_api_token(st_root, prefix=eff_prefix) if st_root is not None else ""
+    )
+    try:
+        if not tok:
+            return {
+                "ok": False,
+                "error": "missing_api_token",
+                "message": "Cloudflare API Token 不能为空。",
+                "api_token_purged": st_root is not None,
+            }
+
+        cfg_doc = _read_merged_service_config(st_root, eff_prefix) if st_root is not None else {}
+        acc_id = (account_id or "").strip() or str(
+            cfg_doc.get("workers_dev_account_id") or cfg_doc.get("workers_account_id") or ""
+        ).strip()
+
+        raw_script = (script_name or "").strip().lower()
+        if not raw_script or raw_script == "auto":
+            raw_script = str(
+                cfg_doc.get("workers_dev_script_name") or cfg_doc.get("workers_script_name") or ""
+            ).strip().lower()
+        if not raw_script and cfg_doc:
+            wd_u = str(cfg_doc.get("workers_dev_url") or "").strip()
+            if wd_u:
+                host_u = (urlsplit(wd_u if "://" in wd_u else f"https://{wd_u}").hostname or "").lower()
+                if host_u.endswith(".workers.dev"):
+                    parts_h = host_u[: -len(".workers.dev")].split(".")
+                    if len(parts_h) >= 2 and parts_h[0]:
+                        raw_script = parts_h[0]
+        if (
+            not raw_script
+            and st_root is not None
+            and master_seed_secret_path(st_root, prefix=eff_prefix).is_file()
+        ):
+            raw_script = derive_deterministic_worker_name(st_root, prefix=eff_prefix)
+
+        clean_script = raw_script
+        if not clean_script or not _SCRIPT_SLUG_RE.match(clean_script):
+            return {
+                "ok": False,
+                "error": "invalid_script_name",
+                "message": f"未找到有效的 Cloudflare Worker 脚本名称: {script_name!r}",
+                "api_token_purged": st_root is not None,
+            }
+
+        base = (api_base_url or "https://api.cloudflare.com/client/v4").strip().rstrip("/")
+        if opener_override is not None:
+            openers_seq: Sequence[Any] = (
+                [opener_override]
+                if hasattr(opener_override, "open") and callable(getattr(opener_override, "open"))
+                else [_CallableOpenerAdapter(opener_override)]
+            )
+        else:
+            openers_seq = _build_cf_api_openers(base)
+
+        if not acc_id:
+            try:
+                st_acc, doc_acc = _cf_api_call(
+                    openers_seq,
+                    "GET",
+                    f"{base}/accounts",
+                    api_token=tok,
+                    timeout_sec=timeout_sec,
+                )
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "step": "list_accounts",
+                    "error": "network_error",
+                    "message": str(exc),
+                    "api_token_purged": st_root is not None,
+                }
+            if st_acc >= 400 or not doc_acc.get("success", False):
+                return {
+                    "ok": False,
+                    "step": "list_accounts",
+                    "status_code": st_acc,
+                    "error": "cloudflare_accounts_query_failed",
+                    "message": _extract_cf_error_summary(doc_acc, st_acc),
+                    "api_token_purged": st_root is not None,
+                }
+            raw_accounts = doc_acc.get("result")
+            accounts: List[Dict[str, str]] = []
+            if isinstance(raw_accounts, list):
+                for item in raw_accounts:
+                    if isinstance(item, dict) and item.get("id"):
+                        aid = str(item["id"]).strip()
+                        aname = str(item.get("name") or aid).strip()
+                        accounts.append({"id": aid, "name": aname})
+            if not accounts:
+                return {
+                    "ok": False,
+                    "step": "list_accounts",
+                    "error": "no_cloudflare_accounts",
+                    "message": "该 API Token 下未查询到任何 Cloudflare 账号。",
+                    "api_token_purged": st_root is not None,
+                }
+            if len(accounts) > 1:
+                return {
+                    "ok": False,
+                    "step": "list_accounts",
+                    "error": "multiple_accounts_select_required",
+                    "accounts": accounts,
+                    "api_token_purged": st_root is not None,
+                }
+            acc_id = accounts[0]["id"]
+
+        del_url = f"{base}/accounts/{acc_id}/workers/scripts/{clean_script}"
+        try:
+            st_del, doc_del = _cf_api_call(
+                openers_seq,
+                "DELETE",
+                del_url,
+                api_token=tok,
+                timeout_sec=timeout_sec,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "step": "delete_worker_script",
+                "account_id": acc_id,
+                "script_name": clean_script,
+                "error": "network_error",
+                "message": str(exc),
+                "api_token_purged": st_root is not None,
+            }
+
+        err_codes = set()
+        for err_item in (doc_del.get("errors") or []):
+            if isinstance(err_item, dict) and err_item.get("code") is not None:
+                with contextlib.suppress(TypeError, ValueError):
+                    err_codes.add(int(err_item["code"]))
+
+        already_absent = (st_del == 404) or (10007 in err_codes)
+        if (200 <= st_del < 300 and doc_del.get("success", True)) or already_absent:
+            return {
+                "ok": True,
+                "deleted": not already_absent,
+                "already_absent": already_absent,
+                "status_code": st_del,
+                "account_id": acc_id,
+                "script_name": clean_script,
+                "api_token_purged": st_root is not None,
+            }
+
+        return {
+            "ok": False,
+            "step": "delete_worker_script",
+            "status_code": st_del,
+            "account_id": acc_id,
+            "script_name": clean_script,
+            "error": "worker_script_delete_failed",
+            "message": _extract_cf_error_summary(doc_del, st_del),
+            "api_token_purged": st_root is not None,
+        }
+    finally:
+        if st_root is not None:
+            purge_cloudflare_api_token(st_root, prefix=eff_prefix)
 
 
 # ---------------------------------------------------------------------------
@@ -3312,8 +3531,10 @@ __all__ = [
     "WorkersDevRelaySupervisor",
     "classify_wss_disconnect_reason_zh",
     "cloudflare_api_token_secret_path",
+    "delete_cloudflare_workers_gateway",
     "deploy_cloudflare_workers_gateway",
     "derive_deterministic_worker_name",
+    "endpoint_secret_path",
     "ensure_master_seed_identity",
     "export_identity_recovery_png",
     "import_identity_recovery_png",
@@ -3323,6 +3544,7 @@ __all__ = [
     "pack_tunnel_frame",
     "probe_egress_source_ip",
     "probe_public_gateway_online",
+    "purge_cloudflare_api_token",
     "shred_cloudflare_api_token",
     "srvus_ssh_key_paths",
     "unpack_tunnel_frame",

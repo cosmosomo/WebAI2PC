@@ -1566,6 +1566,174 @@ def _validate_ssh_target_spec(raw_target: str, *, label: str = "ssh_target") -> 
     return _validate_ssh_host_value(val, label=label)
 
 
+class _LocalTunnelIngressShim:
+    """Loopback `127.0.0.1:0` HTTP guard shim preventing raw TCP reverse tunnels (`ssh -R` / `cloudflared`)
+    from spoofing pure local browser loopback (`Host: 127.0.0.1:<port>`) or reaching `/api/studio/*`.
+    """
+
+    def __init__(self, target_port: int, *, public_host_getter: Optional[Callable[[], str]] = None) -> None:
+        self.target_port = int(target_port)
+        self._public_host_getter = public_host_getter
+        self._srv_sock: Optional[socket.socket] = None
+        self._stop_ev = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.listen_port: int = 0
+
+    def start(self) -> int:
+        if self._srv_sock is not None and self.listen_port > 0:
+            return self.listen_port
+        self._stop_ev.clear()
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(64)
+        srv.settimeout(0.5)
+        self._srv_sock = srv
+        self.listen_port = int(srv.getsockname()[1])
+        th = threading.Thread(target=self._accept_loop, name="cosmos-tunnel-shim", daemon=True)
+        th.start()
+        self._thread = th
+        return self.listen_port
+
+    def stop(self) -> None:
+        self._stop_ev.set()
+        srv = self._srv_sock
+        self._srv_sock = None
+        self.listen_port = 0
+        if srv is not None:
+            with contextlib.suppress(OSError):
+                srv.close()
+
+    def _accept_loop(self) -> None:
+        while not self._stop_ev.is_set():
+            srv = self._srv_sock
+            if srv is None:
+                break
+            try:
+                cli, _ = srv.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            threading.Thread(target=self._handle_conn, args=(cli,), daemon=True).start()
+
+    @staticmethod
+    def _is_blocked_admin_target(raw_target: str) -> bool:
+        path_only = raw_target.split("?", 1)[0] or "/"
+        for _ in range(2):
+            path_only = unquote(path_only)
+        path_only = path_only.replace("\\", "/")
+        norm = posixpath.normpath(path_only)
+        if not norm.startswith("/"):
+            norm = "/" + norm
+        low = norm.lower()
+        for pfx in ("/studio", "/api/studio", "/oauth/local-bridge", "/local-admin", "/remote-admin", "/_cosmos_node"):
+            if low == pfx or low.startswith(pfx + "/"):
+                return True
+        return False
+
+    def _handle_conn(self, cli: socket.socket) -> None:
+        up: Optional[socket.socket] = None
+        try:
+            cli.settimeout(15.0)
+            head_buf = b""
+            while b"\r\n\r\n" not in head_buf and len(head_buf) < 65536:
+                chunk = cli.recv(8192)
+                if not chunk:
+                    return
+                head_buf += chunk
+            if b"\r\n\r\n" not in head_buf:
+                cli.sendall(b"HTTP/1.1 431 Request Header Fields Too Large\r\nConnection: close\r\n\r\n")
+                return
+            hdr_part, leftover = head_buf.split(b"\r\n\r\n", 1)
+            lines = hdr_part.decode("latin-1", errors="replace").split("\r\n")
+            if not lines:
+                return
+            req_line = lines[0]
+            parts = req_line.split(" ")
+            req_target = parts[1] if len(parts) >= 2 else "/"
+            if self._is_blocked_admin_target(req_target):
+                body = b"Forbidden"
+                resp_hdr = (
+                    "HTTP/1.1 403 Forbidden\r\n"
+                    "Content-Type: text/plain; charset=utf-8\r\n"
+                    f"Content-Length: {len(body)}\r\n"
+                    "Connection: close\r\n\r\n"
+                ).encode("latin-1")
+                cli.sendall(resp_hdr + body)
+                return
+
+            kept_hdrs: List[str] = [req_line]
+            has_fwd_host = False
+            has_fwd_proto = False
+            orig_host_val = ""
+            for raw_h in lines[1:]:
+                if ":" not in raw_h:
+                    continue
+                hk, hv = raw_h.split(":", 1)
+                kl = hk.strip().lower()
+                vs = hv.strip()
+                if kl in ("x-cosmos-via-tunnel", "x-cosmos-local-token", "connection"):
+                    continue
+                if kl == "host":
+                    orig_host_val = vs
+                if kl == "x-forwarded-host" and vs:
+                    has_fwd_host = True
+                if kl == "x-forwarded-proto" and vs:
+                    has_fwd_proto = True
+                kept_hdrs.append(f"{hk.strip()}: {vs}")
+
+            kept_hdrs.append("X-Cosmos-Via-Tunnel: 1")
+            if not has_fwd_proto:
+                kept_hdrs.append("X-Forwarded-Proto: https")
+            if not has_fwd_host:
+                pub_h = ""
+                if self._public_host_getter is not None:
+                    with contextlib.suppress(Exception):
+                        raw_pub = str(self._public_host_getter() or "").strip()
+                        if raw_pub:
+                            pub_h = (urlsplit(raw_pub).netloc or "").strip()
+                eff_fh = pub_h or (
+                    orig_host_val
+                    if orig_host_val and not orig_host_val.lower().startswith(("127.0.0.1", "localhost", "[::1]"))
+                    else "tunnel.invalid"
+                )
+                kept_hdrs.append(f"X-Forwarded-Host: {eff_fh}")
+            kept_hdrs.append("Connection: close")
+            rebuilt = ("\r\n".join(kept_hdrs) + "\r\n\r\n").encode("latin-1")
+
+            up = socket.create_connection(("127.0.0.1", self.target_port), timeout=10.0)
+            up.settimeout(None)
+            cli.settimeout(None)
+            up.sendall(rebuilt + leftover)
+
+            def _pipe(src: socket.socket, dst: socket.socket, half_close: bool) -> None:
+                try:
+                    while True:
+                        data = src.recv(32768)
+                        if not data:
+                            break
+                        dst.sendall(data)
+                except OSError:
+                    pass
+                finally:
+                    if half_close:
+                        with contextlib.suppress(OSError):
+                            dst.shutdown(socket.SHUT_WR)
+
+            t_req = threading.Thread(target=_pipe, args=(cli, up, False), daemon=True)
+            t_req.start()
+            _pipe(up, cli, True)
+        except OSError:
+            pass
+        finally:
+            if up is not None:
+                with contextlib.suppress(OSError):
+                    up.close()
+            with contextlib.suppress(OSError):
+                cli.close()
+
+
 class SrvUsSshTunnelSupervisor:
     """Supervises zero-login fixed-domain `srv.us` SSH `-R` tunnel with sticky route memory & fast recovery."""
 
@@ -1622,6 +1790,17 @@ class SrvUsSshTunnelSupervisor:
         self._last_launch_route: str = "direct"
         self._route_consecutive_failures: int = 0
         self._attempt_got_url: bool = False
+        self._ingress_shim: Optional[_LocalTunnelIngressShim] = None
+
+    def _effective_forward_port(self) -> int:
+        if self._popen_factory is subprocess.Popen:
+            if self._ingress_shim is None:
+                self._ingress_shim = _LocalTunnelIngressShim(
+                    self.local_port,
+                    public_host_getter=lambda: self.public_url,
+                )
+            return self._ingress_shim.start()
+        return int(self.local_port)
 
     @property
     def preferred_route(self) -> Optional[str]:
@@ -1638,12 +1817,19 @@ class SrvUsSshTunnelSupervisor:
 
     def build_command(self, *, proxy_command: str = "", connect_timeout_sec: int = 4) -> List[str]:
         priv_key, _ = ensure_srvus_ssh_keypair(self.state_root, prefix=self.prefix)
+        kh_dir = self.state_root / "secrets"
+        kh_dir.mkdir(parents=True, exist_ok=True)
+        kh_path = kh_dir / (f"srvus_known_hosts_{self.prefix}" if self.prefix != "pc" else "srvus_known_hosts")
         ssh_bin = _resolve_system_ssh_bin()
         eff_ct = max(1, int(connect_timeout_sec or 4))
         cmd: List[str] = [
             ssh_bin,
             "-i",
             str(priv_key),
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            f"UserKnownHostsFile={kh_path}",
             "-o",
             "StrictHostKeyChecking=accept-new",
             "-o",
@@ -1659,6 +1845,9 @@ class SrvUsSshTunnelSupervisor:
             "-o",
             f"ConnectTimeout={eff_ct}",
         ]
+        if "@" not in self.ssh_host:
+            # Avoid leaking local OS `%USERNAME%` or triggering srv.us GitHub/GitLab username subdomain matching
+            cmd.extend(["-o", "User=nomatch"])
         if int(self.ssh_port) != 22:
             cmd.extend(["-p", str(int(self.ssh_port))])
         if proxy_command:
@@ -1668,11 +1857,12 @@ class SrvUsSshTunnelSupervisor:
             if "@" in self.ssh_host
             else _validate_ssh_host_value(self.ssh_host, label="ssh_host")
         )
+        fwd_port = self._effective_forward_port()
         cmd.extend(
             [
                 "-T",
                 "-R",
-                f"1:127.0.0.1:{int(self.local_port)}",
+                f"1:127.0.0.1:{fwd_port}",
                 "--",
                 eff_ssh_host,
             ]
@@ -1928,6 +2118,10 @@ class SrvUsSshTunnelSupervisor:
             self._proc = None
             job_h = self._job_handle
             self._job_handle = None
+            shim = self._ingress_shim
+            self._ingress_shim = None
+        if shim is not None:
+            shim.stop()
         if proc is not None:
             pid = getattr(proc, "pid", None)
             try:

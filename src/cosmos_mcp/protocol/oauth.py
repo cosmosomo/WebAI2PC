@@ -185,6 +185,7 @@ from cosmos_mcp.core.config import (
     _split_workspace_string,
     conn_info_filename_for_prefix,
     expand_env_and_tilde,
+    load_endpoint_secret,
     normalize_prefix,
     normalize_python_path,
     parse_bool_flag,
@@ -663,6 +664,31 @@ def _with_public_prefix(ep: TrustedGatewayEndpoint, prefix: str) -> TrustedGatew
     )
 
 
+def _without_public_prefix(ep: TrustedGatewayEndpoint) -> TrustedGatewayEndpoint:
+    if not ep.public_prefix:
+        return ep
+    base_url = f"{ep.scheme}://{ep.authority}"
+    return TrustedGatewayEndpoint(
+        gateway_id=ep.gateway_id,
+        tunnel_mode=ep.tunnel_mode,
+        scheme=ep.scheme,
+        authority=ep.authority,
+        public_prefix="",
+        base_url=base_url,
+        issuer=base_url,
+        resource=f"{base_url}/mcp",
+        readonly_resource=f"{base_url}/mcp/readonly",
+        is_loopback=ep.is_loopback,
+    )
+
+
+_SCOPE_PATH_PREFIX_RE = re.compile(r"^(/u/[a-z0-9_-]{2,64})(?:/.*)?$", re.IGNORECASE)
+_SCOPE_WK_PREFIX_RE = re.compile(
+    r"^/\.well-known/(?:oauth-authorization-server|oauth-protected-resource)(/u/[a-z0-9_-]{2,64})(?:/.*)?$",
+    re.IGNORECASE,
+)
+
+
 def resolve_trusted_gateway_from_scope(
     scope: Mapping[str, Any],
     trusted_map: Mapping[Tuple[str, str], TrustedGatewayEndpoint],
@@ -677,6 +703,11 @@ def resolve_trusted_gateway_from_scope(
         hdr_map[ks] = vs
 
     prefix = _normalize_trusted_public_prefix(hdr_map.get("x-cosmos-public-prefix", ""))
+    if not prefix:
+        raw_req_p = str(scope.get("path") or "")
+        m_sp = _SCOPE_PATH_PREFIX_RE.match(raw_req_p) or _SCOPE_WK_PREFIX_RE.match(raw_req_p)
+        if m_sp:
+            prefix = _normalize_trusted_public_prefix(m_sp.group(1).lower())
     via_tunnel = hdr_map.get("x-cosmos-via-tunnel", "").strip() == "1" or bool(hdr_map.get("cf-connecting-ip", "").strip())
     raw_host = hdr_map.get("host", "").strip()
 
@@ -705,6 +736,10 @@ def resolve_trusted_gateway_from_scope(
             hit_base = trusted_map.get((cand_auth, ""))
             if hit_base is not None:
                 return _with_public_prefix(hit_base, prefix) if prefix else hit_base
+            for (map_auth, _), ep_cand in trusted_map.items():
+                if map_auth == cand_auth:
+                    bare_ep = _without_public_prefix(ep_cand)
+                    return _with_public_prefix(bare_ep, prefix) if prefix else bare_ep
         return None
 
     # Branch 1: Non-loopback `Host` -> match strictly against `trusted_map` (ignore client-forged `X-Forwarded-Host`)
@@ -830,8 +865,9 @@ def verify_owner_password(password: str, password_hash: str, salt_hex: str) -> b
         if hmac.compare_digest(digest, password_hash):
             return True
         compact = re.sub(r"[\s-]+", "", cleaned).upper()
-        if len(compact) == 20 and all(ch in UNAMBIGUOUS_PW_ALPHABET for ch in compact):
-            formatted = "-".join(compact[i : i + 5] for i in range(0, 20, 5))
+        if len(compact) in (20, 24) and all(ch in UNAMBIGUOUS_PW_ALPHABET for ch in compact):
+            grp = 5 if len(compact) == 20 else 6
+            formatted = "-".join(compact[i : i + grp] for i in range(0, len(compact), grp))
             if formatted != cleaned:
                 alt_digest = hashlib.scrypt(formatted.encode("utf-8"), salt=salt_bytes, n=16384, r=8, p=1).hex()
                 return hmac.compare_digest(alt_digest, password_hash)
@@ -2139,12 +2175,34 @@ class OAuthProvider:
             is_loopback=True,
         )
 
+    def get_active_endpoint_secret(self) -> str:
+        eff_p = str(getattr(self, "_eff_prefix", "") or getattr(self, "tool_prefix", "") or "pc").strip() or "pc"
+        for cand_sr in self._candidate_state_roots():
+            sec = load_endpoint_secret(cand_sr, prefix=eff_p)
+            if sec:
+                return sec
+        return ""
+
     def get_effective_trusted_gateways(self) -> Dict[Tuple[str, str], TrustedGatewayEndpoint]:
         merged = dict(self.trusted_gateways)
         if not self._explicit_empty_gateways:
             def_ep = self._default_gateway_endpoint()
             if not def_ep.is_loopback and (def_ep.authority, def_ep.public_prefix.lower()) not in merged:
                 self._insert_trusted_endpoint(merged, def_ep)
+        ep_sec = self.get_active_endpoint_secret()
+        if ep_sec:
+            sec_pfx = f"/u/{ep_sec}"
+            for ep_item in list(merged.values()):
+                if not ep_item.is_loopback and ep_item.authority:
+                    sec_ep = _with_public_prefix(ep_item, sec_pfx)
+                    merged[(sec_ep.authority, sec_pfx)] = sec_ep
+                    self.allowed_resources.update(
+                        {
+                            sec_ep.base_url,
+                            sec_ep.resource.rstrip("/"),
+                            sec_ep.readonly_resource.rstrip("/"),
+                        }
+                    )
         return merged
 
     def current_request_gateway(self) -> TrustedGatewayEndpoint:
@@ -3869,6 +3927,11 @@ class OAuthProvider:
         if scheme_a == scheme_b and auth_a == auth_b and pfx_a == pfx_b:
             return True
         if pfx_a != pfx_b:
+            ep_sec = self.get_active_endpoint_secret()
+            if ep_sec and scheme_a == scheme_b and auth_a == auth_b:
+                sec_pfx = f"/u/{ep_sec}"
+                if (pfx_a == "" and pfx_b == sec_pfx) or (pfx_b == "" and pfx_a == sec_pfx):
+                    return True
             return False
         eff_map = self.get_effective_trusted_gateways()
         ep_a = eff_map.get((auth_a, pfx_a)) or eff_map.get((auth_a, ""))

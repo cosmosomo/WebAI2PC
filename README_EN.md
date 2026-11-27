@@ -68,7 +68,7 @@ The local console includes 3 gateway cards (all supporting independent toggles f
 
 ## One-Shot Local Showcase · Copy & Run
 
-<p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC One-Shot Local 3D Showcase Wall" width="100%" /></p>
+<p align="center"><img src="assets/readme/cases-trio-banner-en-dark.png" alt="WebAI2PC One-Shot Local 3D Showcase Wall" width="100%" /></p>
 
 With zero external textures, libraries, or CDNs, prepend `@Cosmos ` in Web Gemini or `@WebAI2PC ` in everyday Web ChatGPT `Chat` mode (`$0` extra API bills and zero `Work / Codex` quota usage) to generate and run these offline WebGL2 projects at 60fps directly inside your local workspace folder:
 
@@ -114,7 +114,7 @@ With zero external textures, libraries, or CDNs, prepend `@Cosmos ` in Web Gemin
 ## Local Visual Console
 
 <p align="center">
-  <img src="assets/readme/studio-console.png" alt="WebAI2PC Local Visual Console" width="100%" />
+  <img src="assets/readme/studio-console-en.png" alt="WebAI2PC Local Visual Console" width="100%" />
 </p>
 
 > Looking for the **architecture diagram, safety guardrails, full 16-tool reference, and mobile OAuth screenshots**? Open the **[Docs Hub (`docs/`)](docs/README.md)**.

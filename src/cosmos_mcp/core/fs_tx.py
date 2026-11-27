@@ -23,8 +23,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -101,6 +103,179 @@ def _hide_windows_dir(dir_p: Path) -> None:
     if sys.platform == "win32":
         with contextlib.suppress(Exception):
             ctypes.windll.kernel32.SetFileAttributesW(str(dir_p), 0x02)
+
+
+_ACL_CACHE_LOCK = threading.Lock()
+_ACL_APPLIED_CACHE: set[Tuple[str, bool, int]] = set()
+_CURRENT_WIN_USER_SID: Optional[str] = None
+_WIN_SID_RE = re.compile(r"^S-1-\d+(?:-\d+)+$")
+
+
+def _get_current_windows_user_sid() -> str:
+    """Resolve current Windows process token user SID (`S-1-5-21-...`) in 0ms via 64-bit safe `ctypes`."""
+    global _CURRENT_WIN_USER_SID
+    if _CURRENT_WIN_USER_SID is not None:
+        return _CURRENT_WIN_USER_SID
+    if sys.platform != "win32":
+        return ""
+    try:
+        from ctypes import wintypes
+
+        class _SID_AND_ATTRIBUTES(ctypes.Structure):
+            _fields_ = [
+                ("Sid", ctypes.c_void_p),
+                ("Attributes", wintypes.DWORD),
+            ]
+
+        class _TOKEN_USER(ctypes.Structure):
+            _fields_ = [
+                ("User", _SID_AND_ATTRIBUTES),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+        kernel32.LocalFree.restype = wintypes.HLOCAL
+
+        advapi32.OpenProcessToken.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.HANDLE),
+        ]
+        advapi32.OpenProcessToken.restype = wintypes.BOOL
+
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        advapi32.GetTokenInformation.restype = wintypes.BOOL
+
+        advapi32.ConvertSidToStringSidW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+
+        TOKEN_QUERY = 0x0008
+        TOKEN_USER_CLASS = 1
+
+        tok_handle = wintypes.HANDLE()
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(tok_handle)):
+            return ""
+        try:
+            needed = wintypes.DWORD(0)
+            advapi32.GetTokenInformation(tok_handle, TOKEN_USER_CLASS, None, 0, ctypes.byref(needed))
+            if needed.value == 0:
+                return ""
+            buf = ctypes.create_string_buffer(needed.value)
+            if not advapi32.GetTokenInformation(
+                tok_handle,
+                TOKEN_USER_CLASS,
+                buf,
+                needed.value,
+                ctypes.byref(needed),
+            ):
+                return ""
+            tok_user = ctypes.cast(buf, ctypes.POINTER(_TOKEN_USER)).contents
+            sid_ptr = tok_user.User.Sid
+            if not sid_ptr:
+                return ""
+            str_sid_ptr = ctypes.c_void_p()
+            if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(str_sid_ptr)):
+                return ""
+            try:
+                sid_str = ctypes.wstring_at(str_sid_ptr.value) if str_sid_ptr.value else ""
+            finally:
+                if str_sid_ptr.value:
+                    kernel32.LocalFree(ctypes.c_void_p(str_sid_ptr.value))
+            if sid_str and _WIN_SID_RE.match(sid_str):
+                _CURRENT_WIN_USER_SID = sid_str
+                return sid_str
+            return ""
+        finally:
+            if tok_handle.value:
+                kernel32.CloseHandle(tok_handle)
+    except Exception:
+        return ""
+
+
+def apply_current_user_only_acl(path: Union[str, Path], *, force_win_acl: bool = False) -> bool:
+    """Restrict `path` to current OS user (+ SYSTEM & Administrators on Windows) with zero console popup."""
+    try:
+        p = Path(path)
+        if not p.exists() or p.is_symlink():
+            return False
+        st = p.stat()
+        is_dir = stat.S_ISDIR(st.st_mode)
+    except OSError:
+        return False
+
+    if sys.platform != "win32":
+        try:
+            os.chmod(p, 0o700 if is_dir else 0o600)
+            return True
+        except OSError:
+            return False
+
+    if os.environ.get("PYTEST_CURRENT_TEST") and not force_win_acl:
+        if is_dir:
+            with contextlib.suppress(OSError):
+                os.chmod(p, 0o700)
+        return True
+
+    norm_k = canonical_lock_key(p)
+    ctime_ns = int(getattr(st, "st_ctime_ns", 0))
+    cache_entry = (norm_k, is_dir, ctime_ns)
+    with _ACL_CACHE_LOCK:
+        if cache_entry in _ACL_APPLIED_CACHE:
+            return True
+
+    sid = _get_current_windows_user_sid()
+    if not sid or not _WIN_SID_RE.match(sid):
+        return False
+
+    sys_root = (os.environ.get("SystemRoot") or r"C:\Windows").strip()
+    icacls_cand = Path(sys_root) / "System32" / "icacls.exe"
+    icacls_exe = str(icacls_cand) if icacls_cand.is_file() else "icacls"
+    perm = "(OI)(CI)F" if is_dir else "F"
+    cmd = [
+        icacls_exe,
+        str(p),
+        "/inheritance:r",
+        "/grant:r",
+        f"*S-1-5-18:{perm}",
+        f"*S-1-5-32-544:{perm}",
+        f"*{sid}:{perm}",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8.0,
+            check=False,
+            creationflags=0x08000000,
+        )
+        if proc.returncode == 0:
+            with _ACL_CACHE_LOCK:
+                if len(_ACL_APPLIED_CACHE) > 4096:
+                    _ACL_APPLIED_CACHE.clear()
+                _ACL_APPLIED_CACHE.add(cache_entry)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def find_office_temp_lock_file(target_p: Path) -> Optional[Path]:

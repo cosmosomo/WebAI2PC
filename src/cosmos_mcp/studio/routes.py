@@ -46,17 +46,26 @@ from cosmos_mcp.core.config import (
     PRODUCT_VERSION,
     UNAMBIGUOUS_PW_ALPHABET,
     LiveRuntimePolicy,
+    apply_endpoint_secret_to_url,
+    clear_endpoint_secret,
     conn_info_filename_for_prefix,
     discover_common_code_directories,
     emit_kill_signal,
     ensure_initialized,
     expand_env_and_tilde,
+    generate_endpoint_secret,
+    is_plaintext_connection_password_wiped,
+    load_encrypted_connection_password,
+    load_endpoint_secret,
     normalize_prefix,
     parse_bool_flag,
     parse_pack_spec,
     parse_strict_tier,
     parse_strict_toolset_profile,
     resolve_service_cfg_path,
+    save_endpoint_secret,
+    strip_endpoint_secret_from_url,
+    wipe_plaintext_connection_password,
 )
 import difflib
 import threading
@@ -152,6 +161,7 @@ try:
         OAuthProvider,
         OAuthSQLiteStore,
         derive_consent_pair_code,
+        get_current_request_gateway,
         load_consent_template_html,
         render_consent_template_html,
         resolve_request_client_ip,
@@ -168,6 +178,7 @@ try:
 except ImportError:
     OAuthProvider = object  # type: ignore[assignment,misc]
     OAuthSQLiteStore = Any  # type: ignore[assignment,misc]
+    get_current_request_gateway = lambda: None  # type: ignore[assignment]
     handle_consent_complete_request = None  # type: ignore[assignment]
     handle_oauth_local_bridge_request = None  # type: ignore[assignment]
     handle_web_consent_request = None  # type: ignore[assignment]
@@ -850,6 +861,7 @@ def _resolve_studio_gateways_view(
     d_legacy_slot, _ = _slot_and_submode_for_tunnel_mode(d_legacy_mode) if d_running else ("", "")
 
     gw_base = str(extra_cfg.get("public_gateway_base") or DEFAULT_PUBLIC_GATEWAY_BASE or "").strip().rstrip("/")
+    ep_sec = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
     gateways_view: Dict[str, Dict[str, Any]] = {}
 
     for gid in STUDIO_GATEWAY_IDS:
@@ -978,7 +990,17 @@ def _resolve_studio_gateways_view(
             eff_mode = submode if enabled else "disabled"
 
         eff_ready_pub = cand_url if public_https_ready else ""
+        eff_ready_disp = (
+            apply_endpoint_secret_to_url(eff_ready_pub, ep_sec)
+            if (ep_sec and eff_ready_pub)
+            else eff_ready_pub
+        )
         disp_cfg_pub = cand_url or cfg_url
+        disp_cfg_with_sec = (
+            apply_endpoint_secret_to_url(disp_cfg_pub, ep_sec)
+            if (ep_sec and disp_cfg_pub)
+            else disp_cfg_pub
+        )
         gateways_view[gid] = {
             "gateway_id": gid,
             "label_zh": GATEWAY_SLOT_LABELS_ZH[gid],
@@ -988,13 +1010,13 @@ def _resolve_studio_gateways_view(
             "status": status,
             "status_label_zh": status_label_zh,
             "public_https_ready": public_https_ready,
-            "public_url": eff_ready_pub or (disp_cfg_pub if enabled else ""),
+            "public_url": eff_ready_disp or (disp_cfg_with_sec if enabled else ""),
             "configured_url": disp_cfg_pub,
-            "mcp_url": f"{eff_ready_pub}/mcp" if public_https_ready else "",
-            "readonly_mcp_url": f"{eff_ready_pub}/mcp/readonly" if public_https_ready else "",
-            "mcp_readonly_url": f"{eff_ready_pub}/mcp/readonly" if public_https_ready else "",
-            "chatgpt_mcp_url": f"{eff_ready_pub}/mcp" if public_https_ready else "",
-            "skill_url": f"{eff_ready_pub}/skill" if public_https_ready else "",
+            "mcp_url": f"{eff_ready_disp}/mcp" if public_https_ready else "",
+            "readonly_mcp_url": f"{eff_ready_disp}/mcp/readonly" if public_https_ready else "",
+            "mcp_readonly_url": f"{eff_ready_disp}/mcp/readonly" if public_https_ready else "",
+            "chatgpt_mcp_url": f"{eff_ready_disp}/mcp" if public_https_ready else "",
+            "skill_url": f"{eff_ready_disp}/skill" if public_https_ready else "",
             "srvus_fixed_active": srvus_fixed_active,
             "instant_fallback_active": instant_fallback_active,
             "public_gateway_online": pub_gw_online if gid == "instant" else False,
@@ -1106,6 +1128,10 @@ def _resolve_studio_public_https_urls(
     tunnel_mode: str,
     extra_cfg: Dict[str, Any],
     d_doc: Optional[Dict[str, Any]],
+    policy: Optional[LiveRuntimePolicy] = None,
+    state_root: Optional[Path] = None,
+    prefix: str = "pc",
+    endpoint_secret: str = "",
 ) -> Dict[str, Any]:
     """Assemble Studio connection URLs without ever leaking `http://127.0.0.1` or unprovisioned placeholder domains."""
     cand = (raw_public_url or "").strip().rstrip("/")
@@ -1142,7 +1168,15 @@ def _resolve_studio_public_https_urls(
         and not is_dead_placeholder
         and not daemon_explicit_not_ready
     )
+    eff_ep_sec = str(endpoint_secret or "").strip().lower()
+    if not eff_ep_sec:
+        sr_cand = policy.state_root if policy is not None else state_root
+        pfx_cand = policy.eff_prefix if policy is not None else prefix
+        if sr_cand is not None:
+            eff_ep_sec = load_endpoint_secret(sr_cand, prefix=pfx_cand)
     eff_clean_pub = cand if public_https_ready else ""
+    if eff_clean_pub and eff_ep_sec:
+        eff_clean_pub = apply_endpoint_secret_to_url(eff_clean_pub, eff_ep_sec)
     is_srvus_host = cand_host.endswith(".srv.us")
     srvus_fixed_active = bool(
         tunnel_mode == "public_gateway"
@@ -2463,7 +2497,7 @@ def _extract_saved_connection_password(state_root: Path, eff_prefix: str) -> str
                         return val
             except Exception:
                 continue
-    return ""
+    return load_encrypted_connection_password(state_root, prefix=eff_prefix)
 
 
 def _read_pair_code(state_root: Path, eff_prefix: str, fallback_seed: str) -> str:
@@ -2708,6 +2742,11 @@ def _build_studio_state_payload(
     eff_pack_desktop = bool(has_desktop and allow_exec)
 
     pw_plain = _extract_saved_connection_password(policy.state_root, policy.eff_prefix)
+    has_saved_pw = bool(pw_plain)
+    eff_conn_pw = pw_plain if is_loopback else ""
+    ep_sec_cur = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+    ep_sec_masked = (ep_sec_cur[:4] + "••••" + ep_sec_cur[-4:]) if len(ep_sec_cur) >= 10 else ""
+    pw_wiped_flag = is_plaintext_connection_password_wiped(policy.state_root, prefix=policy.eff_prefix)
     pair_code = _read_pair_code(policy.state_root, policy.eff_prefix, fallback_seed=local_api_token)
     dynamic_pair_code = ""
     if provider is not None and hasattr(provider, "get_dynamic_pair_code"):
@@ -2875,7 +2914,11 @@ def _build_studio_state_payload(
             "tunnel_connecting": tunnel_connecting,
             "tunnel_error": tunnel_err,
             "reboot_notice": gw_view["reboot_notice"],
-            "connection_password": pw_plain,
+            "connection_password": eff_conn_pw,
+            "has_saved_password": has_saved_pw,
+            "endpoint_secret_enabled": bool(ep_sec_cur),
+            "endpoint_secret_masked": ep_sec_masked,
+            "plaintext_password_wiped": bool(pw_wiped_flag),
             "pair_code": pair_code,
             "consent_pair_code": pair_code,
             "dynamic_pair_code": dynamic_pair_code,
@@ -2995,8 +3038,20 @@ def render_admin_status_html(
     if admin_error:
         boot["flash_error"] = admin_error
 
+    boot_for_html = dict(boot)
+    if isinstance(boot.get("connection"), dict):
+        conn_copy = dict(boot["connection"])
+        orig_pw = str(conn_copy.get("connection_password") or "")
+        conn_copy["has_saved_password"] = bool(
+            conn_copy.get("has_saved_password")
+            or orig_pw
+            or _extract_saved_connection_password(policy.state_root, policy.eff_prefix)
+        )
+        conn_copy["connection_password"] = ""
+        boot_for_html["connection"] = conn_copy
+
     tpl = read_asset_text("index.html")
-    safe_boot_json = json.dumps(boot, ensure_ascii=False).replace("</", "<\\/")
+    safe_boot_json = json.dumps(boot_for_html, ensure_ascii=False).replace("</", "<\\/")
     status_kind = str(boot.get("status_kind") or "online")
     status_text = str(boot.get("status_text") or "在线运行 · 工作区内顺畅开发")
     dev_lbl = str(boot.get("device_label") or policy.device_label)
@@ -3011,6 +3066,8 @@ def render_admin_status_html(
     rendered = tpl
     for k, v in replacements.items():
         rendered = rendered.replace(k, v)
+    if "/static/security-uninstall.js" not in rendered and "</body>" in rendered:
+        rendered = rendered.replace("</body>", '  <script src="/static/security-uninstall.js" defer></script>\n</body>', 1)
     return HTMLResponse(
         rendered,
         status_code=http_status,
@@ -3502,7 +3559,16 @@ def mount_standalone_status_ui(
     from cosmos_mcp.protocol.transport import OriginGuardASGI
 
     def _res_meta_for(sfx: str) -> str:
-        full_u = get_public_url() + sfx
+        cur_gw = get_current_request_gateway()
+        base_u = (
+            cur_gw.base_url
+            if (cur_gw is not None and not cur_gw.is_loopback and cur_gw.base_url)
+            else get_public_url()
+        ).rstrip("/")
+        ep_sec_meta = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+        if ep_sec_meta:
+            base_u = apply_endpoint_secret_to_url(base_u, ep_sec_meta)
+        full_u = base_u + sfx
         if build_resource_metadata_url is not None:
             return str(build_resource_metadata_url(AnyHttpUrl(full_u)))
         return _build_resource_metadata_url_fallback(full_u)
@@ -3692,7 +3758,7 @@ def mount_standalone_status_ui(
         return resp
 
     def _state_snapshot(request: Request) -> Dict[str, Any]:
-        return _build_studio_state_payload(
+        snap = _build_studio_state_payload(
             request,
             policy=policy,
             dispatcher=dispatcher,
@@ -3707,6 +3773,11 @@ def mount_standalone_status_ui(
             skills_service=skills_service,
             unlock_csrf=unlock_csrf,
         )
+        if not is_strict_direct_loopback(request, port):
+            conn_d = snap.get("connection")
+            if isinstance(conn_d, dict):
+                conn_d["connection_password"] = ""
+        return snap
 
     async def standalone_root(request: Request) -> Response:
         policy.refresh()
@@ -3758,6 +3829,8 @@ def mount_standalone_status_ui(
     async def tutorials_page_ep(request: Request) -> Response:
         _ = request
         html_doc = read_asset_text("tutorials.html")
+        if "/static/security-uninstall.js" not in html_doc and "</body>" in html_doc:
+            html_doc = html_doc.replace("</body>", '  <script src="/static/security-uninstall.js" defer></script>\n</body>', 1)
         return HTMLResponse(
             html_doc,
             headers={
@@ -3821,6 +3894,34 @@ def mount_standalone_status_ui(
                 )
         return Response("Not Found", status_code=404)
 
+    _allowed_tutorial_png_files = frozenset(
+        {
+            "gemini-step1-personal-intelligence.png",
+            "gemini-step2-connected-apps.png",
+            "gemini-step3-connectors-custom.png",
+            "gemini-step4-mcp-server-url.png",
+        }
+    )
+
+    async def static_tutorial_img_ep(request: Request) -> Response:
+        tut_file = str(request.path_params.get("tut_file", "") or "").strip()
+        if tut_file not in _allowed_tutorial_png_files:
+            return Response("Not Found", status_code=404)
+        base_dir = Path(__file__).resolve().parent
+        candidates = [
+            base_dir.parent.parent / "assets" / "tutorials" / tut_file,
+            base_dir.parent.parent.parent / "assets" / "tutorials" / tut_file,
+            base_dir / "static" / "showcase" / tut_file,
+        ]
+        for cand in candidates:
+            if cand.is_file():
+                return Response(
+                    cand.read_bytes(),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
+                )
+        return Response("Not Found", status_code=404)
+
     async def tutorials_md_ep(request: Request) -> Response:
         _ = request
         from cosmos_mcp.core.tutorials_catalog import render_public_tutorials_markdown
@@ -3844,6 +3945,7 @@ def mount_standalone_status_ui(
             "studio.js": "application/javascript; charset=utf-8",
             "brand-packs.js": "application/javascript; charset=utf-8",
             "tutorials.js": "application/javascript; charset=utf-8",
+            "security-uninstall.js": "application/javascript; charset=utf-8",
             "index.html": "text/html; charset=utf-8",
             "tutorials.html": "text/html; charset=utf-8",
             "favicon.svg": "image/svg+xml",
@@ -4122,8 +4224,191 @@ def mount_standalone_status_ui(
 
         sub_act = str(data.get("action") or "save_tunnel").strip().lower()
         msg = "连接设置已保存。"
+
+        def _sync_provider_endpoint_state() -> None:
+            st_obj = getattr(app, "state", None)
+            sync_box = getattr(st_obj, "gateway_sync_hook_box", None) if st_obj is not None else None
+            if isinstance(sync_box, list) and sync_box and callable(sync_box[0]):
+                try:
+                    sync_box[0](True)
+                except Exception:
+                    pass
+            if provider is not None:
+                try:
+                    provider.get_effective_trusted_gateways()
+                except Exception:
+                    pass
+                for cb in list(getattr(provider, "_gateway_sync_listeners", ())):
+                    try:
+                        cb()
+                    except Exception:
+                        pass
+
         try:
-            if sub_act in ("revoke_client", "disconnect_client"):
+            if sub_act == "reveal_password":
+                if not is_strict_direct_loopback(request, port):
+                    return JSONResponse(
+                        {"ok": False, "error": "安全限制：仅允许在本机浏览器查看连接口令。"},
+                        status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )
+                pw_rev = _extract_saved_connection_password(policy.state_root, policy.eff_prefix)
+                return _json_with_optional_cookie(
+                    {
+                        "ok": True,
+                        "connection_password": pw_rev,
+                        "has_saved_password": bool(pw_rev),
+                    },
+                    request,
+                    minted,
+                )
+            elif sub_act == "rotate_password":
+                had_valid_cookie = session_mgr.verify_token(request.cookies.get(STUDIO_SESSION_COOKIE, ""), provider)
+                rot_creds = ensure_initialized(
+                    product_root=policy.state_root,
+                    cli_state_dir=str(policy.state_root),
+                    port=port,
+                    tier_key=policy.tier_key,
+                    reset_password=True,
+                    prefix=policy.eff_prefix,
+                    tool_prefix=policy.tool_prefix,
+                    device_label=policy.device_label,
+                    toolset_profile=policy.toolset_profile,
+                    workspace_roots=policy.workspace_roots,
+                    readonly_workspace_roots=getattr(policy, "readonly_workspace_roots", ()),
+                    enabled_packs=policy.enabled_packs,
+                    keep_awake=policy.keep_awake,
+                    approval_popups=policy.approval_popups,
+                    annotation_mode=policy.annotation_mode,
+                    python_path=policy.python_path,
+                    scan_host_global_skills=getattr(policy, "scan_host_global_skills", False),
+                    tray_enabled=getattr(policy, "tray_enabled", True),
+                )
+                if provider is not None:
+                    provider.password_hash = str(rot_creds["password_hash"])
+                    provider.salt = str(rot_creds["salt"])
+                policy.refresh(force=True)
+                want_rev_pw = parse_bool_flag(data.get("revoke_sessions"), default=False)
+                if want_rev_pw:
+                    store.revoke_all_tokens(delete_clients=False)
+                    pm = _get_proc_mgr()
+                    if pm is not None:
+                        pm.kill_all_active_commands(
+                            reason="studio_rotate_password_revoke",
+                            include_persisted_bg=True,
+                            prefix_filter=policy.eff_prefix,
+                        )
+                    dispatcher.shutdown_packs(prefix_filter=policy.eff_prefix)
+                    close_all_browser_sessions(prefix_filter=policy.eff_prefix)
+                    _emit_kill_signal_resilient(
+                        policy.state_root,
+                        reason="studio_rotate_password_revoke",
+                        prefix_filter=policy.eff_prefix,
+                    )
+                is_lb_rot = is_strict_direct_loopback(request, port)
+                if not is_lb_rot and (minted or had_valid_cookie):
+                    new_sid_tok = session_mgr.mint_token(provider, is_loopback=False)
+                    request._cookies = {**dict(request.cookies), STUDIO_SESSION_COOKIE: new_sid_tok}
+                    minted = True
+                msg = (
+                    "已生成全新高熵连接口令并吊销全部旧授权会话。"
+                    if want_rev_pw
+                    else "已生成全新高熵连接口令（旧口令已失效）。"
+                )
+            elif sub_act == "wipe_plaintext_password":
+                wipe_res = wipe_plaintext_connection_password(policy.state_root, prefix=policy.eff_prefix)
+                if not wipe_res.get("ok"):
+                    raise ValueError(str(wipe_res.get("error") or "擦除明文口令文件失败。"))
+                snap = _state_snapshot(request)
+                snap["wiped_files"] = wipe_res.get("wiped_files", [])
+                snap["message"] = "已擦除本地文本文件中的明文口令（口令已受本机加密保险箱保护）。"
+                return _json_with_optional_cookie(snap, request, minted)
+            elif sub_act == "rotate_endpoint_secret":
+                prev_sec = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+                new_sec = save_endpoint_secret(
+                    policy.state_root,
+                    generate_endpoint_secret(24),
+                    prefix=policy.eff_prefix,
+                )
+                saved_extra_rot = _read_saved_extra_cfg(policy)
+                cur_slots_rot, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_rot)
+                raw_wd_rot = str(
+                    cur_slots_rot["workers_dev"].get("public_url")
+                    or saved_extra_rot.get("workers_dev_url")
+                    or ""
+                ).strip()
+                if raw_wd_rot:
+                    next_wd_rot = apply_endpoint_secret_to_url(raw_wd_rot, new_sec, previous_secret=prev_sec)
+                    _persist_extra_studio_config(policy, workers_dev_url=next_wd_rot)
+                    _update_studio_gateway_slot(
+                        policy,
+                        "workers_dev",
+                        public_url=next_wd_rot,
+                        port=port,
+                        set_public_url=set_public_url,
+                    )
+                want_rev_ep = parse_bool_flag(data.get("revoke_sessions"), default=False)
+                if want_rev_ep:
+                    store.revoke_all_tokens(delete_clients=False)
+                    if provider is not None and hasattr(provider, "allowed_resources"):
+                        stale_res = {
+                            r for r in list(provider.allowed_resources)
+                            if (prev_sec and f"/u/{prev_sec}" in r.lower())
+                        }
+                        provider.allowed_resources.difference_update(stale_res)
+                        st_obj = getattr(app, "state", None)
+                        bb_obj = getattr(st_obj, "bearer_backend", None) if st_obj is not None else None
+                        if bb_obj is not None and hasattr(bb_obj, "allowed_resources"):
+                            bb_obj.allowed_resources.difference_update(stale_res)
+                    pm = _get_proc_mgr()
+                    if pm is not None:
+                        pm.kill_all_active_commands(
+                            reason="studio_rotate_endpoint_secret_revoke",
+                            include_persisted_bg=True,
+                            prefix_filter=policy.eff_prefix,
+                        )
+                    dispatcher.shutdown_packs(prefix_filter=policy.eff_prefix)
+                    close_all_browser_sessions(prefix_filter=policy.eff_prefix)
+                    _emit_kill_signal_resilient(
+                        policy.state_root,
+                        reason="studio_rotate_endpoint_secret_revoke",
+                        prefix_filter=policy.eff_prefix,
+                    )
+                policy.refresh(force=True)
+                _sync_provider_endpoint_state()
+                msg = (
+                    "已轮换私密连接路径并吊销旧授权令牌。"
+                    if want_rev_ep
+                    else "已启用/轮换 24 位私密连接路径（裸路径已隐身返回 404，已连接会话保持平滑不断线）。"
+                )
+            elif sub_act == "disable_endpoint_secret":
+                prev_sec_dis = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+                clear_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+                if prev_sec_dis:
+                    saved_extra_dis = _read_saved_extra_cfg(policy)
+                    cur_slots_dis, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_dis)
+                    raw_wd_dis = str(
+                        cur_slots_dis["workers_dev"].get("public_url")
+                        or saved_extra_dis.get("workers_dev_url")
+                        or ""
+                    ).strip()
+                    if raw_wd_dis and f"/u/{prev_sec_dis}" in raw_wd_dis.lower():
+                        clean_wd_dis = strip_endpoint_secret_from_url(raw_wd_dis, old_secret=prev_sec_dis)
+                        _persist_extra_studio_config(policy, workers_dev_url=clean_wd_dis)
+                        _update_studio_gateway_slot(
+                            policy,
+                            "workers_dev",
+                            public_url=clean_wd_dis,
+                            port=port,
+                            set_public_url=set_public_url,
+                        )
+                    if provider is not None and hasattr(provider, "allowed_resources"):
+                        stale_dis = {r for r in list(provider.allowed_resources) if f"/u/{prev_sec_dis}" in r.lower()}
+                        provider.allowed_resources.difference_update(stale_dis)
+                policy.refresh(force=True)
+                _sync_provider_endpoint_state()
+                msg = "已关闭私密连接路径并恢复默认短路径 /mcp。"
+            elif sub_act in ("revoke_client", "disconnect_client"):
                 cid = str(data.get("client_id") or "").strip()
                 if not cid:
                     raise ValueError("客户端标识不能为空。")
@@ -5008,6 +5293,7 @@ def mount_standalone_status_ui(
                 "public_url": gw_view["public_url"],
                 "mcp_url": gw_view["mcp_url"],
                 "mcp_readonly_url": gw_view["mcp_readonly_url"],
+                "endpoint_secret_enabled": bool(load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)),
                 "readonly_mcp_url": gw_view["readonly_mcp_url"],
                 "skill_url": gw_view["skill_url"],
                 "srvus_fixed_active": gw_view["srvus_fixed_active"],
@@ -5098,6 +5384,132 @@ def mount_standalone_status_ui(
             request,
             minted,
         )
+
+    async def studio_uninstall_ep(request: Request) -> Response:
+        data, _ = await _parse_request_data(request)
+        if data is None:
+            return JSONResponse({"ok": False, "error": "请求格式无效。"}, status_code=400)
+        if not is_strict_direct_loopback(request, port):
+            return JSONResponse(
+                {"ok": False, "error": "安全限制：仅允许在本机浏览器执行一键卸载。"},
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        err_resp, minted = _check_studio_auth(request, data)
+        if err_resp is not None:
+            return err_resp
+
+        purge = parse_bool_flag(data.get("purge"), default=True)
+        dry_run = parse_bool_flag(data.get("dry_run"), default=False)
+        cf_api_token = str(data.get("cf_api_token") or "").strip()
+
+        from cosmos_mcp.launcher.doctor import run_uninstall
+
+        if dry_run:
+            preview_res = await asyncio.to_thread(
+                run_uninstall,
+                policy.state_root,
+                prefix=policy.eff_prefix,
+                purge=purge,
+                dry_run=True,
+            )
+            return _json_with_optional_cookie(preview_res, request, minted)
+
+        cf_cleanup_res: Optional[Dict[str, Any]] = None
+        if cf_api_token:
+            del_cf_fn = getattr(cfgw, "delete_cloudflare_workers_gateway", None)
+            if callable(del_cf_fn):
+                try:
+                    sig_cf = inspect.signature(del_cf_fn).parameters
+                    cf_kw: Dict[str, Any] = {}
+                    if "api_token" in sig_cf:
+                        cf_kw["api_token"] = cf_api_token
+                    elif "cf_api_token" in sig_cf:
+                        cf_kw["cf_api_token"] = cf_api_token
+                    if "state_root" in sig_cf:
+                        cf_kw["state_root"] = policy.state_root
+                    if "prefix" in sig_cf:
+                        cf_kw["prefix"] = policy.eff_prefix
+                    cf_cleanup_res = await asyncio.to_thread(del_cf_fn, **cf_kw)
+                except Exception as exc:
+                    cf_cleanup_res = {"ok": False, "error": str(exc)}
+            else:
+                cf_cleanup_res = {"ok": False, "skipped": True, "reason": "delete_cloudflare_workers_gateway_unavailable"}
+
+        if store is not None:
+            try:
+                store.revoke_all_tokens(delete_clients=True)
+            except Exception:
+                pass
+        pm = _get_proc_mgr()
+        if pm is not None:
+            try:
+                pm.kill_all_active_commands(
+                    reason="studio_uninstall",
+                    include_persisted_bg=True,
+                    prefix_filter=policy.eff_prefix,
+                )
+            except Exception:
+                pass
+        dispatcher.shutdown_packs(prefix_filter=policy.eff_prefix)
+        close_all_browser_sessions(prefix_filter=policy.eff_prefix)
+        _emit_kill_signal_resilient(
+            policy.state_root,
+            reason="studio_uninstall",
+            prefix_filter=policy.eff_prefix,
+        )
+        try:
+            stop_flag_u = daemon_stop_flag_path(policy.state_root, policy.eff_prefix)
+            stop_flag_u.parent.mkdir(parents=True, exist_ok=True)
+            stop_flag_u.write_text(f"STOP:{round(time.time(), 3)}\n", encoding="utf-8")
+        except Exception:
+            pass
+
+        sync_mode = bool(
+            os.environ.get("PYTEST_CURRENT_TEST")
+            or parse_bool_flag(data.get("sync_for_test"), default=False)
+        )
+        if sync_mode:
+            final_res = await asyncio.to_thread(
+                run_uninstall,
+                policy.state_root,
+                prefix=policy.eff_prefix,
+                purge=purge,
+                dry_run=False,
+            )
+            if cf_cleanup_res is not None:
+                final_res["cf_worker_cleanup"] = cf_cleanup_res
+            final_res.setdefault("message", "已完成一键卸载与本地状态清理。")
+            return _json_with_optional_cookie(final_res, request, minted)
+
+        plan_preview = await asyncio.to_thread(
+            run_uninstall,
+            policy.state_root,
+            prefix=policy.eff_prefix,
+            purge=purge,
+            dry_run=True,
+        )
+
+        def _bg_uninstall_and_exit() -> None:
+            time.sleep(0.45)
+            try:
+                run_uninstall(policy.state_root, prefix=policy.eff_prefix, purge=purge, dry_run=False)
+            except Exception:
+                pass
+            os._exit(0)
+
+        threading.Thread(target=_bg_uninstall_and_exit, name="cosmos-studio-uninstall", daemon=True).start()
+        out_async: Dict[str, Any] = {
+            **plan_preview,
+            "ok": True,
+            "dry_run": False,
+            "scheduled_async": True,
+            "purge": purge,
+            "message": "已启动后台一键卸载，正在清理本地文件并退出服务。",
+        }
+        if cf_cleanup_res is not None:
+            out_async["cf_worker_cleanup"] = cf_cleanup_res
+        return _json_with_optional_cookie(out_async, request, minted)
 
     async def studio_skills_ep(request: Request) -> Response:
         subpath = (request.path_params.get("subpath") or "").strip("/").lower()
@@ -5980,6 +6392,7 @@ def mount_standalone_status_ui(
         Route("/favicon.ico", endpoint=favicon_ep, methods=["GET"]),
         Route("/static/brand/{brand_file}", endpoint=static_brand_asset_ep, methods=["GET"]),
         Route("/static/showcase/{showcase_file}", endpoint=static_showcase_asset_ep, methods=["GET"]),
+        Route("/static/tutorials/{tut_file}", endpoint=static_tutorial_img_ep, methods=["GET"]),
         Route("/static/{asset_name}", endpoint=static_asset_ep, methods=["GET"]),
         Route("/studio", endpoint=studio_page_ep, methods=["GET"]),
         Route("/tutorials", endpoint=tutorials_page_ep, methods=["GET"]),
@@ -6004,6 +6417,7 @@ def mount_standalone_status_ui(
         Route("/api/studio/recovery", endpoint=studio_recovery_ep, methods=["GET", "POST"]),
         Route("/api/studio/recovery/diff", endpoint=studio_recovery_diff_ep, methods=["GET"]),
         Route("/api/studio/service-control", endpoint=studio_service_control_ep, methods=["POST"]),
+        Route("/api/studio/uninstall", endpoint=studio_uninstall_ep, methods=["POST"]),
         Route("/api/studio/skills/{subpath:path}", endpoint=studio_skills_ep, methods=["GET", "POST"]),
     ]
     has_status_route = False

@@ -22,15 +22,21 @@ import platform
 import re
 import shutil
 import socket
+import subprocess
 import sys
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import zipfile
 
 from cosmos_mcp.core.fs_tx import safe_trash_file
 from cosmos_mcp.core.net_power import detect_configured_proxy
-from cosmos_mcp.core.proc import read_log_tail_bounded
-from cosmos_mcp.launcher.autostart import disable_autostart, get_autostart_status
+from cosmos_mcp.core.proc import CREATE_NO_WINDOW, read_log_tail_bounded
+from cosmos_mcp.launcher.autostart import (
+    disable_autostart,
+    get_autostart_status,
+    unregister_windows_uninstall_entry,
+)
 from cosmos_mcp.launcher.bootstrap import (
     check_runtime_deps_ready,
     find_embedded_python_exe,
@@ -41,6 +47,8 @@ from cosmos_mcp.launcher.bootstrap import (
 from cosmos_mcp.launcher.clients import unbind_desktop_clients
 from cosmos_mcp.launcher.daemon import detect_running_instance, stop_daemon
 from cosmos_mcp.launcher.tunnels import load_tunnel_token
+
+DETACHED_PROCESS = 0x00000008
 
 UNINSTALL_PURGE_HINT_ZH = (
     "提示：默认卸载已将文件移入可恢复回收箱并保留共享 .venv；"
@@ -61,6 +69,7 @@ SENSITIVE_DICT_KEYS: Set[str] = {
     "cloudflare_api_token",
     "workers_tunnel_secret",
     "public_gateway_secret",
+    "endpoint_secret",
     "master_seed",
     "master_seed_hex",
     "master_seed_b64",
@@ -238,6 +247,8 @@ def _collect_known_secrets(state_root: Path) -> tuple[str, ...]:
             "workers_tunnel_secret*.txt",
             "public_gateway_secret*.txt",
             "vps_node_secret*.txt",
+            "endpoint_secret*.txt",
+            "local_vault*.key",
             "master_seed*",
         ):
             for tf in sec_dir.glob(sec_pat):
@@ -547,13 +558,27 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
                         _wipe_one(item)
         st_dir_sc = st_root / "state"
         if st_dir_sc.is_dir():
-            for pat in (f"oauth_{scoped_p}.sqlite3*", f"*_{scoped_p}.txt", f"*_{scoped_p}.json"):
+            for pat in (
+                f"oauth_{scoped_p}.sqlite3*",
+                f"*_{scoped_p}.txt",
+                f"*_{scoped_p}.json",
+                f"*_{scoped_p}.dpapi",
+                f"*_{scoped_p}.enc",
+                f"*_{scoped_p}.key",
+            ):
                 for item in list(st_dir_sc.glob(pat)):
                     if item.is_file() or item.is_symlink():
                         _wipe_one(item)
-        conn_sc = st_root / f"连接信息_CONNECTION_INFO_{scoped_p}.txt"
-        if conn_sc.is_file() or conn_sc.is_symlink():
-            _wipe_one(conn_sc)
+        for root_sc_name in (
+            f"连接信息_CONNECTION_INFO_{scoped_p}.txt",
+            f"connection_{scoped_p}.dpapi",
+            f"connection_{scoped_p}.enc",
+            f"endpoint_secret_{scoped_p}.txt",
+            f"local_vault_{scoped_p}.key",
+        ):
+            conn_sc = st_root / root_sc_name
+            if conn_sc.is_file() or conn_sc.is_symlink():
+                _wipe_one(conn_sc)
         return shredded
 
     if sec_dir.is_dir():
@@ -565,10 +590,14 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
             "workers_tunnel_secret*.txt",
             "public_gateway_secret*.txt",
             "vps_node_secret*.txt",
+            "endpoint_secret*.txt",
+            "local_vault*.key",
             "srvus_ed25519*",
             "vps_id_ed25519*",
             "tunnel_token*.txt",
             "connection*.txt",
+            "connection*.dpapi",
+            "connection*.enc",
         ):
             for item in list(sec_dir.glob(explicit_pat)):
                 if item.is_file() or item.is_symlink():
@@ -579,7 +608,20 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
 
     st_dir = st_root / "state"
     if st_dir.is_dir():
-        for pat in ("oauth*.sqlite3*", "oauth*", "latest_consent_pair_code*", "latest_dynamic_pair_code*", "*secret*", "*token*"):
+        for pat in (
+            "oauth*.sqlite3*",
+            "oauth*",
+            "latest_consent_pair_code*",
+            "latest_dynamic_pair_code*",
+            "connection*.dpapi",
+            "connection*.enc",
+            "endpoint_secret*.txt",
+            "local_vault*.key",
+            "*secret*",
+            "*token*",
+            "*.dpapi",
+            "*.key",
+        ):
             for item in list(st_dir.glob(pat)):
                 if item.is_file() or item.is_symlink():
                     _wipe_one(item)
@@ -588,10 +630,17 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
         dotenv_f = st_root / ".env"
         if dotenv_f.is_file() or dotenv_f.is_symlink():
             _wipe_one(dotenv_f)
-        for conn_f in list(st_root.glob("*CONNECTION_INFO*.txt")):
-            if conn_f.is_file() or conn_f.is_symlink():
-                _wipe_one(conn_f)
-        for vault_sub in (".undo_history", "trash", ".trash", ".localpc_trash"):
+        for root_sec_pat in (
+            "*CONNECTION_INFO*.txt",
+            "connection*.dpapi",
+            "connection*.enc",
+            "endpoint_secret*.txt",
+            "local_vault*.key",
+        ):
+            for conn_f in list(st_root.glob(root_sec_pat)):
+                if conn_f.is_file() or conn_f.is_symlink():
+                    _wipe_one(conn_f)
+        for vault_sub in (".undo_history", "history", "trash", ".trash", ".localpc_trash"):
             v_dir = st_root / vault_sub
             if v_dir.is_dir():
                 for item in list(v_dir.rglob("*")):
@@ -607,11 +656,14 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
                         or "workers_tunnel_secret" in low_n
                         or "public_gateway_secret" in low_n
                         or "vps_node_secret" in low_n
+                        or "endpoint_secret" in low_n
+                        or "local_vault" in low_n
                         or "master_seed" in low_n
                         or "srvus_ed25519" in low_n
                         or "vps_id_ed25519" in low_n
                         or "_secret" in low_n
                         or "_token" in low_n
+                        or low_n.endswith((".dpapi", ".enc", ".key"))
                     ):
                         _wipe_one(item)
     return shredded
@@ -657,7 +709,7 @@ RECOVERY_PRESERVE_NAMES: Set[str] = {
 
 
 def _is_cosmos_mcp_shortcut_file(path: Path) -> bool:
-    """Match only Cosmos MCP / Cosmos Studio / LocalPC-MCP `.lnk`, `.bat`, `.url`, `.command` shortcut files."""
+    """Match only Cosmos MCP / WebAI2PC / Cosmos Studio / LocalPC-MCP `.lnk`, `.bat`, `.url`, `.command` shortcut files."""
     if not path.is_file():
         return False
     low = path.name.lower()
@@ -666,11 +718,13 @@ def _is_cosmos_mcp_shortcut_file(path: Path) -> bool:
     stem = path.stem.lower()
     exact_prefixes = (
         "一键启动_cosmos_mcp",
+        "一键卸载_cosmos_mcp",
         "一键启动_localpc",
         "cosmos_mcp",
         "cosmos-mcp",
         "cosmos studio",
         "cosmos_studio",
+        "webai2pc",
         "localpc-mcp",
         "localpc_mcp",
     )
@@ -791,10 +845,42 @@ def _shortcut_belongs_to_state_root(
     return True
 
 
+def _resolve_windows_start_menu_dirs(
+    eff_home: Path,
+    *,
+    home_dir: Optional[Path] = None,
+    appdata_dir: Optional[Path] = None,
+    platform_name: Optional[str] = None,
+) -> List[Path]:
+    plat = platform_name or sys.platform
+    if plat != "win32":
+        return []
+    roaming_base: Optional[Path] = None
+    if appdata_dir is not None:
+        roaming_base = Path(appdata_dir).expanduser()
+    elif home_dir is not None:
+        roaming_base = Path(home_dir).expanduser() / "AppData" / "Roaming"
+    elif not os.environ.get("PYTEST_CURRENT_TEST"):
+        env_ap = (os.environ.get("APPDATA") or "").strip()
+        roaming_base = Path(env_ap).expanduser() if env_ap else (eff_home / "AppData" / "Roaming")
+    if roaming_base is None:
+        return []
+    prog_dir = roaming_base / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    if not prog_dir.is_dir():
+        return []
+    dirs: List[Path] = [prog_dir]
+    for sub_nm in ("WebAI2PC", "Cosmos MCP", "LocalPC-MCP"):
+        sub_p = prog_dir / sub_nm
+        if sub_p.is_dir():
+            dirs.append(sub_p)
+    return dirs
+
+
 def _find_shortcut_files(
     state_root: Path,
     desktop_dir: Optional[Path],
     *,
+    extra_shortcut_dirs: Sequence[Path] = (),
     is_default_state_root: bool = True,
     primary_state_exists: bool = False,
     configured_ports: Optional[Set[int]] = None,
@@ -805,7 +891,8 @@ def _find_shortcut_files(
     ports = configured_ports or set()
     scoped_p = (prefix_filter or "").strip().lower()
     is_scoped_non_default = bool(scoped_p and scoped_p != "pc")
-    for d in (state_root, desktop_dir):
+    search_dirs: List[Optional[Path]] = [state_root, desktop_dir, *extra_shortcut_dirs]
+    for d in search_dirs:
         if d is None or not d.is_dir():
             continue
         try:
@@ -828,6 +915,28 @@ def _find_shortcut_files(
         except OSError:
             continue
     return found
+
+
+def _schedule_windows_deferred_self_cleanup(st_root: Path) -> bool:
+    """Spawn windowless detached `cmd.exe` to clean residual locked `.venv` shell dir after Python exits."""
+    st_str = str(st_root)
+    if not st_str or any(ch in st_str for ch in ('"', "&", "|", ";", "\r", "\n")):
+        return False
+    cmd_exe = resolve_windows_system_exe("cmd.exe") or "cmd.exe"
+    cmdline = f'"{cmd_exe}" /s /d /c "ping -n 3 127.0.0.1 >nul & rmdir /s /q "{st_str}""'
+    try:
+        subprocess.Popen(
+            cmdline,
+            cwd=tempfile.gettempdir(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+        )
+        return True
+    except OSError:
+        return False
 
 
 def _find_recovery_dirs(state_root: Path, workspace_roots: List[str]) -> List[str]:
@@ -858,6 +967,7 @@ def run_uninstall(
     platform_name: Optional[str] = None,
     desktop_dir: Optional[Path] = None,
     winreg_store: Optional[Dict[str, str]] = None,
+    uninstall_reg_store: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Idempotently uninstall Cosmos MCP while isolating non-default `--prefix` and preserving recovery vaults."""
     st_root = Path(state_root).expanduser().resolve()
@@ -963,10 +1073,17 @@ def run_uninstall(
         return items
 
     planned_removals = _collect_planned_removals()
+    start_menu_dirs = _resolve_windows_start_menu_dirs(
+        eff_home,
+        home_dir=home_dir,
+        appdata_dir=appdata_dir,
+        platform_name=platform_name,
+    )
 
     shortcut_removals = _find_shortcut_files(
         st_root,
         eff_desktop,
+        extra_shortcut_dirs=start_menu_dirs,
         is_default_state_root=is_default_state_root,
         primary_state_exists=primary_state_exists,
         configured_ports=configured_ports,
@@ -1025,6 +1142,7 @@ def run_uninstall(
         stopped.append(stop_daemon(st_root, prefix=p_item))
 
     autostart_removed: List[Dict[str, Any]] = []
+    windows_uninstall_removed: List[Dict[str, Any]] = []
     for p_item in prefixes_to_stop:
         autostart_removed.append(
             disable_autostart(
@@ -1038,9 +1156,20 @@ def run_uninstall(
                 primary_state_exists=primary_state_exists,
             )
         )
+        windows_uninstall_removed.append(
+            unregister_windows_uninstall_entry(
+                state_root=st_root,
+                prefix=p_item,
+                platform_name=platform_name,
+                uninstall_reg_store=uninstall_reg_store,
+                is_default_state_root=is_default_state_root,
+                primary_state_exists=primary_state_exists,
+            )
+        )
 
     removed_paths: List[str] = []
     shortcuts_removed: List[str] = []
+    deferred_self_cleanup_scheduled = False
     shortcut_norm_set = {os.path.normcase(x) for x in shortcut_removals}
     post_stop_removals = _collect_planned_removals()
     for sc_str in shortcut_removals:
@@ -1072,14 +1201,28 @@ def run_uninstall(
                 for w in ws_roots
                 if w and Path(w).exists() and os.path.normcase(str(Path(w).resolve())) != str(st_norm)
             )
-            if (
-                st_root.exists()
-                and st_root.parent != st_root
+            is_safe_state_root = (
+                st_root.parent != st_root
                 and str(st_norm) not in protected_norms
                 and not has_ws_inside_state
-            ):
+            )
+            if st_root.exists() and is_safe_state_root:
                 if _purge_path_permanently(st_root) and str(st_root) not in removed_paths:
                     removed_paths.append(str(st_root))
+            if (
+                st_root.exists()
+                and is_safe_state_root
+                and sys.platform == "win32"
+                and platform_name is None
+                and not os.environ.get("PYTEST_CURRENT_TEST")
+            ):
+                try:
+                    exe_norm = Path(os.path.normcase(str(Path(sys.executable).resolve())))
+                    exe_inside_st = exe_norm.is_relative_to(st_norm)
+                except OSError:
+                    exe_inside_st = False
+                if exe_inside_st and _schedule_windows_deferred_self_cleanup(st_root):
+                    deferred_self_cleanup_scheduled = True
     else:
         trash_undo_base = st_root / ".undo_history"
         for p_str in post_stop_removals:
@@ -1109,10 +1252,12 @@ def run_uninstall(
         "state_root": str(st_root),
         "stopped": stopped,
         "autostart_removed": autostart_removed,
+        "windows_uninstall_removed": windows_uninstall_removed,
         "desktop_unbind": desktop_res,
         "removed_paths": removed_paths,
         "shortcuts_removed": shortcuts_removed,
         "preserved_recovery_dirs": preserved_after,
+        "deferred_self_cleanup_scheduled": deferred_self_cleanup_scheduled,
     }
     if not purge:
         out_final["purge_hint"] = UNINSTALL_PURGE_HINT_ZH
