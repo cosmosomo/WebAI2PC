@@ -11,7 +11,7 @@
 ## 二、控制台五大功能页说明
 
 1. **总览与网页连接**：
-   - 面向网页版 Gemini（绑 `/mcp`）与网页版 ChatGPT（Team / Enterprise 工作区账号绑 `/mcp`，个人 Plus / Pro 账号绑 `/mcp/readonly`）展示当前可用的 HTTPS 连接地址、6 位动态配对码与连接口令；提供「复制 AI 操作守则（推荐存入 Skills）」按钮一键复制当前工具守则；自定义连接器名称建议填写 `Cosmos`，授权刚完成时弹出绿色已连接横幅及「一键复制首句唤醒测试词」按钮（自动生成 `@Cosmos 帮我看看当前工作目录里有哪些文件`）。
+   - 面向网页版 Gemini（绑 `/mcp`，名称建议填 `Cosmos`）与网页版 ChatGPT（Team / Enterprise 工作区账号绑 `/mcp`，个人 Plus / Pro 账号绑 `/mcp/readonly`，插件名建议填 `WebAI2PC`）展示当前可用的 HTTPS 连接地址、6 位动态配对码与连接口令；网关就绪后在 ChatGPT 页签开放「复制给 Work 模式帮我连接」按钮（切到 ChatGPT 顶部 `Work` 模式由受控浏览器代填，装好后日常切回 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度）；同时提供「复制 AI 操作守则」按钮，授权刚完成时弹出绿色已连接横幅及「一键复制首句唤醒测试词」按钮。
    - **多网关独立开关并存**：3 张连接卡片右上角均配独立开关与实时状态标签，支持同时开启多路网关（如同时开启 `srv.us` 与 `Cloudflare Workers` 互不断连），点击任一已连通卡片即可切换顶部展示与复制的网关地址：① **一键上手就能用**（零登录开箱即连，默认优先连接 `https://xxxxx.srv.us` 持久固定网址，22 端口受阻自动切换 `*.trycloudflare.com` 临时通道，同机浏览器点击「本机一键允许连接（免输口令）」直接放行）；② **登录 Cloudflare 注册一下就行**（点预填链接贴一次令牌，约 3 秒自动部署免费 SQLite Durable Object 休眠网关如 `https://your-worker.your-subdomain.workers.dev` 获得终身固定网址，令牌即刻清零，后续直接拨开关启停免重填令牌）；③ **自己的服务器和域名**（填服务器 IP，支持使用 SSH 密码、填写本地 SSH 私钥路径或勾选本机默认 SSH 密钥免密登录一键部署 24 小时常驻主站同时管服务器与本地电脑，或绑定 Cloudflare Named Tunnel 固定令牌 / 自有反代域名）。
    - **顶栏交互式教程与可换风格切换器**：顶栏右侧提供「实战教程」按钮直达 `/tutorials` 6 章 24 步交互式教程中心、「深色模式 / 浅色模式」快捷切换按钮，以及「外观」浮层开关（支持切换 `warm-paper`、`obsidian-emerald`、`cupertino-frost`、`graphite-mono` 4 套明暗双模风格包、4 款 IP 图标包与 4 种视线朝向姿态；URL 附带 `?debug=1` 时可额外显示宣传片 `StylePack JSON` 导出按钮，详见 `.interface-design/system.md`）。
    - 查看已连接网页会话列表并支持单个断开或点击「全部断开」吊销。

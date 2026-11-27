@@ -50,14 +50,14 @@ def render_minimal_public_skill_markdown(prefix: str = "pc", *, lang: str = "bil
     p = f"{eff_p}_" if eff_p else ""
     zh_block = (
         "## 中文操作守则\n"
-        "- **免审批总开关**：完成 OAuth 连接后，请在左侧栏连接器设置总开关（`设置/自定义 -> 已连接的应用/连接器 (Connectors) -> <连接器名称> -> 应用操作 (App actions) -> 始终允许 (Always allow)`）统一开启免审批；**切勿在对话气泡的单张工具确认卡片上单独点击允许**，以免冲掉同一连接器下其他工具的免审批权限。\n"
+        "- **宿主唤醒与免审批总开关**：网页版 Gemini 完成 OAuth 连接后，请在左侧栏连接器设置总开关（`设置/自定义 -> 已连接的应用/连接器 (Connectors) -> <连接器名称> -> 应用操作 (App actions) -> 始终允许 (Always allow)`）统一开启免审批，**切勿在对话气泡的单张工具确认卡片上单独点击允许**（以免冲掉同连接器下其他工具的免审批权限）；网页版 ChatGPT 在左侧 `Plugins` 创建并 `Install` 安装 `WebAI2PC` 后，普通 `Chat` 模式（日常开发不扣 `Work / Codex` 额度）与 `Work` 模式（长程交付与定时任务）均通过 `@WebAI2PC` 调用。\n"
         f"- **外部资料检索**：在挂载本连接器的主会话中优先调用 `{p}web_research`，避免混调宿主内置联网搜索导致免审批状态被重置。\n"
         f"- **只读定位与查看**：使用 `{p}get_status`、`{p}find_files`、`{p}search_code`、`{p}code_intel`、`{p}read_file`、`{p}batch_probe`、`{p}skill_hub`。\n"
         f"- **安全修改与执行**：使用 `{p}edit_file`、`{p}write_file`、`{p}manage_files`（禁止执行永久物理删除命令）、`{p}run_command`、`{p}run_python`、`{p}bg_command`、`{p}workspace_memory`、`{p}skill_manage`。"
     )
     en_block = (
         "## English Operational Guide\n"
-        "- **Master Always-Allow Toggle**: After OAuth binding, enable `Always allow` at the left-sidebar Connector Settings master toggle (`Customize / Settings -> Connectors -> <Connector> -> App actions -> Always allow`). **Do NOT click allow on individual in-chat tool confirmation cards**, as single-card overrides reset sibling tool permissions.\n"
+        "- **Host Activation & Master Always-Allow Toggle**: In Web Gemini, enable `Always allow` at the left-sidebar Connector Settings master toggle (`Customize / Settings -> Connectors -> <Connector> -> App actions -> Always allow`) and **do NOT click allow on individual in-chat tool confirmation cards** (single-card overrides reset sibling tool permissions); in Web ChatGPT, once `WebAI2PC` is created and installed under `Plugins`, both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@WebAI2PC`.\n"
         f"- **External Lookup**: Prefer `{p}web_research` over host built-in web search in active connector sessions.\n"
         f"- **Navigation & Inspection**: Use `{p}get_status`, `{p}find_files`, `{p}search_code`, `{p}code_intel`, `{p}read_file`, `{p}batch_probe`, and `{p}skill_hub`.\n"
         f"- **Safe Edits & Execution**: Use `{p}edit_file`, `{p}write_file`, `{p}manage_files` (recoverable undo/trash vault), `{p}run_command`, `{p}run_python`, `{p}bg_command`, `{p}workspace_memory`, and `{p}skill_manage`."
@@ -262,9 +262,9 @@ def render_skill_markdown(
         f"- **已开放工具清单（{cnt} 项）**：{', '.join(prefixed_names) if prefixed_names else '（无）'}",
         "- **同步说明**：本守则随当前工作区权限档位、工具配置与外设包开关状态实时生成（不含任何敏感令牌或本地路径）。",
         "",
-        "### 1. 免审批总开关设置规范（勿点单张对话确认卡）",
-        f"- 首次绑定 `@{clean_conn}` 后，请前往左侧栏连接器设置总开关（`设置/自定义 (Settings / Customize) -> 已连接的应用/连接器 (Connectors) -> {clean_conn} -> 应用操作 (App actions) -> 始终允许 (Always allow)`）一次性开启免审批。",
-        "- **切勿在聊天流弹出的单张工具确认卡片上单独点击允许**，否则宿主会按单工具粒度覆写权限，冲掉同一连接器下其他工具已生效的 `Always allow` 免审批状态。",
+        "### 1. 宿主唤醒与免审批总开关规范（勿点单张对话确认卡）",
+        f"- 网页版 Gemini 首次绑定 `@{clean_conn}` 后，请前往左侧栏连接器设置总开关（`设置/自定义 (Settings / Customize) -> 已连接的应用/连接器 (Connectors) -> {clean_conn} -> 应用操作 (App actions) -> 始终允许 (Always allow)`）一次性开启免审批；**切勿在聊天流弹出的单张工具确认卡片上单独点击允许**，否则宿主会按单工具粒度覆写权限，冲掉同一连接器下其他工具已生效的 `Always allow` 免审批状态。",
+        "- 网页版 ChatGPT 在左侧 `Plugins` 创建并点 `Install` 安装 `WebAI2PC` 后（首次自动代填仅限具备受控浏览器的 `Work` 模式），普通 `Chat` 模式（日常改代码修文档不扣 `Work / Codex` 额度）与 `Work` 模式（跨应用长程交付与定时任务）均通过 `@WebAI2PC` 调用；本守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 均可粘贴到 `Project Instructions` 或自定义指令。",
     ]
 
     if "web_research" in by_name:
@@ -349,9 +349,9 @@ def render_skill_markdown(
         f"- **Active Tools ({cnt})**: {', '.join(prefixed_names) if prefixed_names else '(none)'}",
         f"- **Permission Tier**: `{pol.tier_key}` (`readonly_endpoint={readonly_only}`)",
         "",
-        "### 1. Connector Master Toggle `Always allow` (Never Click Single-Tool Cards)",
-        f"- Turn on `Always allow` at the left-sidebar Connector Settings master toggle (`Customize / Settings -> Connectors -> {clean_conn} -> App actions -> Always allow`).",
-        "- **Do NOT click allow on individual in-chat tool confirmation cards**; single-card clicks overwrite connector-wide settings and strip `Always allow` from sibling tools on the same connector.",
+        "### 1. Connector Master Toggle `Always allow` & Host Activation",
+        f"- In Web Gemini, turn on `Always allow` at the left-sidebar Connector Settings master toggle (`Customize / Settings -> Connectors -> {clean_conn} -> App actions -> Always allow`), and **do NOT click allow on individual in-chat tool confirmation cards** (single-card clicks overwrite connector-wide settings and strip `Always allow` from sibling tools).",
+        "- In Web ChatGPT, once `WebAI2PC` is created and installed under `Plugins` (`Work` mode for browser-assisted setup), both everyday `Chat` mode (zero `Work / Codex` quota usage) and `Work` mode (multi-app & scheduled tasks) invoke tools via `@WebAI2PC`.",
     ]
 
     if "web_research" in by_name:

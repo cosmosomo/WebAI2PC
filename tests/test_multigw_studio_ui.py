@@ -1040,7 +1040,7 @@ def test_workers_dev_synchronous_gemini_open_and_proxy_alert_ui(tmp_path: Path) 
 
 
 def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_path: Path) -> None:
-    """Verify ChatGPT '复制给 ChatGPT 帮我连接' stays disabled before gateway is ready, then copies clean prompt without secrets/paths."""
+    """Verify ChatGPT '复制给 Work 模式帮我连接' stays disabled before gateway is ready, then copies Work-mode prompt without secrets/paths."""
     state_dir = tmp_path / "state_cgpt_assist"
     ws_dir = tmp_path / "ws_cgpt_secret_path_check"
     ws_dir.mkdir(parents=True)
@@ -1056,7 +1056,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
     )
 
     with LiveStudioServer(state_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="cgpt-assist") as srv:
-        # Phase 1: Gateway is starting (NOT ready yet) -> buttons MUST stay disabled
+        # Phase 1: Gateway is starting (NOT ready yet) -> buttons MUST stay disabled and explicitly name Work mode
         atomic_write_json(
             state_dir / "state" / "daemon_status.json",
             {
@@ -1082,15 +1082,18 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             driver.trigger_poll()
             driver.select_host_scene("chatgpt")
 
-            disabled_state = driver.wait_until(
+            btn_meta_initial = driver.wait_until(
                 """() => {
                     const f = document.getElementById('copy-chatgpt-assist-full-btn');
                     const r = document.getElementById('copy-chatgpt-assist-ro-btn');
-                    return f && r && f.disabled === true && r.disabled === true ? true : false;
+                    if (!f || !r || f.disabled !== true || r.disabled !== true) return false;
+                    return { fullText: f.textContent.trim(), roText: r.textContent.trim() };
                 }""",
-                description="ChatGPT assist buttons disabled while gateway not ready",
+                description="ChatGPT Work-mode assist buttons disabled while gateway not ready",
             )
-            assert disabled_state is True
+            assert "Work" in btn_meta_initial["fullText"]
+            assert btn_meta_initial["fullText"] == "复制给 Work 模式帮我连接"
+            assert btn_meta_initial["roText"] == "复制给 Work 模式帮我连接"
 
             # Phase 2: Gateway becomes ready -> buttons unlock and copy clean structured prompts
             atomic_write_json(
@@ -1142,15 +1145,23 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             )
             full_prompt, ro_prompt = copied_list[0], copied_list[1]
 
-            assert "插件名称：WebAI2PC" in full_prompt
-            assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
-            assert "Team / Business / Enterprise / Edu 工作区，完整读写" in full_prompt
-            assert "pc_get_status（get_status）" in full_prompt
+            for p in (full_prompt, ro_prompt):
+                first_line = p.splitlines()[0]
+                assert "切换到 Work 模式" in first_line
+                assert "Chat 模式无受控浏览器" in first_line
+                assert "Take over" in p
+                assert "插件名称：WebAI2PC" in p
+                assert "装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用" in p
+                assert "授权并安装插件后调用 pc_get_status（get_status）" in p
 
-            assert "插件名称：WebAI2PC" in ro_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
+            assert "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写" in full_prompt
+
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
             assert "ChatGPT Plus / Pro，只读" in ro_prompt
-            assert "pc_get_status（get_status）" in ro_prompt
+
+            toast_text = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
+            assert "切换到 ChatGPT 顶部的 Work 模式" in toast_text
 
             # Strict zero-secret / zero-local-path leak checks
             for secret_val in (secret_meta["pair4"], secret_meta["pair6"], secret_meta["pw"], str(ws_dir)):
@@ -1158,16 +1169,17 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     assert secret_val not in full_prompt
                     assert secret_val not in ro_prompt
 
-            # Also verify `/tutorials` Module 2 assist buttons unlock on live sync and copy clean prompt
+            # Also verify `/tutorials` Module 2 assist buttons unlock on live sync and copy clean Work-mode prompt
             driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
-            driver.wait_until(
+            tut_btn_text = driver.wait_until(
                 """() => {
                     const btn = document.querySelector('[data-copy-chatgpt-assist="readonly"]');
-                    return Boolean(btn && btn.disabled === false);
+                    return (btn && btn.disabled === false) ? btn.textContent.trim() : false;
                 }""",
                 timeout_sec=8.0,
                 description="Tutorials ChatGPT assist button unlocked on live sync",
             )
+            assert tut_btn_text == "复制给 Work 模式帮我连接"
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
@@ -1178,6 +1190,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                 "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
                 description="Tutorials ChatGPT assist prompt copied",
             )
+            assert "切换到 Work 模式" in tut_copied.splitlines()[0]
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
 

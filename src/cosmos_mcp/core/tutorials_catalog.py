@@ -176,8 +176,8 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
                 "### 快速上手与本地控制台界面导览\n\n"
                 "1. **三步连上网页端 AI**：\n"
                 f"   - **第 1 步（启动并打开控制台）**：双击启动脚本后，本机浏览器打开主控首页 `{base}/`。\n"
-                "   - **第 2 步（复制 HTTPS 地址并绑定）**：在主控首页顶部连接卡选择 `网页版 Gemini` 或 `网页版 ChatGPT`（网关就绪后 ChatGPT 面板可直接点击 `复制给 ChatGPT 帮我连接`，或按需复制 `/mcp` / `/mcp/readonly` 到左侧 `Plugins -> + -> Add custom MCP server` 创建并安装插件），完成一次同机授权并以调用 `pc_get_status` 成功作为接通标准。\n"
-                "   - **第 3 步（开启免审批并唤醒）**：在网页端连接器设置中将 `App actions` 设为 `Always allow`，回到聊天框首句输入 `@Cosmos` 即可操作本机工作区。\n"
+                "   - **第 2 步（复制 HTTPS 地址并绑定）**：在主控首页顶部连接卡选择 `网页版 Gemini` 或 `网页版 ChatGPT`（ChatGPT 首次添加插件时，网关就绪后可点 `复制给 Work 模式帮我连接` 切到 ChatGPT 顶部的 `Work` 模式发送代填，或在本机浏览器打开左侧 `Plugins -> + -> Add custom MCP server` 填入 `/mcp` 或 `/mcp/readonly` 创建并点 `Install` 安装；本机浏览器授权点 `本机一键允许连接`，网页版 `Work` 云端浏览器内点 `Take over` 打开授权页则输控制台 `6` 位动态配对码），以调用 `pc_get_status` 成功作为接通标准。\n"
+                "   - **第 3 步（开启免审批与按场景唤醒）**：Gemini 在网页端连接器设置中将 `App actions` 设为 `Always allow`，回到聊天框首句输入 `[at]Cosmos`；ChatGPT 安装插件后同账号共享，日常改代码跑脚本切回 `Chat` 模式输入 `@WebAI2PC`（响应快且不扣 `Work / Codex` 额度），跨应用长程交付与定时任务用 `Work` 模式输入 `@WebAI2PC`。\n"
                 "2. **三个本地页面分工**：\n"
                 f"   - **主控首页**（`{base}/`，对应 `#workbench-view`）：顶部切换 `网页版 Gemini` / `网页版 ChatGPT` 并复制地址，可展开 `首次绑定步骤与唤醒词` 与 `配对与已连会话`；左下 `开放工作目录` 卡片管理目录与 `当前权限设置`（`只读` / `仅改文件` / `工作区开发` / `全盘开发`）；右下 `实时动态与撤回` 卡片查看 `在途任务`、`修改撤回`、`回收箱`、`调用记录`。顶栏右侧提供 `一键只读`、`实战教程` 与 `设置` 按钮。\n"
                 f"   - **系统设置页**（`{base}/#settings/gateways`，对应 `#settings-view`，支持 URL Hash 直达）：左侧含 5 个分类页签：`连接与网关`（`#settings/gateways`）、`环境与系统`（`#settings/runtime`）、`工具与扩展`（`#settings/tools`）、`技能管理`（`#settings/skills`）、`外观与图标`（`#settings/appearance`）；点击左上或右上 `← 返回主控台` 回到首页。\n"
@@ -254,11 +254,12 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
                 "   - **关键设置**：绑定成功后，前往 Gemini 左侧 `Customize -> Connectors -> Cosmos -> App actions`，将其设为 **`Always allow`**（切勿在聊天框单张工具确认卡上点单次允许，以免覆盖整组免审批设置）。\n"
                 "   - **推荐存入 Skills**：在主控首页展开 `首次绑定步骤与唤醒词` 点击 `复制 AI 守则`（或连接成功后复制顶部横幅的 `复制 AI 操作守则（推荐存入 Skills）`），粘贴保存到 Gemini 的 `Skills` 中。\n"
                 "   - **唤醒与手机同步**：新开对话首句输入 `@Cosmos`（例如：`@Cosmos 查看当前电脑状态与工作区文件`）。同一 Google 账号登录手机端 Gemini App 后无需重复配置即可直接调用。\n"
-            "2. **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用 · 区分工作区读写与个人版只读）**：\n"
-            "   - 在主控首页切换到 `网页版 ChatGPT` 页签（按钮在公网网关就绪后自动开放，可单复制地址，也可直接点 **「复制给 ChatGPT 帮我连接」** 一并生成含实际可用地址、不含配对码/口令/路径的配置请求发给 ChatGPT）：\n"
-            "     - **Team / Business / Enterprise / Edu 工作区账号**：使用全功能主地址 `https://<域名>/mcp`（开放全部 16 项代码读写、Office 修订与无窗口命令执行；在 `Chat` 模式下当本地 Agent 干活响应快且不消耗 `Work / Codex` 智能体额度，需要跨应用长程交付或定时任务时切 `Work` 模式）。\n"
-            "     - **个人 Plus / Pro 订阅账号**：当平台策略对自建远程 MCP 仅放行 `read/fetch` 权限时，使用只读地址 `https://<域名>/mcp/readonly`（开放 12 项只读分析工具，若账号已获写工具放行也可先试 `/mcp`）。\n"
-            "   - **连接与验证**：若当前对话具备可操作浏览器且获用户明确委托，ChatGPT 可尝试代填；普通聊天则按界面指引打开左侧 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，认证选 `OAuth`，点 `Create as a plugin` 并安装，登录或授权确认由用户在授权页点 `本机一键允许连接`（或输配对码）完成；随后在对话输入 `@WebAI2PC` 并以 **`pc_get_status`（`get_status`）实际调用成功**作为接通标准。"
+            "2. **网页版 ChatGPT（首次代连找 `Work` 模式 · 装好后日常用 `Chat` 模式省额度 · 读写与只读双地址隔离）**：\n"
+            "   - **按账号类型选择端点**（按钮在公网网关就绪后自动开放）：\n"
+            "     - **Team / Business / Enterprise / Edu 工作区账号**：绑定全功能主地址 `https://<域名>/mcp`（开放全部 16 项代码读写、Office 修订与无窗口命令执行）。\n"
+            "     - **个人 Plus / Pro 订阅账号**：当平台策略对自建远程 MCP 仅放行 `read/fetch` 权限时，绑定只读地址 `https://<域名>/mcp/readonly`（开放 12 项只读分析工具，若账号已获写工具放行也可先试 `/mcp`）。\n"
+            "   - **阶段一 · 首次添加与授权（谁能代连、配对码差异）**：只有 `Work` 模式具备受控浏览器（网页版 `Work` 云端浏览器支持 `Take over` 接管，桌面版 `Work` 支持 `@Chrome` / `@Edge` 浏览器扩展），可点主控首页 **「复制给 Work 模式帮我连接」** 后切换到 ChatGPT 顶部的 **`Work` 模式**粘贴发送代填（复制文本不含配对码、口令、令牌与本机路径；`Chat` 模式无受控浏览器，无法操作 `chatgpt.com/plugins` 页面，只能回复文字步骤）。若在网页版 `Work` 云端浏览器内点 `Take over` 打开 `/consent` 授权页，因浏览器在 OpenAI 云端不在本机，授权页会提示输入主控首页 `6` 位动态配对码，完成后点 `Return control` 交回；若在本机浏览器手动打开左侧 `Plugins -> + -> Add custom MCP server`（名称填 `WebAI2PC`，认证选 `OAuth`，点 `Create as a plugin`）或通过桌面版 `Work` 本机浏览器扩展打开授权页，命中 `127.0.0.1` 回环直接点 `本机一键允许连接`，最后点击 `Install` 完成安装。\n"
+            "   - **阶段二 · 日常使用分工与守则存放**：插件安装后同账号下 `Chat` 模式与 `Work` 模式共享 `@WebAI2PC`，以 **`pc_get_status`（`get_status`）实际调用成功**作为接通标准。日常查改本地代码、修 Office、跑无窗口命令与 Python 测试优先切回 **`Chat` 模式**发 `@WebAI2PC`（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做长程多步交付或配置 `Scheduled Tasks` 定时任务时用 **`Work` 模式**发 `@WebAI2PC`（消耗 `Work / Codex` 智能体额度）。操作守则在工作区/桌面端/插件包可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可粘贴进 `Project（项目）Instructions` 或自定义指令复用。"
             ),
         },
         "packs_and_skills": {
@@ -295,7 +296,7 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
                 "   - 原因通常是规则分流（Rule 模式）对回环校验或 `*.workers.dev` 分流不一致。解决方法二选一：① 将代理软件临时切到「全局模式」10 秒完成首次 OAuth 授权，绑好后即可切回规则模式；② 在 `#settings/gateways` 第 2 类卡片填写托管在 Cloudflare 的自定义域名。\n"
                 "3. **授权页上的「4 位核对码」与「6 位动态配对码」有什么区别**：\n"
                 "   - **4 位核对码**：防钓鱼核对标识，同机浏览器自动回环验证时用于肉眼确认当前授权页确实连向你自己的电脑，无需手输密码。\n"
-                "   - **6 位动态配对码**：当你在手机浏览器、异地电脑或开启了严格隐私拦截的浏览器（如 Brave / Safari）打开授权页无法走本机回环时，展开主控首页 `配对与已连会话` 复制当前的 **6 位码** 填入授权页即可通过验证（若均受阻也可填下方的 20 位固定备用口令）。\n"
+                "   - **6 位动态配对码**：当你在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页、在手机浏览器或异地电脑绑定，或使用开启严格隐私拦截的浏览器（如 Brave / Safari）无法走本机 `127.0.0.1` 回环时，展开主控首页 `配对与已连会话` 复制当前的 **6 位码** 填入授权页即可通过验证（若均受阻也可填下方的 20 位固定备用口令）。\n"
                 "4. **配置开机自启、防休眠与默认 Python 环境**：\n"
                 f"   - 打开 `{base}/#settings/runtime`（设置 -> `环境与系统`），可开启 **「开机自动启动」**、**「插电防自动休眠」**（注意笔记本物理合盖仍会触发硬件休眠断网，合盖使用需在系统电源设置将合盖动作改为「不采取任何操作」）与 **「显示系统托盘状态图标」**，也可在此指定项目默认 Python / Conda 解释器路径。"
             ),

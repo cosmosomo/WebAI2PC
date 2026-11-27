@@ -363,7 +363,7 @@
       </div>
       <nav class="tut-mobile-seg-bar" id="tut-mobile-seg-nav" role="tablist" aria-label="教程章节选择">
         <button type="button" class="tut-mobile-pill active" role="tab" aria-selected="true" data-mod-target="mod-gemini">1. Gemini 与手机远控</button>
-        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">2. ChatGPT 双模式</button>
+        <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">2. ChatGPT Work/Chat 分工</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-channels">3. 通道选型器</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-templates">4. 实战指令库</button>
         <button type="button" class="tut-mobile-pill" role="tab" aria-selected="false" data-mod-target="mod-safety">5. 安全与快照</button>
@@ -398,7 +398,7 @@
               <span class="tut-nav-count" data-mod-badge="mod-gemini">0/5</span>
             </button>
             <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-chatgpt">
-              <span class="tut-nav-title">2. ChatGPT 双模式接入</span>
+              <span class="tut-nav-title">2. ChatGPT Work 代连与 Chat 使用</span>
               <span class="tut-nav-count" data-mod-badge="mod-chatgpt">0/4</span>
             </button>
             <button type="button" class="tut-nav-btn" role="tab" aria-selected="false" data-mod-target="mod-channels">
@@ -506,13 +506,13 @@
           </div>
         </article>
 
-        <!-- 教程 2：网页版 ChatGPT 双模式接入 -->
+        <!-- 教程 2：网页版 ChatGPT Work 代连与 Chat 日常使用分工 -->
         <article class="card tut-module" id="mod-chatgpt" data-module-id="mod-chatgpt">
           <div class="tut-mod-header">
             <div>
-              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（Chat 与 Work 模式通用 · 读写与只读双地址隔离）</div>
-              <h2 class="card-title">网页版 ChatGPT 接入（工作区全功能读写 vs 个人版只读）</h2>
-              <p class="card-desc" style="margin-bottom:0;">网页版 ChatGPT 的 <code>Chat</code> 模式（响应快、不消耗 <code>Work / Codex</code> 智能体额度）与 <code>Work</code> 模式（长程多步交付与定时任务）共用 <code>Plugins</code> 插件目录，均可 <code>@WebAI2PC</code> 当本地 Agent 使用；网关就绪后可直接点「复制给 ChatGPT 帮我连接」。</p>
+              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（首次代连找 Work 模式 · 装好后日常用 Chat 模式省额度）</div>
+              <h2 class="card-title">网页版 ChatGPT 接入（Work 代连与 Chat 日常分工 · 工作区读写 vs 个人只读）</h2>
+              <p class="card-desc" style="margin-bottom:0;">首次添加自定义 MCP 插件时，只有具备受控浏览器的 <code>Work</code> 模式能打开 <code>Plugins</code> 页面代填（<code>Chat</code> 模式无受控浏览器，无法自动代连，只能回复文字步骤供手动点击；你也可直接在本机浏览器打开左侧 <code>Plugins -&gt; + -&gt; Add custom MCP server</code> 手动添加）。插件点 <code>Install</code> 安装完成后同账号共享：日常查改代码、修 Office 与跑测试切回 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（响应快，不扣减 <code>Work / Codex</code> 智能体额度）；跨邮件/Slack/网盘长程交付与 <code>Scheduled Tasks</code> 定时任务用 <code>Work</code> 模式发 <code>@WebAI2PC</code>。</p>
             </div>
             <div class="tut-sub-seg tut-sub-seg-light" role="tablist" aria-label="ChatGPT 账号类型选择">
               <button type="button" class="tut-sub-btn active" id="cgpt-tab-workspace" data-cgpt-mode="workspace">工作区账号 (/mcp)</button>
@@ -524,13 +524,13 @@
             <div class="tut-ep-card recommended" id="cgpt-card-workspace">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
                 <strong>Team / Business / Enterprise / Edu 工作区账号</strong>
-                <span class="tag tag-ok">Chat / Work 全功能读写</span>
+                <span class="tag tag-ok">全功能读写 (/mcp)</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；在 <code>Chat</code> 模式下干活不消耗 <code>Work / Codex</code> 智能体额度。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；装好后日常切回 <code>Chat</code> 模式调用 <code>@WebAI2PC</code> 不扣减 <code>Work / Codex</code> 智能体额度，跨应用长程交付与定时任务用 <code>Work</code> 模式。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="mcp" data-copy-live="mcp">https://xxxxx.srv.us/mcp</div>
                 <button type="button" class="btn btn-tonal btn-sm" data-copy-live="mcp">复制地址</button>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="本地网关就绪后复制完整地址与配置请求发给 ChatGPT">复制给 ChatGPT 帮我连接</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="本地网关就绪后复制完整地址与配置请求，切换到 ChatGPT 顶部的 Work 模式发送代填">复制给 Work 模式帮我连接</button>
               </div>
             </div>
 
@@ -539,11 +539,11 @@
                 <strong>个人 Plus / Pro 订阅账号</strong>
                 <span class="tag tag-warn">只读连接保护</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具，越权写调用自动返回 <code>403</code> 拦截。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具（越权写调用返回 <code>403</code> 拦截）；装好后在 <code>Chat</code> 模式（省 <code>Work / Codex</code> 额度）与 <code>Work</code> 模式均可输入 <code>@WebAI2PC</code> 调用。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="readonly" data-copy-live="readonly">https://xxxxx.srv.us/mcp/readonly</div>
                 <button type="button" class="btn btn-tonal btn-sm" data-copy-live="readonly">复制只读</button>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="本地网关就绪后复制只读地址与配置请求发给 ChatGPT">复制给 ChatGPT 帮我连接</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="本地网关就绪后复制只读地址与配置请求，切换到 ChatGPT 顶部的 Work 模式发送代填">复制给 Work 模式帮我连接</button>
               </div>
             </div>
           </div>
@@ -551,31 +551,31 @@
           <div class="tut-workbench-grid">
             <ul class="tut-step-list">
               <li class="tut-step-item" data-step-wrap="c1">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制连接请求或地址">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制给 Work 模式或复制地址">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 1 步：网关就绪后点「复制给 ChatGPT 帮我连接」（或复制对应地址）</div>
-                  <p class="tut-step-desc">按钮自动填入当前实际可用的 <code>/mcp</code> 或 <code>/mcp/readonly</code> 地址与目标说明，不复制配对码、口令、令牌或本机路径。</p>
+                  <div class="tut-step-title">第 1 步：网关就绪后点「复制给 Work 模式帮我连接」（或单复制地址手动添加）</div>
+                  <p class="tut-step-desc">复制文本仅含当前可用的 <code>/mcp</code> 或 <code>/mcp/readonly</code> 地址与说明，不含配对码、口令、令牌或本机路径。若委托 AI 代填，请先在 ChatGPT 顶部切换到 <code>Work</code> 模式再发送（<code>Chat</code> 模式无受控浏览器，无法操作插件页面）。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c2">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Plugins 添加自定义 MCP 插件 WebAI2PC">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Plugins 添加自定义 MCP 插件 WebAI2PC 并安装">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 2 步：在左侧 <code>Plugins -&gt; + -&gt; Add custom MCP server</code> 创建并安装插件</div>
-                  <p class="tut-step-desc">若当前会话有可操作浏览器且获授权可尝试代填，普通聊天则按引导点击：名称填 <code>WebAI2PC</code>，认证选 <code>OAuth</code>，点 <code>Create as a plugin</code> 并安装；同机授权页由你点「本机一键允许连接」（异地输配对码）。</p>
+                  <div class="tut-step-title">第 2 步：由 <code>Work</code> 受控浏览器代填，或在本机浏览器打开 <code>Plugins</code> 手动添加并 <code>Install</code></div>
+                  <p class="tut-step-desc">网页版 <code>Work</code> 云端受控浏览器填好 <code>Plugins -&gt; + -&gt; Add custom MCP server</code>（名称 <code>WebAI2PC</code>，认证 <code>OAuth</code>）需登录或授权时，点 <code>Take over</code> 接管（因浏览器在 OpenAI 云端不在本机，<code>/consent</code> 页会提示输入本地控制台 <code>6</code> 位动态配对码，完成后点 <code>Return control</code> 交回）；若在本机浏览器手动添加（或桌面版 <code>Work</code> 调 <code>@Chrome</code> / <code>@Edge</code> 扩展），跳转 <code>/consent</code> 命中 <code>127.0.0.1</code> 回环直接点「本机一键允许连接」，最后点 <code>Install</code> 完成安装。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c3">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="在 Chat 或 Work 模式输入 @WebAI2PC 调用">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="日常切回 Chat 模式 @WebAI2PC 调用，长任务用 Work 模式">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 3 步：在 <code>Chat</code> 或 <code>Work</code> 模式输入 <code>@WebAI2PC</code> 调用</div>
-                  <p class="tut-step-desc">日常交互读写与跑脚本用 <code>Chat</code> 模式响应更快且省下智能体额度；跨应用整理长文档、表格或设自动任务时切到 <code>Work</code> 模式。</p>
+                  <div class="tut-step-title">第 3 步：装好后日常切回 <code>Chat</code> 模式 <code>@WebAI2PC</code>（长程与定时任务用 <code>Work</code>）</div>
+                  <p class="tut-step-desc">插件安装后同账号共享：日常查改本地代码、修 Office 与跑无窗口测试优先切回 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（走普通对话限额，零消耗 <code>Work / Codex</code> 智能体额度）；跨邮件/Slack/网盘做多步交付或设 <code>Scheduled Tasks</code> 时切 <code>Work</code> 模式发 <code>@WebAI2PC</code>。操作守则在工作区/桌面端可存入原生 <code>Skills</code>，网页版 <code>Chat</code> 与 <code>Work</code> 均可放入 <code>Project Instructions</code> 或自定义指令。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c4">
                 <input type="checkbox" class="tut-step-chk" data-step-id="c4" aria-label="调用 pc_get_status 确认接通">
                 <div class="tut-step-body">
                   <div class="tut-step-title">第 4 步：以 <code>pc_get_status</code> 实际调用成功作为接通标准</div>
-                  <p class="tut-step-desc">让 ChatGPT 调用一次 <code>pc_get_status</code>（<code>get_status</code>）确认返回本机系统与开放目录；只读令牌若跨端点请求 <code>/mcp</code> 会直接返回 HTTP <code>403 forbidden_cross_resource</code>。</p>
+                  <p class="tut-step-desc">在 <code>Chat</code> 或 <code>Work</code> 模式让 <code>@WebAI2PC</code> 调用一次 <code>pc_get_status</code>（<code>get_status</code>）确认返回本机系统与开放目录；只读令牌若跨端点请求 <code>/mcp</code> 会直接返回 HTTP <code>403 forbidden_cross_resource</code>。</p>
                 </div>
               </li>
             </ul>
@@ -760,7 +760,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
             <div>
               <div class="tut-mod-kicker">教程 4 · 6 张高频实战提示词卡（点击一键复制即联动 IP 图标）</div>
               <h2 class="card-title">多智能体并行与本地办公 / 代码实战模板库</h2>
-              <p class="card-desc" style="margin-bottom:0;">所有卡片均使用真实 <code>@Cosmos</code> 唤醒词，可直接粘贴至网页版 Gemini（或去掉前缀发给已勾选工具的网页版 ChatGPT）。</p>
+              <p class="card-desc" style="margin-bottom:0;">所有卡片均使用真实 <code>[at]Cosmos</code> 唤醒词，可直接粘贴至网页版 Gemini（网页版 ChatGPT 已安装插件后，将前缀换为 <code>@WebAI2PC</code> 发给日常 <code>Chat</code> 模式或长程 <code>Work</code> 模式）。</p>
             </div>
             <div class="ts-pills-row" id="tpl-filter-bar" role="tablist" aria-label="模板分类筛选">
               <button type="button" class="ts-pill active" data-tpl-cat="all">全部 (6)</button>
@@ -1037,7 +1037,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
               </summary>
               <div class="ts-item-body">
                 <div><strong>原因：</strong>网页版 Gemini 与网页版 ChatGPT 会在开启对话时缓存当前连接器的工具 Schema 列表，已在途的旧对话不会自动拉取刚开启的扩展包工具。</div>
-                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code> 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>@Cosmos</code>；网页版 ChatGPT 请新建对话并在输入框工具菜单重新勾选 <code>Cosmos</code>。</div>
+                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code> 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>[at]Cosmos</code>；网页版 ChatGPT 请在左侧 <code>Plugins</code> 打开 <code>WebAI2PC</code> 点击 <code>Refresh</code> 刷新，随后新建 <code>Chat</code> 或 <code>Work</code> 对话输入 <code>@WebAI2PC</code>。</div>
               </div>
             </details>
 

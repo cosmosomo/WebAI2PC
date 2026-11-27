@@ -3065,7 +3065,7 @@
     function copyHostSkillGuide(btn, hostKind) {
       var targetToast =
         hostKind === "chatgpt"
-          ? "已复制 AI 操作守则，请粘贴保存到 ChatGPT 项目指令（Instructions）或自定义指令"
+          ? "已复制 AI 操作守则：工作区或桌面端可存入 Skills，网页版 Chat 与 Work 模式均可粘贴到 Project（项目）Instructions 或自定义指令"
           : "已复制 AI 操作守则，请粘贴保存到网页版 Gemini 左侧栏 Customize（自定义） -> Skills（技能）";
       var tc = (state && state.tools_center) || {};
       var cachedMd = String(tc.skill_markdown || tc.skill_preview || "").trim();
@@ -3130,18 +3130,18 @@
       var statusTool = pfx + "_get_status";
       var verifyToolDesc = statusTool === "get_status" ? "get_status" : statusTool + "（get_status）";
       var targetDesc = isRo
-        ? "ChatGPT Plus / Pro，只读（Chat 与 Work 模式通用）"
-        : "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写（Chat 与 Work 模式通用）";
+        ? "ChatGPT Plus / Pro，只读（装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用）"
+        : "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写（装好后可切回 Chat 模式或留在 Work 模式通过 @WebAI2PC 调用）";
       return [
+        "【请先在 ChatGPT 顶部切换到 Work 模式再发送；Chat 模式无受控浏览器，无法代填插件页面】",
         "请帮我把 WebAI2PC 连接到当前 ChatGPT 账号，并验证首次调用。",
-        "如果你能操作我的 ChatGPT 插件页面，请帮我填写配置。",
-        "如果需要我点击，请告诉我当前要点哪里。",
+        "请用你的浏览器打开我的 ChatGPT Plugins 页面填写配置；需要我登录或完成授权确认时请让我接管（Take over），或告诉我当前要点哪里。",
         "",
         "插件名称：WebAI2PC",
         "MCP 地址：" + targetUrl,
         "目标：" + targetDesc,
         "认证：OAuth，由 WebAI2PC 自动协商",
-        "验证：授权后调用 " + verifyToolDesc + "，确认能连接到我的电脑。",
+        "验证：授权并安装插件后调用 " + verifyToolDesc + "，确认能连接到我的电脑。",
       ].join("\n");
     }
 
@@ -3155,7 +3155,7 @@
         var statusTool = getEffectiveToolPrefix() + "_get_status";
         var cgptPrompt = "@WebAI2PC 请调用 " + statusTool + " 确认连接状态，并查看当前开放的工作目录与文件结构";
         copyText(cgptPrompt, $("copy-chatgpt-wake-btn"));
-        showToast("已复制 ChatGPT 首句验证词：" + cgptPrompt, false);
+        showToast("已复制首句验证词（装好插件后推荐在 Chat 模式粘贴发送，不扣 Work/Codex 额度）：" + cgptPrompt, false);
       });
     }
 
@@ -3171,7 +3171,7 @@
         }
         var connectPrompt = buildChatGptConnectPrompt(kind, targetUrl);
         copyText(connectPrompt, btn);
-        showToast("已复制连接请求（含当前可用地址，不含配对码与本机路径），请粘贴发给 ChatGPT", false);
+        showToast("已复制连接请求，请切换到 ChatGPT 顶部的 Work 模式粘贴发送（不含配对码与本机路径）", false);
       });
     });
 

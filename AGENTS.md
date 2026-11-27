@@ -4,7 +4,7 @@
 
 ## 一、目标宿主与产品边界
 
-- **唯一目标宿主场景**：聚焦 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用，通过 `Plugins -> Add custom MCP server` 绑定工作区全功能 `/mcp` 或个人订阅只读 `/mcp/readonly`）** 两个远程 HTTPS 场景，不面向本地桌面 CLI 或 IDE 客户端做配置导流。
+- **唯一目标宿主场景**：聚焦 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（通过 `Plugins -> + -> Add custom MCP server` 创建并 `Install` 安装 `WebAI2PC` 插件：首次自动代填仅限具备受控浏览器的 `Work` 模式，`Chat` 模式无受控浏览器不可代连；装好后全账号互通，日常本地开发在 `Chat` 模式输入 `@WebAI2PC` 调用不扣减 `Work / Codex` 智能体额度，跨应用长程交付与定时任务在 `Work` 模式调用）** 两个远程 HTTPS 场景，不面向本地桌面 CLI 或 IDE 客户端做配置导流。
 - **双端点受众隔离与零明文 Token 留存**：主端点 `https://<域名>/mcp` 提供工作区读写与无窗口执行能力（供网页版 Gemini 任务模式及网页版 ChatGPT Team / Business / Enterprise / Edu 工作区账号绑定，在 `Chat` 模式下作为本地 Agent 运行不扣 `Work / Codex` 额度）；纯只读端点 `https://<域名>/mcp/readonly` 按 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离固定暴露 `server:read` 只读工具集（供网页版 ChatGPT 个人 Plus / Pro 账号在平台限制写操作时挂载）。`oauth.sqlite3` 仅保存令牌 SHA-256 摘要主键，Cloudflare 部署 API Token 部署后即刻清零销毁，零明文 Token 落盘。
 - **多网关独立开关并存**：内置 `srv.us` 免登录固定通道（22 端口受阻 4 秒回退 `trycloudflare.com`）、`Cloudflare Workers` SQLite Durable Object 固定网关与 `24h Linux VPS` 常驻主站 / 自有固定域名三类连接方式，支持在控制台独立开关同时在线并存。
 - **四档安全模式与只读参考目录**：支持 `L3` 工作区内顺畅开发（默认）、`L4` 全盘顺畅开发（不限目录）、`L2` 仅改文件禁跑命令、`L1` 只读浏览模式，并支持外层只读参考目录（`readonly_workspace_roots`）与内部可读写工作目录（`workspace_roots`）按最长路径前缀匹配权限。

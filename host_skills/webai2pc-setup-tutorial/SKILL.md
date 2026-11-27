@@ -73,9 +73,9 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 - **网页版 Gemini（任务模式与手机端同步）**：
   - 在 Gemini 左侧栏依次点击 `Customize -> Connectors -> + Custom`，名称填 `Cosmos`，URL 粘贴控制台显示的 `https://<域名>/mcp`（`Client ID` 与 `Client Secret` 留空）。
   - 跳转授权页后，同机浏览器直接点 `本机一键允许连接`；完成后点进 `Cosmos` 连接器详情页，将 `App actions` 总开关设为 `Always allow`。新建对话首句输入 `@Cosmos ...` 点选连接器标签即可唤醒，同账号手机端 Gemini App 自动同步可用。
-- **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用）**：
-  - 本地控制台在公网网关就绪后开放 `复制给 ChatGPT 帮我连接` 按钮（自动填入当前实际可用的 `/mcp` 或 `/mcp/readonly` 地址，不含配对码、口令、令牌与本机路径）。若当前会话具备可操作浏览器、用户明确委托且账号有创建权限可尝试代填；普通聊天则按界面指引点击左侧 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，粘贴地址（Team / Business / Enterprise / Edu 工作区填 `/mcp` 全功能，个人 Plus / Pro 受平台限制写工具时填 `/mcp/readonly` 只读），认证选 `OAuth`，点 `Create as a plugin` 并安装。
-  - 登录与授权确认由用户本人在授权页点 `本机一键允许连接`（或输配对码）完成；新建 `Chat`（日常读写跟手且不耗 `Work / Codex` 额度）或 `Work` 对话输入 `@WebAI2PC`，以调用 `pc_get_status`（`get_status`）实际成功作为接通标准。
+- **网页版 ChatGPT（首次代连找 `Work` 模式 · 装好后日常用 `Chat` 模式省额度）**：
+  - **首次添加与代填边界**：本地控制台在公网网关就绪后开放 `复制给 Work 模式帮我连接` 按钮（自动填入当前实际可用的 `/mcp` 或 `/mcp/readonly` 地址，严禁包含配对码、口令、令牌与本机路径）。用户需先在 ChatGPT 顶部切到 `Work` 模式再粘贴发送，由受控浏览器代填 `Plugins` 页面（`Chat` 模式无受控浏览器，无法操作 `chatgpt.com/plugins`，只能输出文字步骤供手动点击）。若在网页版 `Work` 云端受控浏览器内点 `Take over` 打开 `/consent` 授权页，因浏览器在 OpenAI 云端不在本机，需输入主控首页 `6` 位动态配对码并点 `Return control` 交回；若在本机浏览器手动打开左侧 `Plugins -> + -> Add custom MCP server`（或桌面版 `Work` 调本机 `@Chrome` / `@Edge` 扩展），名称填 `WebAI2PC`，粘贴地址（Team / Business / Enterprise / Edu 工作区填 `/mcp` 全功能，个人 Plus / Pro 受平台限制写工具时填 `/mcp/readonly` 只读），认证选 `OAuth`，点 `Create as a plugin` 后跳转 `/consent` 命中 `127.0.0.1` 回环直接点 `本机一键允许连接`，最后点击 `Install` 完成安装。
+  - **日常调用分工与守则存放**：插件安装后全账号共享 `@WebAI2PC`，以调用 `pc_get_status`（`get_status`）实际成功作为接通标准。日常查改本地代码、修 Office 与跑无窗口测试推荐切回 `Chat` 模式输入 `@WebAI2PC`（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做长程交付或设置 `Scheduled Tasks` 定时任务时切 `Work` 模式输入 `@WebAI2PC`（消耗 `Work / Codex` 智能体额度）。操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可放入 `Project Instructions` 或自定义指令。
 - **开启可选扩展包与多机前缀（`#settings/tools`，传 `open_page="tools"`）**：
   - `受管浏览器包`（`browser` -> `pc_browser_use`）：在独立 `browser_profile` 目录运行隔离浏览器查阅网页与截图，不触碰用户个人浏览器窗口。
   - `桌面窗口操控包`（`desktop` -> `pc_cua_window`，仅 Windows）：基于离屏截图与后台消息辅助操作桌面窗口，检测到键鼠活跃时自动礼让。
@@ -87,5 +87,5 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 ## 6. 常见排障核对清单
 
 - **缺少写入或执行工具**：核对主控首页左栏 `当前权限设置` 是否处于 `只读` 或 `仅改文件`，以及顶栏右侧是否显示 `恢复开发`；个人版 ChatGPT 绑定 `/mcp/readonly` 时仅暴露只读工具属于平台规则限制。
-- **同机授权页未自动通过回环验证**：若浏览器开启了严格隐私隔离插件拦截本地回环跳转，引导用户在主控首页展开 `配对与已连会话`，复制 6 位动态配对码或 20 位固定备用口令填入授权页即可。
+- **同机授权页未自动通过回环验证**：若在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页，或同机浏览器开启严格隐私隔离插件拦截了本地 `127.0.0.1` 回环跳转，引导用户在主控首页展开 `配对与已连会话`，复制 6 位动态配对码或 20 位固定备用口令填入授权页即可。
 - **Gemini 频繁弹出单次工具确认框**：提醒用户到 `Customize -> Connectors -> Cosmos` 开启 `Always allow` 总开关，不要在聊天流单张确认卡上点单次允许；需要查公开网页时使用本连接器的 `pc_web_research`，避免混调宿主内置搜索触发权限降级。

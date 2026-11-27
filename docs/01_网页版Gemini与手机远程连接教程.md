@@ -1,15 +1,16 @@
 # 01. 网页版 Gemini 与网页版 ChatGPT 连接指南（含手机端远控）
 
-本指南说明如何启动 Cosmos MCP，按需开启 3 类连接方式接入 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（对话模式）**，以及绑定完成后的首句唤醒与多设备协同方法。启动本地服务后也可直接打开内置交互式教程页 `http://127.0.0.1:8096/tutorials` 一键复制当前生效地址。
+本指南说明如何启动 Cosmos MCP，按需开启 3 类连接方式接入 **网页版 Google Gemini（任务模式，含同账号手机端 Gemini App）** 与 **网页版 ChatGPT（首次代连找 `Work` 模式或本机手动安装，装好后日常用 `Chat` 模式省额度、长程与定时任务用 `Work` 模式）**，以及绑定完成后的首句唤醒与多设备协同方法。启动本地服务后也可直接打开内置交互式教程页 `http://127.0.0.1:8096/tutorials` 一键复制当前生效地址。
 
 ## 一、接入前确认宿主与账号条件
 
 1. **网页版 Google Gemini（任务模式，含 Android / iOS 手机端 Gemini App）**：
    - 需要年满 `18+` 周岁的 Google AI Pro 或 Ultra 订阅账号，或已开启自定义连接器权限的 Google Workspace 账号（免费个人 Google 账号暂未开放网页端自定义连接器入口）。
    - 绑定主连接地址 `https://<域名>/mcp`。电脑端绑定一次后，登录同一 Google 账号的手机端 Gemini App 自动同步该连接器。
-2. **网页版 ChatGPT（对话模式）**：
-   - **工作区账号（Team / Business / Enterprise / Edu）**：绑定主连接地址 `https://<域名>/mcp`，可调用读写与命令执行工具。
-   - **个人订阅账号（Plus / Pro）**：受平台策略限制仅支持只读工具，请绑定纯只读连接地址 `https://<域名>/mcp/readonly`。该端点按 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离固定开放只读查询能力，拒绝任何写入与执行请求。
+2. **网页版 ChatGPT（区分首次代连与日常 `Chat` / `Work` 分工）**：
+   - **工作区账号（Team / Business / Enterprise / Edu）**：绑定主连接地址 `https://<域名>/mcp`，可调用全部 16 项读写与无窗口命令执行工具。
+   - **个人订阅账号（Plus / Pro）**：当受平台策略限制仅放行自定义 MCP 的 `read/fetch` 工具时，请绑定纯只读连接地址 `https://<域名>/mcp/readonly`。该端点按 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离固定开放 12 项只读查询能力，拒绝写入与执行请求。
+   - **两阶段模式边界**：首次在 `Plugins` 代填新插件时，只有具备受控浏览器的 `Work` 模式能操作页面（`Chat` 模式无浏览器，只能给文字步骤）；插件点 `Install` 装好后同账号互通，日常查改本地代码与跑测试优先用 `Chat` 模式 `@WebAI2PC`（零消耗 `Work / Codex` 智能体额度），跨应用长程交付与定时任务用 `Work` 模式 `@WebAI2PC`。
 
 ## 二、裸机启动与 3 类连接方式选择
 
@@ -21,7 +22,7 @@ Windows 用户双击 `一键启动_Cosmos_MCP.bat`，macOS 与 Linux 用户运�
 
 适合首次体验与同机快速验证，无需注册云账号或准备域名：
 - 启动后默认优先使用本机持久密钥连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，关机重启网址不变）；若当前网络限制 22 端口，4 秒内自动切换至内置快速通道（`https://*.trycloudflare.com`）生成可用 HTTPS 地址，也可在卡片内手动切换。
-- 在同一台电脑的浏览器中从网页版 Gemini 或 ChatGPT 跳转到授权页时，系统通过本机顶层回环桥接校验同机身份，直接点击「本机一键允许连接（免输口令）」即可完成绑定，免去复制粘贴连接口令；若在手机或另一台电脑上授权，核对页面配对码或粘贴口令即可。
+- 在同一台电脑的浏览器中从网页版 Gemini 或 ChatGPT 跳转到授权页时，系统通过本机顶层回环桥接校验同机身份，直接点击「本机一键允许连接（免输口令）」即可完成绑定，免去复制粘贴连接口令；若在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页，或在手机、另一台电脑上授权，填入本地控制台显示的 6 位动态配对码（或粘贴备用口令）即可。
 - 若当前通道处于 `*.trycloudflare.com` 临时地址，电脑关机重启后域名会变化；可点击卡片按钮重试或恢复连接免登录固定网址，或切换至方式 2、方式 3。
 
 命令行启动示例（内网或离线环境可通过 `COSMOS_CLOUDFLARED_BIN`、`COSMOS_CLOUDFLARED_MIRROR`、`COSMOS_WHEELHOUSE` 指定本地缓存）：
@@ -68,10 +69,12 @@ cosmos-mcp start --workspace D:\Projects\my-app
    ```
    授权刚完成时，控制台顶部绿色已连接横幅提供「一键复制首句唤醒测试词」按钮（Windows 托盘右键菜单提供「复制首句唤醒词」），可直接复制粘贴发送。
 
-### 2. 网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用）
+### 2. 网页版 ChatGPT（首次代连找 `Work` 模式 · 装好后日常用 `Chat` 模式省额度）
 
-1. **一键引导或手动添加插件**：在本地控制台 `网页版 ChatGPT` 页签等待网关就绪后，可直接点 **「复制给 ChatGPT 帮我连接」** 发给当前对话（含实际可用地址，不含配对码与本机路径）；或手动在网页版 ChatGPT 左侧栏打开 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，工作区账号（Team / Business / Enterprise / Edu）填入 `https://<你的域名>/mcp`，个人 Plus / Pro 账号受平台限制写工具时填入 `https://<你的域名>/mcp/readonly`，点击 `Create as a plugin` 并完成安装与本机一键允许授权。
-2. **输入 `@WebAI2PC` 唤醒并以 `pc_get_status` 验证**：新建 `Chat`（日常交互开发不扣 `Work / Codex` 智能体额度）或 `Work` 对话，在输入框键入 `@WebAI2PC` 选中插件，调用一次 `pc_get_status` 确认已接通电脑。
+1. **阶段一 · 切 `Work` 模式代填或在本机浏览器手动添加**：
+   - **委托 `Work` 模式代填**：在本地控制台 `网页版 ChatGPT` 页签等待网关就绪后，点 **「复制给 Work 模式帮我连接」**（仅含当前可用地址，不含配对码、口令与本机路径），先在 ChatGPT 顶部切换到 **`Work` 模式**再粘贴发送（`Chat` 模式没有受控浏览器，无法操作 `chatgpt.com/plugins`，只能输出文字步骤）。网页版 `Work` 云端浏览器填表后遇到登录或 `/consent` 授权确认时，点 `Take over` 接管，因浏览器在 OpenAI 云端不在本机，授权页会提示输入本地控制台 `6` 位动态配对码，完成后点 `Return control` 交回并完成 `Install` 安装。
+   - **本机浏览器手动添加**：在网页版 ChatGPT 左侧栏打开 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，工作区账号（Team / Business / Enterprise / Edu）填入 `https://<你的域名>/mcp`，个人 Plus / Pro 账号受平台限制写工具时填入 `https://<你的域名>/mcp/readonly`，认证选 `OAuth`，点击 `Create as a plugin` 并点击 `Install` 安装，本机浏览器跳转 `/consent` 时直接点「本机一键允许连接」。
+2. **阶段二 · 日常切回 `Chat` 模式调用 `@WebAI2PC`（长程与定时任务用 `Work`）**：插件安装后全账号互通。日常查改本地代码、修 Office 与跑测试优先切回 `Chat` 模式，输入 `@WebAI2PC` 调用 `pc_get_status` 确认接通（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合受控浏览器、跨邮件/Slack/网盘做多步交付或配置 `Scheduled Tasks` 定时任务时切到 `Work` 模式输入 `@WebAI2PC`。AI 操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可放入 `Project Instructions` 或自定义指令。
 
 ## 四、手机远控、多设备前缀与跨机路由
 

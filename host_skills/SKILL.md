@@ -1,6 +1,6 @@
 ---
 name: cosmos-mcp-guide
-description: Cosmos MCP 连接器（@Cosmos）宿主操作守则，适用于网页版 Google Gemini（任务模式与手机端）及网页版 ChatGPT，涵盖首句唤醒、免审批总开关、子智能体挂载、工作区读写分层、Office 文档安全修订、单入口 target="auto" 跨机路由及 16 项核心工具规范。
+description: Cosmos MCP 连接器（[at]Cosmos / @WebAI2PC）宿主操作守则，适用于网页版 Google Gemini（任务模式与手机端）及网页版 ChatGPT（首次代连用 Work 模式或手动装插件，日常控机用 Chat 模式省额度、长程与定时任务用 Work 模式），涵盖首句唤醒、免审批总开关、子智能体挂载、工作区读写分层、Office 文档安全修订、单入口 target="auto" 跨机路由及 16 项核心工具规范。
 ---
 
 # Cosmos MCP 宿主操作守则（v1.2）
@@ -11,7 +11,7 @@ description: Cosmos MCP 连接器（@Cosmos）宿主操作守则，适用于网�
 
 - **3 类连接地址获取（支持多网关独立开关并存）**：引导用户在本地 `Cosmos Studio` 控制台按需开启 3 类连接方式获取 `https://<域名>/mcp`（三张连接卡片支持独立开关同时在线互不踢掉，网页版 ChatGPT 个人 Plus / Pro 账号使用只读地址 `https://<域名>/mcp/readonly`）：① 一键上手就能用（零登录开箱即连，默认锁定 `https://xxxxx.srv.us/mcp` 持久固定网址，同机浏览器顶层回环跳转直接点允许即可免输口令）；② 登录 Cloudflare 注册一下就行（粘贴一次令牌，约 3 秒自动部署免费 SQLite Durable Object 休眠网关如 `https://your-worker.your-subdomain.workers.dev` 获得终身固定网址，令牌即刻清零）；③ 自己的服务器和域名（填服务器 IP 与 SSH 密码或本地 SSH 私钥免密一键部署 24 小时主站同时管服务器与本地电脑，或填自有固定域名与 Tunnel 令牌）。
 - **网页版 Gemini 绑定与首句唤醒**：在左侧栏点击 `Customize -> Connectors -> + Custom` 填入名称与 `https://<域名>/mcp`（`Client ID` 与 `Client Secret` 留空）。绑定完成后，在连接器详情页将 `App actions` 总开关设为 `Always allow`（不要在聊天流弹出的单张工具确认卡片上单独点击允许，以免覆盖同连接器下其他工具的免审批状态）。新建对话时在首句输入 `@Cosmos ...`（点选补全的连接器标签）唤醒本地工具。
-- **网页版 ChatGPT 绑定与唤醒（`Chat` 与 `Work` 模式通用）**：在本地控制台网关就绪后可直接点击 `复制给 ChatGPT 帮我连接` 发给对话引导或代填（不含配对码、口令与本机路径）；或手动在左侧栏 `Plugins -> + -> Add custom MCP server` 填入名称 `WebAI2PC` 与对应地址（Team / Business / Enterprise / Edu 工作区用 `/mcp` 全功能，个人 Plus / Pro 受平台写操作限制时用 `/mcp/readonly` 只读），点 `Create as a plugin` 并安装，由用户本人在授权页点 `本机一键允许连接`（或输配对码）完成授权，随后在 `Chat` 或 `Work` 对话中输入 `@WebAI2PC` 并调用 `pc_get_status` 确认接通。
+- **网页版 ChatGPT 绑定与日常分工（首次代连找 `Work` · 日常干活用 `Chat`）**：首次添加插件时，本地控制台在公网网关就绪后开放 `复制给 Work 模式帮我连接`（仅含可用地址与说明，严禁夹带配对码、口令、令牌与本机路径），需在 ChatGPT 顶部切到 `Work` 模式发送由受控浏览器代填（网页版 `Work` 云端浏览器内点 `Take over` 打开 `/consent` 授权页需输控制台 `6` 位动态配对码；`Chat` 模式无受控浏览器无法代连，只能给文字步骤），或在本机浏览器手动打开左侧 `Plugins -> + -> Add custom MCP server` 填名称 `WebAI2PC` 与对应地址（Team / Business / Enterprise / Edu 工作区用 `/mcp` 全功能，个人 Plus / Pro 受平台写操作限制时用 `/mcp/readonly` 只读），点 `Create as a plugin` 并点击 `Install` 安装（本机浏览器授权页直接点 `本机一键允许连接`）。装好后全账号共享 `@WebAI2PC` 并以 `pc_get_status` 实际调用成功确认接通：日常查改本地代码、修 Office 与跑测试切回 `Chat` 模式发 `@WebAI2PC`（响应快，零消耗 `Work / Codex` 智能体额度），跨邮件/Slack/网盘长程多步交付或设 `Scheduled Tasks` 定时任务用 `Work` 模式发 `@WebAI2PC`。本守则在工作区/桌面端/插件包可存入原生 `Skills`，网页版 `Chat` 与 `Work` 模式均可粘贴到 `Project（项目）Instructions` 或自定义指令复用。
 - **打开本地配置页与内置配置教学**：当用户需要配置本服务、部署 Cloudflare 固定网关、调整工作目录或安全权限、开启扩展包或查看使用教程时，优先调用 `pc_get_status(guide="cloudflare"|"gateways"|"permissions"|"gemini_chatgpt"|"packs_and_skills"|"troubleshooting"|"all", open_page="gateways"|"studio"|"runtime"|"tools"|"skills"|"tutorials")` 直接在同机浏览器打开对应本地页面，或调用 `pc_skill_hub(action="load", skill="webai2pc-setup-tutorial")` 读取完整分步配置指南。
 
 ## 2. 搜索隔离、子智能体挂载与上下文压缩恢复

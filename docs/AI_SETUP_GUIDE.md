@@ -7,9 +7,10 @@
 ## 一、给当前 AI 助手的陪配引导职责
 
 如果你正在对话中协助用户安装或配置 WebAI2PC（Cosmos MCP），请遵守以下交互原则：
-1. **先问清 3 项基本情况**：若用户尚未说明，先用简短列表问清：① 电脑系统是 Windows、macOS 还是 Linux；② 是否已经下载并解压缩发行包；③ 准备连接网页版 Gemini 还是网页版 ChatGPT（Team / Enterprise 工作区账号还是个人 Plus / Pro 账号）。
+1. **先问清 3 项基本情况**：若用户尚未说明，先用简短列表问清：① 电脑系统是 Windows、macOS 还是 Linux；② 是否已经下载并解压缩发行包；③ 准备连接网页版 Gemini，还是网页版 ChatGPT（Team / Enterprise 工作区账号还是个人 Plus / Pro 账号，以及当前处于 `Chat` 模式还是 `Work` 模式）。
 2. **每次只教当前这一步**：根据用户的回答，每次只给出当前步骤的 3 至 5 行具体操作与按钮名称，等用户回复「好了」或发来报错截图后再讲下一步，不要一次性把全文刷满屏幕。
-3. **已连上 `@Cosmos` 时直接接管打开设置页**：一旦用户已经绑定好 `@Cosmos` 连接器，提示用户可以直接对挂载了 `@Cosmos` 的对话说：`@Cosmos 帮我在电脑上打开网关设置页，教我怎么配 Cloudflare 固定网址`。已连上的 AI 可直接调用本地工具帮用户在电脑浏览器弹出对应配置页并核对实时状态。
+3. **如实说明 ChatGPT `Work` 与 `Chat` 的代连边界**：若用户正在 ChatGPT 对话中找你帮忙连接，先说明只有 `Work` 模式具备受控浏览器可代填 `Plugins` 页面（`Chat` 模式无受控浏览器，只能一步步提示点击位置，或请用户切换到顶部 `Work` 模式）；且配对码、口令、令牌与本机路径切勿发进聊天框。
+4. **已连上 `[at]Cosmos` 或 `@WebAI2PC` 时直接接管打开设置页**：一旦用户已经绑定好连接器，提示用户可以直接在对话里说：`[at]Cosmos 帮我在电脑上打开网关设置页，教我怎么配 Cloudflare 固定网址`（ChatGPT 用 `@WebAI2PC`）。已连上的 AI 可直接调用本地工具帮用户在电脑浏览器弹出对应配置页并核对实时状态。
 
 ## 二、下载选包与完整解压启动
 
@@ -32,20 +33,20 @@
 1. **第 1 步：在本地控制台复制连接地址**
    - 控制台默认开启第 1 类通道「一键上手免登录直连」，自动生成 `https://*.srv.us/mcp`（免登录固定网址，重启不变）或 `https://*.trycloudflare.com/mcp`（免注册快速通道）。
    - 若连 **网页版 Gemini**，保持顶部选中 `网页版 Gemini`，点击蓝色按钮 `复制连接地址`。
-   - 若连 **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用）**，点击顶部切换到 `网页版 ChatGPT`（网关就绪后按钮自动开放）：可直接点击 **「复制给 ChatGPT 帮我连接」**（自动生成带真实 `/mcp` 或 `/mcp/readonly` 地址的配置请求，不含配对码、口令、令牌与本机路径），也可单独点击 `复制地址`（Team / Business / Enterprise / Edu 工作区全功能 `/mcp`）或 `复制只读`（个人 Plus / Pro 只读 `/mcp/readonly`）。
+   - 若连 **网页版 ChatGPT**，点击顶部切换到 `网页版 ChatGPT`（网关就绪后按钮自动开放）：若准备让 `Work` 模式受控浏览器代填，点击 **「复制给 Work 模式帮我连接」**（仅生成含真实 `/mcp` 或 `/mcp/readonly` 地址的配置请求，不含配对码、口令、令牌与本机路径）；若在本机浏览器手动添加，点击 `复制地址`（Team / Business / Enterprise / Edu 工作区全功能 `/mcp`）或 `复制只读`（个人 Plus / Pro 只读 `/mcp/readonly`）。
 2. **第 2 步：添加到网页端并点允许**
    - **网页版 Gemini（需 18+ Google AI Pro / Ultra 或已开启权限的 Workspace 账号）**：
      1. 打开网页版 Gemini，在左侧栏依次点击 `Customize（自定义） -> Connectors（连接器） -> + Custom（添加自定义）`。
      2. 名称填写 `Cosmos`，URL 粘贴刚才复制的 `https://.../mcp`（`Client ID` 与 `Client Secret` 留空不填），提交后会跳转到本地授权确认页。
      3. 在同一台电脑的浏览器上直接点击 `本机一键允许连接` 即可完成绑定。
      4. 绑定成功后，点进 `Cosmos` 连接器详情页，将 **`App actions` 总开关设为 `Always allow（始终允许）`**（建议顺手在本地控制台点 `复制 AI 守则` 粘贴到 Gemini 左侧栏 `Customize -> Skills` 保存）。
-   - **网页版 ChatGPT（区分当前对话代办边界与手动路径）**：
-     1. **直接粘贴「复制给 ChatGPT 帮我连接」时**：若当前会话具备可操作的浏览器、用户明确委托且当前账号有创建插件权限，AI 可尝试代填；普通聊天里粘贴文字不会自动开启账号设置权限，请按用户当前界面一步步告知点击位置。
-     2. **手动/引导点击位置**：打开网页版 ChatGPT 左侧栏 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，`Connection` 粘贴对应 HTTPS 地址，认证选 `OAuth`（自动协商，无需填 Client ID / Secret），勾选风险提示确认框后点 `Create as a plugin`，并在插件列表中点击 `Install` 安装。
-     3. **本人完成登录与授权确认**：跳转授权页后由用户本人操作（同一台电脑浏览器直接点击 `本机一键允许连接`，异地设备输入本地控制台显示的配对码）。
+   - **网页版 ChatGPT（严格区分 `Work` 代连与本机手动添加）**：
+     1. **发给 `Work` 模式代填配置**：只有 `Work` 模式具备受控浏览器（网页版 `Work` 自带云端受控浏览器并支持 `Take over` 接管，桌面版 `Work` 支持通过 `@Chrome` / `@Edge` 扩展操作本机标签页），请先在 ChatGPT 顶部切到 `Work` 模式再粘贴发送连接请求；`Chat` 模式没有受控浏览器，无法操作 `chatgpt.com/plugins`，只能输出文字步骤供用户手点。
+     2. **手动或按文字引导点击位置**：打开左侧栏 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，`Connection` 粘贴对应 HTTPS 地址，认证选 `OAuth`（自动协商，无需填 Client ID / Secret），勾选风险提示确认框后点 `Create as a plugin`，并在插件列表中点击 **`Install`** 完成安装。
+     3. **云端浏览器与本机浏览器的授权确认差异**：在本机浏览器手动添加（或桌面版 `Work` 调本机浏览器扩展）跳转 `/consent` 时命中 `127.0.0.1` 回环，直接点 `本机一键允许连接`；若在网页版 `Work` 云端浏览器里点 `Take over` 打开 `/consent`，因浏览器运行在 OpenAI 云端不在本机，页面会提示输入本地控制台 `配对与已连会话` 显示的 `6` 位动态配对码，填好允许后点 `Return control` 交回。
 3. **第 3 步：首句唤醒并以 `pc_get_status` 成功作为接通标准**
    - **网页版 Gemini**：新建对话（建议开启任务模式），首句输入 `[at]Cosmos 帮我调用 pc_get_status 看看当前工作目录里有哪些文件`（输入 `[at]Cosmos` 时点选弹出的连接器标签）。同账号手机端 Gemini App 也会自动同步该连接器。
-   - **网页版 ChatGPT**：新建 `Chat` 模式（日常交互读写跟手且不扣 `Work / Codex` 智能体额度）或 `Work` 模式（长程交付与定时任务）对话，在输入框输入 `@WebAI2PC` 选中插件，调用一次 `pc_get_status`（`get_status`）实际返回本机状态与目录，即视为接通完成。
+   - **网页版 ChatGPT（装好后日常用 `Chat` 省额度，长任务用 `Work`）**：插件点 `Install` 安装后全账号共享。日常查改本地代码、修 Office、跑无窗口命令与测试推荐切回 **`Chat` 模式**输入 `@WebAI2PC`（响应快，走普通对话限额，零消耗 `Work / Codex` 智能体额度）；需要结合云端浏览器、跨邮件/Slack/网盘做长程交付或配置 `Scheduled Tasks` 定时任务时切 **`Work` 模式**输入 `@WebAI2PC`，首次调用 `pc_get_status`（`get_status`）成功返回本机状态与目录即接通完成。操作守则在工作区/桌面端可存入原生 `Skills`，网页版 `Chat` 与 `Work` 均可粘贴到 `Project Instructions` 或自定义指令。
 
 ## 四、进阶配置 Cloudflare 免费终身固定网址（`#settings/gateways` 方式 2 三步走）
 
@@ -95,9 +96,9 @@
 2. **首次绑定 `*.workers.dev` 地址时浏览器打开授权页很慢或超时**：
    - 部分网络下规则代理未将 `*.workers.dev` 纳入代理。将本机代理软件临时切换为「全局模式」约 10 秒，点完 `本机一键允许连接` 后即可切回原规则模式；或者在第 2 张卡片选填已托管在 Cloudflare 的自定义域名。
 3. **点击授权页时未出现一键允许，或提示需要输入口令**：
-   - 当手机异地绑定，或同机浏览器隐私插件拦截了 `127.0.0.1` 回环跳转时，回到本地控制台主控首页展开 `配对与已连会话`，复制 6 位动态配对码（或点开复制 20 位固定备用口令）填入授权页即可通过。
-4. **ChatGPT 个人 Plus / Pro 订阅添加 `/mcp` 报错**：
-   - OpenAI 个人订阅仅支持只读自定义连接器。请在控制台顶部切到 `网页版 ChatGPT`，点击 `复制只读` 使用 `https://<域名>/mcp/readonly` 地址绑定。
+   - 当在网页版 ChatGPT `Work` 模式的云端受控浏览器内点 `Take over` 打开授权页、在手机异地绑定，或同机浏览器隐私插件拦截了 `127.0.0.1` 回环跳转时，回到本地控制台主控首页展开 `配对与已连会话`，复制 6 位动态配对码（或点开复制 20 位固定备用口令）填入授权页即可通过。
+4. **ChatGPT 个人 Plus / Pro 订阅测试 `/mcp` 时写操作受限**：
+   - 当个人订阅受 OpenAI 平台策略限制仅放行自定义连接器的 `read/fetch` 工具时，请在控制台顶部切到 `网页版 ChatGPT`，点击 `复制只读`（或右侧只读栏的 `复制给 Work 模式帮我连接`）使用 `https://<域名>/mcp/readonly` 地址绑定。
 5. **Gemini 每次运行工具都弹出确认卡片**：
    - 请到 Gemini 左侧栏 `Customize -> Connectors -> Cosmos` 详情页把 `App actions` 改为 `Always allow`；不要在聊天流里的单张工具卡片上单独点允许（会冲掉连接器级免审批），查网页资料时让 `@Cosmos` 用内置 `pc_web_research`。
 6. **换新电脑或重装系统后想保留原固定网址**：

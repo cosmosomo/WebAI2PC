@@ -3,7 +3,7 @@
   "name": "cosmos-mcp",
   "display_name": "Cosmos MCP",
   "version": "1.2.1",
-  "description": "Remote HTTPS OAuth 2.1 MCP server and Cosmos Studio exclusively for Web Google Gemini (Task Mode, including mobile Gemini App) and Web ChatGPT (Chat Mode), with 16 core workspace tools, pre-edit snapshots, and recoverable trash.",
+  "description": "Remote HTTPS OAuth 2.1 MCP server and Cosmos Studio exclusively for Web Google Gemini (Task Mode & mobile App) and Web ChatGPT (enables even everyday Chat mode to work as a local agent alongside Work mode), with 16 core workspace tools, pre-edit snapshots, and recoverable trash.",
   "author": {
     "name": "cosmosomo",
     "url": "https://github.com/cosmosomo/WebAI2PC"
@@ -44,7 +44,7 @@
     "workspace": {
       "type": "directory",
       "title": "开放工作区文件夹",
-      "description": "选择允许网页版 Gemini 与网页版 ChatGPT 读写与执行命令的本地项目目录",
+      "description": "选择允许网页版 Gemini 与网页版 ChatGPT（含普通 Chat 模式日常开发与 Work 模式长程/定时任务）读写与执行命令的本地项目目录",
       "multiple": false,
       "required": true,
       "default": "${HOME}/CosmosWorkspace"
