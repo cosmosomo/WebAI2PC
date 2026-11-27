@@ -1037,3 +1037,147 @@ def test_workers_dev_synchronous_gemini_open_and_proxy_alert_ui(tmp_path: Path) 
             )
             assert alert_shown is True
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
+
+
+def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_path: Path) -> None:
+    """Verify ChatGPT '复制给 ChatGPT 帮我连接' stays disabled before gateway is ready, then copies clean prompt without secrets/paths."""
+    state_dir = tmp_path / "state_cgpt_assist"
+    ws_dir = tmp_path / "ws_cgpt_secret_path_check"
+    ws_dir.mkdir(parents=True)
+
+    atomic_write_json(
+        state_dir / "config" / "service.json",
+        {
+            "gateways": {
+                "instant": {"enabled": True, "submode": "public_gateway"},
+                "workers_dev": {"enabled": False, "submode": "workers_dev"},
+            },
+        },
+    )
+
+    with LiveStudioServer(state_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="cgpt-assist") as srv:
+        # Phase 1: Gateway is starting (NOT ready yet) -> buttons MUST stay disabled
+        atomic_write_json(
+            state_dir / "state" / "daemon_status.json",
+            {
+                "status": "starting",
+                "supervisor_pid": 54321,
+                "gateways": {
+                    "instant": {
+                        "enabled": True,
+                        "submode": "public_gateway",
+                        "effective_mode": "srv_us",
+                        "phase": "starting",
+                        "tunnel_ready": False,
+                        "public_url": "",
+                        "last_error": "",
+                    },
+                },
+            },
+        )
+
+        with StudioPageDriver(tmp_path / "cdp_cgpt_assist") as driver:
+            driver.set_viewport(1280, 720, mobile=False)
+            driver.goto(f"{srv.base_url}/")
+            driver.trigger_poll()
+            driver.select_host_scene("chatgpt")
+
+            disabled_state = driver.wait_until(
+                """() => {
+                    const f = document.getElementById('copy-chatgpt-assist-full-btn');
+                    const r = document.getElementById('copy-chatgpt-assist-ro-btn');
+                    return f && r && f.disabled === true && r.disabled === true ? true : false;
+                }""",
+                description="ChatGPT assist buttons disabled while gateway not ready",
+            )
+            assert disabled_state is True
+
+            # Phase 2: Gateway becomes ready -> buttons unlock and copy clean structured prompts
+            atomic_write_json(
+                state_dir / "state" / "daemon_status.json",
+                {
+                    "status": "running",
+                    "supervisor_pid": 54321,
+                    "gateways": {
+                        "instant": {
+                            "enabled": True,
+                            "submode": "public_gateway",
+                            "effective_mode": "srv_us",
+                            "phase": "ready",
+                            "tunnel_ready": True,
+                            "public_url": "https://cgpt-ready.srv.us",
+                            "last_error": "",
+                        },
+                    },
+                },
+            )
+            driver.trigger_poll()
+            driver.wait_until(
+                """() => {
+                    const f = document.getElementById('copy-chatgpt-assist-full-btn');
+                    const r = document.getElementById('copy-chatgpt-assist-ro-btn');
+                    return f && r && f.disabled === false && r.disabled === false;
+                }""",
+                description="ChatGPT assist buttons enabled once gateway ready",
+            )
+
+            secret_meta = driver.evaluate(
+                """() => ({
+                    pair4: (document.getElementById('pair-code-box')?.textContent || '').trim(),
+                    pair6: (document.getElementById('dynamic-pair-code-box')?.textContent || '').trim(),
+                    pw: document.getElementById('conn-pw-box')?.getAttribute('data-secret') || '',
+                    copiedBefore: (window.__copiedHistory || []).length
+                })"""
+            )
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.getElementById('copy-chatgpt-assist-full-btn').click();
+                    document.getElementById('copy-chatgpt-assist-ro-btn').click();
+                }"""
+            )
+            copied_list = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 2) ? window.__copiedHistory.slice() : false",
+                description="Both ChatGPT assist prompts copied",
+            )
+            full_prompt, ro_prompt = copied_list[0], copied_list[1]
+
+            assert "插件名称：WebAI2PC" in full_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
+            assert "Team / Business / Enterprise / Edu 工作区，完整读写" in full_prompt
+            assert "pc_get_status（get_status）" in full_prompt
+
+            assert "插件名称：WebAI2PC" in ro_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
+            assert "ChatGPT Plus / Pro，只读" in ro_prompt
+            assert "pc_get_status（get_status）" in ro_prompt
+
+            # Strict zero-secret / zero-local-path leak checks
+            for secret_val in (secret_meta["pair4"], secret_meta["pair6"], secret_meta["pw"], str(ws_dir)):
+                if secret_val and secret_val not in ("----", "------"):
+                    assert secret_val not in full_prompt
+                    assert secret_val not in ro_prompt
+
+            # Also verify `/tutorials` Module 2 assist buttons unlock on live sync and copy clean prompt
+            driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
+            driver.wait_until(
+                """() => {
+                    const btn = document.querySelector('[data-copy-chatgpt-assist="readonly"]');
+                    return Boolean(btn && btn.disabled === false);
+                }""",
+                timeout_sec=8.0,
+                description="Tutorials ChatGPT assist button unlocked on live sync",
+            )
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
+                    document.querySelector('[data-copy-chatgpt-assist="readonly"]').click();
+                }"""
+            )
+            tut_copied = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Tutorials ChatGPT assist prompt copied",
+            )
+            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied
+            assert driver.get_runtime_diagnostics()["jsErrors"] == []
+

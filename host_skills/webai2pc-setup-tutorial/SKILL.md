@@ -73,8 +73,9 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 - **网页版 Gemini（任务模式与手机端同步）**：
   - 在 Gemini 左侧栏依次点击 `Customize -> Connectors -> + Custom`，名称填 `Cosmos`，URL 粘贴控制台显示的 `https://<域名>/mcp`（`Client ID` 与 `Client Secret` 留空）。
   - 跳转授权页后，同机浏览器直接点 `本机一键允许连接`；完成后点进 `Cosmos` 连接器详情页，将 `App actions` 总开关设为 `Always allow`。新建对话首句输入 `@Cosmos ...` 点选连接器标签即可唤醒，同账号手机端 Gemini App 自动同步可用。
-- **网页版 ChatGPT**：
-  - 在 `Settings -> Connectors` 添加自定义连接器，名称填 `Cosmos`；Team / Business / Enterprise / Edu 工作区账号粘贴 `https://<域名>/mcp`，个人 Plus / Pro 账号粘贴只读地址 `https://<域名>/mcp/readonly`。新建对话时在输入框下方工具菜单勾选 `Cosmos`。
+- **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用）**：
+  - 本地控制台在公网网关就绪后开放 `复制给 ChatGPT 帮我连接` 按钮（自动填入当前实际可用的 `/mcp` 或 `/mcp/readonly` 地址，不含配对码、口令、令牌与本机路径）。若当前会话具备可操作浏览器、用户明确委托且账号有创建权限可尝试代填；普通聊天则按界面指引点击左侧 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，粘贴地址（Team / Business / Enterprise / Edu 工作区填 `/mcp` 全功能，个人 Plus / Pro 受平台限制写工具时填 `/mcp/readonly` 只读），认证选 `OAuth`，点 `Create as a plugin` 并安装。
+  - 登录与授权确认由用户本人在授权页点 `本机一键允许连接`（或输配对码）完成；新建 `Chat`（日常读写跟手且不耗 `Work / Codex` 额度）或 `Work` 对话输入 `@WebAI2PC`，以调用 `pc_get_status`（`get_status`）实际成功作为接通标准。
 - **开启可选扩展包与多机前缀（`#settings/tools`，传 `open_page="tools"`）**：
   - `受管浏览器包`（`browser` -> `pc_browser_use`）：在独立 `browser_profile` 目录运行隔离浏览器查阅网页与截图，不触碰用户个人浏览器窗口。
   - `桌面窗口操控包`（`desktop` -> `pc_cua_window`，仅 Windows）：基于离屏截图与后台消息辅助操作桌面窗口，检测到键鼠活跃时自动礼让。

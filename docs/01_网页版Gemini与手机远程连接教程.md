@@ -68,10 +68,10 @@ cosmos-mcp start --workspace D:\Projects\my-app
    ```
    授权刚完成时，控制台顶部绿色已连接横幅提供「一键复制首句唤醒测试词」按钮（Windows 托盘右键菜单提供「复制首句唤醒词」），可直接复制粘贴发送。
 
-### 2. 网页版 ChatGPT（对话模式）
+### 2. 网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用）
 
-1. 在网页版 ChatGPT 的 `Settings（设置） -> Connectors（连接器）` 管理页添加自定义 MCP 连接器，名称填写 `Cosmos`，工作区账号填入 `https://<你的域名>/mcp`，个人 Plus / Pro 账号填入 `https://<你的域名>/mcp/readonly`，按页面提示完成授权确认。
-2. **勾选工具图标唤醒**：新建对话时，点击聊天输入框下方的工具（连接器）图标，在菜单中勾选已绑定的 `Cosmos`，随后直接输入问题（例如「查看当前项目的目录结构和最近修改说明」）。
+1. **一键引导或手动添加插件**：在本地控制台 `网页版 ChatGPT` 页签等待网关就绪后，可直接点 **「复制给 ChatGPT 帮我连接」** 发给当前对话（含实际可用地址，不含配对码与本机路径）；或手动在网页版 ChatGPT 左侧栏打开 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，工作区账号（Team / Business / Enterprise / Edu）填入 `https://<你的域名>/mcp`，个人 Plus / Pro 账号受平台限制写工具时填入 `https://<你的域名>/mcp/readonly`，点击 `Create as a plugin` 并完成安装与本机一键允许授权。
+2. **输入 `@WebAI2PC` 唤醒并以 `pc_get_status` 验证**：新建 `Chat`（日常交互开发不扣 `Work / Codex` 智能体额度）或 `Work` 对话，在输入框键入 `@WebAI2PC` 选中插件，调用一次 `pc_get_status` 确认已接通电脑。
 
 ## 四、手机远控、多设备前缀与跨机路由
 

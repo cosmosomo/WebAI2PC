@@ -176,7 +176,7 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
                 "### 快速上手与本地控制台界面导览\n\n"
                 "1. **三步连上网页端 AI**：\n"
                 f"   - **第 1 步（启动并打开控制台）**：双击启动脚本后，本机浏览器打开主控首页 `{base}/`。\n"
-                "   - **第 2 步（复制 HTTPS 地址并绑定）**：在主控首页顶部连接卡选择 `网页版 Gemini` 或 `网页版 ChatGPT`，点击 `复制连接地址`（ChatGPT 个人 Plus/Pro 点 `复制只读`），前往对应网页连接器添加并完成一次授权。\n"
+                "   - **第 2 步（复制 HTTPS 地址并绑定）**：在主控首页顶部连接卡选择 `网页版 Gemini` 或 `网页版 ChatGPT`（网关就绪后 ChatGPT 面板可直接点击 `复制给 ChatGPT 帮我连接`，或按需复制 `/mcp` / `/mcp/readonly` 到左侧 `Plugins -> + -> Add custom MCP server` 创建并安装插件），完成一次同机授权并以调用 `pc_get_status` 成功作为接通标准。\n"
                 "   - **第 3 步（开启免审批并唤醒）**：在网页端连接器设置中将 `App actions` 设为 `Always allow`，回到聊天框首句输入 `@Cosmos` 即可操作本机工作区。\n"
                 "2. **三个本地页面分工**：\n"
                 f"   - **主控首页**（`{base}/`，对应 `#workbench-view`）：顶部切换 `网页版 Gemini` / `网页版 ChatGPT` 并复制地址，可展开 `首次绑定步骤与唤醒词` 与 `配对与已连会话`；左下 `开放工作目录` 卡片管理目录与 `当前权限设置`（`只读` / `仅改文件` / `工作区开发` / `全盘开发`）；右下 `实时动态与撤回` 卡片查看 `在途任务`、`修改撤回`、`回收箱`、`调用记录`。顶栏右侧提供 `一键只读`、`实战教程` 与 `设置` 按钮。\n"
@@ -254,11 +254,11 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
                 "   - **关键设置**：绑定成功后，前往 Gemini 左侧 `Customize -> Connectors -> Cosmos -> App actions`，将其设为 **`Always allow`**（切勿在聊天框单张工具确认卡上点单次允许，以免覆盖整组免审批设置）。\n"
                 "   - **推荐存入 Skills**：在主控首页展开 `首次绑定步骤与唤醒词` 点击 `复制 AI 守则`（或连接成功后复制顶部横幅的 `复制 AI 操作守则（推荐存入 Skills）`），粘贴保存到 Gemini 的 `Skills` 中。\n"
                 "   - **唤醒与手机同步**：新开对话首句输入 `@Cosmos`（例如：`@Cosmos 查看当前电脑状态与工作区文件`）。同一 Google 账号登录手机端 Gemini App 后无需重复配置即可直接调用。\n"
-                "2. **网页版 ChatGPT（区分工作区账号与个人订阅账号）**：\n"
-                "   - 在主控首页切换到 `网页版 ChatGPT` 页签：\n"
-                "     - **ChatGPT Team / Enterprise / Edu 工作区账号**：复制右侧 **「Team / Enterprise 工作区账号（全权限地址）」**（`https://<域名>/mcp`），支持完整读写与运行命令。\n"
-                "     - **ChatGPT Plus / Pro 个人账号**：受限于平台对个人号自定义连接器的只读限制，请点击左侧 `复制只读` 复制 **「个人 Plus / Pro 账号（只读连接地址）」**（`https://<域名>/mcp/readonly`），用于浏览代码、检索项目与审阅架构。\n"
-                "   - 打开 ChatGPT `Settings -> Connectors` 添加对应地址并完成授权；发消息前在聊天输入框下方的工具菜单中勾选 `Cosmos`。"
+            "2. **网页版 ChatGPT（`Chat` 模式与 `Work` 模式通用 · 区分工作区读写与个人版只读）**：\n"
+            "   - 在主控首页切换到 `网页版 ChatGPT` 页签（按钮在公网网关就绪后自动开放，可单复制地址，也可直接点 **「复制给 ChatGPT 帮我连接」** 一并生成含实际可用地址、不含配对码/口令/路径的配置请求发给 ChatGPT）：\n"
+            "     - **Team / Business / Enterprise / Edu 工作区账号**：使用全功能主地址 `https://<域名>/mcp`（开放全部 16 项代码读写、Office 修订与无窗口命令执行；在 `Chat` 模式下当本地 Agent 干活响应快且不消耗 `Work / Codex` 智能体额度，需要跨应用长程交付或定时任务时切 `Work` 模式）。\n"
+            "     - **个人 Plus / Pro 订阅账号**：当平台策略对自建远程 MCP 仅放行 `read/fetch` 权限时，使用只读地址 `https://<域名>/mcp/readonly`（开放 12 项只读分析工具，若账号已获写工具放行也可先试 `/mcp`）。\n"
+            "   - **连接与验证**：若当前对话具备可操作浏览器且获用户明确委托，ChatGPT 可尝试代填；普通聊天则按界面指引打开左侧 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，认证选 `OAuth`，点 `Create as a plugin` 并安装，登录或授权确认由用户在授权页点 `本机一键允许连接`（或输配对码）完成；随后在对话输入 `@WebAI2PC` 并以 **`pc_get_status`（`get_status`）实际调用成功**作为接通标准。"
             ),
         },
         "packs_and_skills": {

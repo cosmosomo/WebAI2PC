@@ -510,9 +510,9 @@
         <article class="card tut-module" id="mod-chatgpt" data-module-id="mod-chatgpt">
           <div class="tut-mod-header">
             <div>
-              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT 对话模式（读写与只读双地址隔离）</div>
-              <h2 class="card-title">网页版 ChatGPT 双模式接入（工作区读写 vs 个人版只读）</h2>
-              <p class="card-desc" style="margin-bottom:0;">根据您的 ChatGPT 订阅类型选择对应连接地址，服务端按连接地址自动隔离读写与纯只读权限（遵循 RFC 8707 资源受众隔离规范）。</p>
+              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（Chat 与 Work 模式通用 · 读写与只读双地址隔离）</div>
+              <h2 class="card-title">网页版 ChatGPT 接入（工作区全功能读写 vs 个人版只读）</h2>
+              <p class="card-desc" style="margin-bottom:0;">网页版 ChatGPT 的 <code>Chat</code> 模式（响应快、不消耗 <code>Work / Codex</code> 智能体额度）与 <code>Work</code> 模式（长程多步交付与定时任务）共用 <code>Plugins</code> 插件目录，均可 <code>@WebAI2PC</code> 当本地 Agent 使用；网关就绪后可直接点「复制给 ChatGPT 帮我连接」。</p>
             </div>
             <div class="tut-sub-seg tut-sub-seg-light" role="tablist" aria-label="ChatGPT 账号类型选择">
               <button type="button" class="tut-sub-btn active" id="cgpt-tab-workspace" data-cgpt-mode="workspace">工作区账号 (/mcp)</button>
@@ -524,24 +524,26 @@
             <div class="tut-ep-card recommended" id="cgpt-card-workspace">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
                 <strong>Team / Business / Enterprise / Edu 工作区账号</strong>
-                <span class="tag tag-ok">完整读写与执行</span>
+                <span class="tag tag-ok">Chat / Work 全功能读写</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放文件读取、代码修改、Word/Excel 安全修订与后台无窗口命令执行能力。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；在 <code>Chat</code> 模式下干活不消耗 <code>Work / Codex</code> 智能体额度。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="mcp" data-copy-live="mcp">https://xxxxx.srv.us/mcp</div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-live="mcp">复制工作区地址</button>
+                <button type="button" class="btn btn-tonal btn-sm" data-copy-live="mcp">复制地址</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="本地网关就绪后复制完整地址与配置请求发给 ChatGPT">复制给 ChatGPT 帮我连接</button>
               </div>
             </div>
 
             <div class="tut-ep-card" id="cgpt-card-personal">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
                 <strong>个人 Plus / Pro 订阅账号</strong>
-                <span class="tag tag-warn">纯只读安全保护</span>
+                <span class="tag tag-warn">只读连接保护</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">受平台个人号策略限制，请绑定 <code>/mcp/readonly</code>。该地址仅开放只读查询能力，越权调用写或执行接口会立即返回 <code>403</code> 拒绝。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具，越权写调用自动返回 <code>403</code> 拦截。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="readonly" data-copy-live="readonly">https://xxxxx.srv.us/mcp/readonly</div>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-live="readonly">复制个人版只读地址</button>
+                <button type="button" class="btn btn-tonal btn-sm" data-copy-live="readonly">复制只读</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="本地网关就绪后复制只读地址与配置请求发给 ChatGPT">复制给 ChatGPT 帮我连接</button>
               </div>
             </div>
           </div>
@@ -549,31 +551,31 @@
           <div class="tut-workbench-grid">
             <ul class="tut-step-list">
               <li class="tut-step-item" data-step-wrap="c1">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="确认 ChatGPT 账号类型并复制对应端点">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制连接请求或地址">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 1 步：按账号类型复制上方对应端点</div>
-                  <p class="tut-step-desc">工作区账号复制 <code>/mcp</code>，个人 Plus / Pro 账号复制 <code>/mcp/readonly</code>，避免个人号绑入写工具导致平台隐藏调用入口。</p>
+                  <div class="tut-step-title">第 1 步：网关就绪后点「复制给 ChatGPT 帮我连接」（或复制对应地址）</div>
+                  <p class="tut-step-desc">按钮自动填入当前实际可用的 <code>/mcp</code> 或 <code>/mcp/readonly</code> 地址与目标说明，不复制配对码、口令、令牌或本机路径。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c2">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Settings Connectors 添加 Cosmos">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Plugins 添加自定义 MCP 插件 WebAI2PC">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 2 步：在 <code>Settings（设置） -&gt; Connectors（连接器）</code> 添加 <code>Cosmos</code></div>
-                  <p class="tut-step-desc">填入名称 <code>Cosmos</code> 与复制的 HTTPS 地址，<code>Client ID</code> 与 <code>Client Secret</code> 留空，在弹出的中文授权页完成确认。</p>
+                  <div class="tut-step-title">第 2 步：在左侧 <code>Plugins -&gt; + -&gt; Add custom MCP server</code> 创建并安装插件</div>
+                  <p class="tut-step-desc">若当前会话有可操作浏览器且获授权可尝试代填，普通聊天则按引导点击：名称填 <code>WebAI2PC</code>，认证选 <code>OAuth</code>，点 <code>Create as a plugin</code> 并安装；同机授权页由你点「本机一键允许连接」（异地输配对码）。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c3">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="在对话输入框工具菜单勾选 Cosmos">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="在 Chat 或 Work 模式输入 @WebAI2PC 调用">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 3 步：点击输入框下方工具图标勾选 <code>Cosmos</code></div>
-                  <p class="tut-step-desc">新建对话发消息前，在输入框下方的连接器菜单勾选启用 <code>Cosmos</code>，随后直接输入任务指令。</p>
+                  <div class="tut-step-title">第 3 步：在 <code>Chat</code> 或 <code>Work</code> 模式输入 <code>@WebAI2PC</code> 调用</div>
+                  <p class="tut-step-desc">日常交互读写与跑脚本用 <code>Chat</code> 模式响应更快且省下智能体额度；跨应用整理长文档、表格或设自动任务时切到 <code>Work</code> 模式。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c4">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c4" aria-label="验证双模式权限边界">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c4" aria-label="调用 pc_get_status 确认接通">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 4 步：核对读写或只读响应</div>
-                  <p class="tut-step-desc">个人号只读令牌若被复用于请求 <code>/mcp</code> 主端点，协议层会直接返回 HTTP <code>403 forbidden_cross_resource</code> 阻断跨端点越权。</p>
+                  <div class="tut-step-title">第 4 步：以 <code>pc_get_status</code> 实际调用成功作为接通标准</div>
+                  <p class="tut-step-desc">让 ChatGPT 调用一次 <code>pc_get_status</code>（<code>get_status</code>）确认返回本机系统与开放目录；只读令牌若跨端点请求 <code>/mcp</code> 会直接返回 HTTP <code>403 forbidden_cross_resource</code>。</p>
                 </div>
               </li>
             </ul>
@@ -581,7 +583,7 @@
             <div class="tut-terminal-box" data-pose-trigger="terminal">
               <div class="tut-term-top">
                 <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-                <span class="tut-term-label">双端点受众隔离对比 · 实操测试词</span>
+                <span class="tut-term-label">双端点受众隔离对比 · 首次接通验证词</span>
               </div>
               <div class="tut-matrix-wrap" style="border-color:rgba(255,255,255,0.14);">
                 <table class="tut-table" style="color:#E6EDF3;">
@@ -589,14 +591,14 @@
                     <tr style="background:rgba(255,255,255,0.08);">
                       <th style="color:#C9D1D9;">能力维度</th>
                       <th style="color:#7EE787;">/mcp (工作区)</th>
-                      <th style="color:#FCD34D;">/mcp/readonly (个人版)</th>
+                      <th style="color:#FCD34D;">/mcp/readonly (个人只读)</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td>代码搜索 / 读文档看图 / 批量探针</td>
-                      <td>开放</td>
-                      <td>开放</td>
+                      <td>Chat / Work 开放</td>
+                      <td>Chat / Work 开放</td>
                     </tr>
                     <tr>
                       <td>文件修改 / Word 与 Excel 修订</td>
@@ -611,9 +613,9 @@
                   </tbody>
                 </table>
               </div>
-              <pre class="tut-term-pre">请用 Cosmos 工具查看当前项目的目录结构、核心入口文件与最近修改记录。</pre>
+              <pre class="tut-term-pre">@WebAI2PC 请调用 pc_get_status 确认连接我的电脑，并查看当前项目的目录结构与核心入口文件。</pre>
               <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="请用 Cosmos 工具查看当前项目的目录结构、核心入口文件与最近修改记录。">复制 ChatGPT 首轮测试词</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@WebAI2PC 请调用 pc_get_status 确认连接我的电脑，并查看当前项目的目录结构与核心入口文件。">复制 ChatGPT 首轮验证词</button>
               </div>
             </div>
           </div>

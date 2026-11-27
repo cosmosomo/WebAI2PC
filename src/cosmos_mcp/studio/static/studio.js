@@ -768,7 +768,13 @@
       roBox.classList.toggle("loopback-muted", !isHttpsReady);
     }
 
-    ["copy-mcp-url-btn", "copy-ro-url-btn", "copy-chatgpt-full-btn"].forEach(function (btnId) {
+    [
+      "copy-mcp-url-btn",
+      "copy-ro-url-btn",
+      "copy-chatgpt-full-btn",
+      "copy-chatgpt-assist-ro-btn",
+      "copy-chatgpt-assist-full-btn",
+    ].forEach(function (btnId) {
       var b = $(btnId);
       if (b) b.disabled = !isHttpsReady;
     });
@@ -3110,6 +3116,35 @@
         copyHostSkillGuide($("copy-wake-skill-btn"), "gemini");
       });
     }
+    function getEffectiveToolPrefix() {
+      var tc = (state && state.tools_center) || {};
+      var raw = String(tc.tool_prefix || state.tool_prefix || "pc")
+        .trim()
+        .replace(/_+$/, "");
+      return /^[A-Za-z][A-Za-z0-9_]{0,15}$/.test(raw) ? raw : "pc";
+    }
+
+    function buildChatGptConnectPrompt(kind, targetUrl) {
+      var isRo = kind === "readonly";
+      var pfx = getEffectiveToolPrefix();
+      var statusTool = pfx + "_get_status";
+      var verifyToolDesc = statusTool === "get_status" ? "get_status" : statusTool + "（get_status）";
+      var targetDesc = isRo
+        ? "ChatGPT Plus / Pro，只读（Chat 与 Work 模式通用）"
+        : "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写（Chat 与 Work 模式通用）";
+      return [
+        "请帮我把 WebAI2PC 连接到当前 ChatGPT 账号，并验证首次调用。",
+        "如果你能操作我的 ChatGPT 插件页面，请帮我填写配置。",
+        "如果需要我点击，请告诉我当前要点哪里。",
+        "",
+        "插件名称：WebAI2PC",
+        "MCP 地址：" + targetUrl,
+        "目标：" + targetDesc,
+        "认证：OAuth，由 WebAI2PC 自动协商",
+        "验证：授权后调用 " + verifyToolDesc + "，确认能连接到我的电脑。",
+      ].join("\n");
+    }
+
     if ($("copy-chatgpt-skill-btn")) {
       $("copy-chatgpt-skill-btn").addEventListener("click", function () {
         copyHostSkillGuide($("copy-chatgpt-skill-btn"), "chatgpt");
@@ -3117,11 +3152,28 @@
     }
     if ($("copy-chatgpt-wake-btn")) {
       $("copy-chatgpt-wake-btn").addEventListener("click", function () {
-        var cgptPrompt = "请调用 Cosmos 工具查看当前工作目录里有哪些文件与主要目录结构";
+        var statusTool = getEffectiveToolPrefix() + "_get_status";
+        var cgptPrompt = "@WebAI2PC 请调用 " + statusTool + " 确认连接状态，并查看当前开放的工作目录与文件结构";
         copyText(cgptPrompt, $("copy-chatgpt-wake-btn"));
-        showToast("已复制 ChatGPT 首句测试词：" + cgptPrompt, false);
+        showToast("已复制 ChatGPT 首句验证词：" + cgptPrompt, false);
       });
     }
+
+    // ChatGPT One-Click Guided Connect Prompt Copy Buttons (strictly enabled only when public HTTPS gateway is ready; zero secrets/paths)
+    document.querySelectorAll("[data-copy-chatgpt-assist]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var kind = btn.getAttribute("data-copy-chatgpt-assist");
+        var effTop = resolveEffectiveTopView(state.connection || {});
+        var targetUrl = kind === "readonly" ? effTop.readonly_mcp_url || "" : effTop.mcp_url || "";
+        if (!effTop.public_https_ready || !isSafeHttpsUrl(targetUrl)) {
+          showToast("网关尚未就绪，请等待公网 HTTPS 地址生成后再复制。", true);
+          return;
+        }
+        var connectPrompt = buildChatGptConnectPrompt(kind, targetUrl);
+        copyText(connectPrompt, btn);
+        showToast("已复制连接请求（含当前可用地址，不含配对码与本机路径），请粘贴发给 ChatGPT", false);
+      });
+    });
 
     // Top URL Copy Buttons (strictly copies only real `https://` URLs from active displayed gateway)
     document.querySelectorAll("[data-copy-url-kind]").forEach(function (btn) {

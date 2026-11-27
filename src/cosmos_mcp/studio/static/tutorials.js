@@ -486,6 +486,10 @@
     for (var j = 0; j < roNodes.length; j++) {
       roNodes[j].textContent = state.readonlyUrl;
     }
+    var assistBtns = document.querySelectorAll("[data-copy-chatgpt-assist]");
+    for (var k = 0; k < assistBtns.length; k++) {
+      assistBtns[k].disabled = !state.isLiveSynced;
+    }
 
     if ($("live-pair-code-4")) {
       $("live-pair-code-4").textContent = state.pairCode4 || "----";
@@ -799,6 +803,33 @@
           liveTarget,
           kind === "readonly" ? "已复制个人版只读地址：" + urlToCopy : "已复制主连接地址：" + urlToCopy
         );
+        return;
+      }
+
+      var assistTarget = ev.target.closest("[data-copy-chatgpt-assist]");
+      if (assistTarget) {
+        if (!state.isLiveSynced || !isUsablePublicHttpsUrl(state.mcpUrl)) {
+          showToast("网关尚未就绪，请先在本地 Studio 开启任一公网 HTTPS 通道后再复制。");
+          return;
+        }
+        var aKind = assistTarget.getAttribute("data-copy-chatgpt-assist");
+        var aUrl = aKind === "readonly" ? state.readonlyUrl : state.mcpUrl;
+        var aTargetDesc =
+          aKind === "readonly"
+            ? "ChatGPT Plus / Pro，只读（Chat 与 Work 模式通用）"
+            : "ChatGPT Team / Business / Enterprise / Edu 工作区，完整读写（Chat 与 Work 模式通用）";
+        var aPrompt = [
+          "请帮我把 WebAI2PC 连接到当前 ChatGPT 账号，并验证首次调用。",
+          "如果你能操作我的 ChatGPT 插件页面，请帮我填写配置。",
+          "如果需要我点击，请告诉我当前要点哪里。",
+          "",
+          "插件名称：WebAI2PC",
+          "MCP 地址：" + aUrl,
+          "目标：" + aTargetDesc,
+          "认证：OAuth，由 WebAI2PC 自动协商",
+          "验证：授权后调用 pc_get_status（get_status），确认能连接到我的电脑。"
+        ].join("\n");
+        copyTextToClipboard(aPrompt, assistTarget, "已复制连接请求（含当前可用地址，不含口令与路径），请粘贴发给 ChatGPT");
         return;
       }
 

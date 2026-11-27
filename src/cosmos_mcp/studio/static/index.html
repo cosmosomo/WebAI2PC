@@ -280,17 +280,19 @@
           <div class="host-scene-panel" id="host-panel-chatgpt" role="tabpanel">
             <div class="chatgpt-dual-grid wb-chatgpt-grid">
               <div class="chatgpt-ep-box">
-                <span class="field-label" id="ro-url-label">个人 Plus / Pro 账号（只读连接地址）</span>
+                <span class="field-label" id="chatgpt-full-url-label">Team / Business / Enterprise / Edu 工作区（全功能读写 · Chat 与 Work 通用）</span>
                 <div class="copy-row">
-                  <div class="mono-value" id="ro-url-box" title="点击直接复制只读地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-primary btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly">复制只读</button>
+                  <div class="mono-value" id="chatgpt-full-url-box" title="点击直接复制全权限地址">正在建立加密连接通道…</div>
+                  <button type="button" class="btn btn-tonal btn-sm" id="copy-chatgpt-full-btn" data-copy-url-kind="mcp" disabled>复制地址</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-full-btn" data-copy-chatgpt-assist="mcp" title="网关就绪后复制完整地址与配置请求发给 ChatGPT" disabled>复制给 ChatGPT 帮我连接</button>
                 </div>
               </div>
               <div class="chatgpt-ep-box">
-                <span class="field-label" id="chatgpt-full-url-label">Team / Enterprise 工作区账号（全权限地址）</span>
+                <span class="field-label" id="ro-url-label">个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用）</span>
                 <div class="copy-row">
-                  <div class="mono-value" id="chatgpt-full-url-box" title="点击直接复制全权限地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-tonal btn-sm" id="copy-chatgpt-full-btn" data-copy-url-kind="mcp">复制全权</button>
+                  <div class="mono-value" id="ro-url-box" title="点击直接复制只读地址">正在建立加密连接通道…</div>
+                  <button type="button" class="btn btn-tonal btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly" disabled>复制只读</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-ro-btn" data-copy-chatgpt-assist="readonly" title="网关就绪后复制只读地址与配置请求发给 ChatGPT" disabled>复制给 ChatGPT 帮我连接</button>
                 </div>
               </div>
             </div>
@@ -308,7 +310,7 @@
               <div class="wb-fold-body" id="gemini-https-guide">
                 <ol class="wb-guide-ol">
                   <li><strong>Gemini：</strong>打开 <code>Customize -&gt; Connectors -&gt; + Custom</code>，名称填写 <code>Cosmos</code>，粘贴上方 <code>https://.../mcp</code>（Client ID / Secret 留空），确认页点「本机一键允许连接」并设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
-                  <li><strong>ChatGPT：</strong>打开 <code>Settings -&gt; Connectors</code> 添加上方对应地址，发消息前在输入框工具菜单勾选 <code>Cosmos</code>。</li>
+                  <li><strong>ChatGPT（Chat 与 Work 模式通用）：</strong>网关就绪后直接点上方「复制给 ChatGPT 帮我连接」发给当前对话引导或代填；或手动在左侧 <code>Plugins -&gt; + -&gt; Add custom MCP server</code> 填写名称 <code>WebAI2PC</code> 与对应地址创建并安装插件（同机授权页点「本机一键允许连接」），对话中输入 <code>@WebAI2PC</code> 调用 <code>get_status</code> 验证。</li>
                 </ol>
                 <div class="ws-actions" style="margin-top:10px;">
                   <button type="button" class="btn btn-sm" id="copy-gemini-guide-wake-btn">复制唤醒词</button>
