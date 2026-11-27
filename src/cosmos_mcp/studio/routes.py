@@ -89,6 +89,7 @@ from cosmos_mcp.launcher import cf_workers_gateway as cfgw
 from cosmos_mcp.launcher.autostart import disable_autostart, enable_autostart, get_autostart_status
 from cosmos_mcp.launcher.bootstrap import find_suitable_python
 from cosmos_mcp.launcher.daemon import daemon_stop_flag_path
+from cosmos_mcp.launcher.doctor import run_connectivity_check
 from cosmos_mcp.launcher.folder_picker import pick_directory_native
 from cosmos_mcp.launcher.tunnels import (
     QUICK_TUNNEL_REBOOT_NOTICE_ZH,
@@ -5307,6 +5308,36 @@ def mount_standalone_status_ui(
             headers={"Cache-Control": "no-store"},
         )
 
+    async def studio_connectivity_check_ep(request: Request) -> Response:
+        raw_body = await request.body()
+        if not raw_body or not raw_body.strip():
+            data: Optional[Dict[str, Any]] = {}
+        else:
+            data, _ = await _parse_request_data(request)
+        if data is None:
+            return JSONResponse({"ok": False, "error": "请求格式无效。"}, status_code=400, headers={"Cache-Control": "no-store"})
+        err_resp, minted = _check_studio_auth(request, data)
+        if err_resp is not None:
+            return err_resp
+
+        raw_gw = str(data.get("gateway_id") or "").strip().lower()
+        if raw_gw and raw_gw not in STUDIO_GATEWAY_IDS:
+            return JSONResponse(
+                {"ok": False, "error": f"未知网关通道标识：{raw_gw}"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        policy.refresh()
+        res = await asyncio.to_thread(
+            run_connectivity_check,
+            policy.state_root,
+            prefix=policy.eff_prefix,
+            local_port=port,
+            gateway_id=raw_gw,
+            timeout_sec=3.5,
+        )
+        return _json_with_optional_cookie(res, request, minted)
+
     async def studio_service_control_ep(request: Request) -> Response:
         data, _ = await _parse_request_data(request)
         if data is None:
@@ -6413,6 +6444,7 @@ def mount_standalone_status_ui(
         Route("/api/studio/tokens/mint", endpoint=studio_tokens_mint_ep, methods=["POST"]),
         Route("/api/studio/tools-safety", endpoint=studio_tools_safety_ep, methods=["POST"]),
         Route("/api/studio/connection", endpoint=studio_connection_ep, methods=["POST"]),
+        Route("/api/studio/connectivity-check", endpoint=studio_connectivity_check_ep, methods=["POST"]),
         Route("/api/studio/tasks", endpoint=studio_tasks_ep, methods=["GET", "POST"]),
         Route("/api/studio/recovery", endpoint=studio_recovery_ep, methods=["GET", "POST"]),
         Route("/api/studio/recovery/diff", endpoint=studio_recovery_diff_ep, methods=["GET"]),

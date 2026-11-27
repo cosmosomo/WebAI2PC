@@ -527,6 +527,7 @@
             </div>
             <div class="ws-actions wb-conn-head-right">
               <button type="button" class="btn btn-primary" id="copy-mcp-url-btn" data-copy-url-kind="mcp">复制连接地址</button>
+              <button type="button" class="btn btn-tonal" id="run-conn-check-btn">检查连通性</button>
               <button type="button" class="btn btn-ghost" id="toggle-conn-details-btn" aria-expanded="true" aria-controls="wb-conn-drawer">详情与配对 ▾</button>
               <button type="button" class="btn btn-ghost" id="open-onboarding-btn" title="重新打开首次接入配置向导">接入向导</button>
               <button type="button" class="btn btn-ghost" id="open-settings-gateways-btn" data-open-settings="gateways">通道设置</button>
@@ -534,6 +535,22 @@
           </div>
 
           <div id="wb-conn-drawer" class="wb-conn-drawer open">
+            <!-- Inline 5-Layer End-to-End Connectivity Diagnostic Panel -->
+            <div id="conn-check-panel" class="conn-check-panel" style="display:none;" role="region" aria-label="连通性检查结果">
+              <div class="conn-check-head">
+                <div class="conn-check-head-left">
+                  <span id="conn-check-badge" class="conn-check-pill is-checking">检测中…</span>
+                  <span id="conn-check-summary" class="conn-check-summary-txt">正在并发实测本机服务、代理、公网网关与协议握手…</span>
+                </div>
+                <div class="ws-actions conn-check-head-actions">
+                  <button type="button" class="btn btn-sm" id="rerun-conn-check-btn">重新检测</button>
+                  <button type="button" class="btn btn-tonal btn-sm" id="copy-conn-diag-btn" disabled>复制脱敏诊断</button>
+                  <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="close-conn-check-btn" title="关闭诊断面板" aria-label="关闭诊断面板">×</button>
+                </div>
+              </div>
+              <div id="conn-check-steps" class="conn-check-steps"></div>
+            </div>
+
             <!-- Compact 1-Line First-Message Wakeup Banner (inside drawer, dismissible) -->
             <div id="first-wake-banner" class="wake-banner wb-wake-compact" style="display:none;" role="region" aria-label="首句唤醒提示">
               <div class="wake-banner-top">
@@ -955,9 +972,29 @@
           <div class="settings-content">
             <!-- Category 1: 连接与网关 -->
             <section class="settings-pane active" id="settings-pane-gateways" role="tabpanel">
-              <div class="settings-pane-head">
-                <h2 class="settings-pane-title">连接与网关</h2>
-                <p class="settings-pane-desc">支持多网关同时开启；点击任意通道展开配置，右上角开关可独立启停。</p>
+              <div class="settings-pane-head settings-pane-head-flex">
+                <div style="min-width:0;flex:1 1 240px;">
+                  <h2 class="settings-pane-title">连接与网关</h2>
+                  <p class="settings-pane-desc">支持多网关同时开启；点击任意通道展开配置，右上角开关可独立启停。</p>
+                </div>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-tonal btn-sm" id="settings-conn-check-btn">检查连通性</button>
+                </div>
+              </div>
+
+              <div id="settings-conn-check-panel" class="conn-check-panel" style="display:none;margin-bottom:14px;" role="region" aria-label="网关设置连通性诊断">
+                <div class="conn-check-head">
+                  <div class="conn-check-head-left">
+                    <span id="settings-conn-check-badge" class="conn-check-pill is-checking">检测中…</span>
+                    <span id="settings-conn-check-summary" class="conn-check-summary-txt">正在并发实测通道连通性与延迟…</span>
+                  </div>
+                  <div class="ws-actions conn-check-head-actions">
+                    <button type="button" class="btn btn-sm" id="settings-rerun-conn-check-btn">重新检测</button>
+                    <button type="button" class="btn btn-tonal btn-sm" id="settings-copy-conn-diag-btn" disabled>复制脱敏诊断</button>
+                    <button type="button" class="btn btn-ghost btn-sm wb-dismiss-btn" id="settings-close-conn-check-btn" title="关闭诊断面板" aria-label="关闭诊断面板">×</button>
+                  </div>
+                </div>
+                <div id="settings-conn-check-steps" class="conn-check-steps"></div>
               </div>
 
               <div id="channel-selector" class="settings-block">
@@ -988,7 +1025,9 @@
                       <div class="gw-card-url-box" id="gw-url-instant">-</div>
                       <button type="button" class="btn btn-sm" id="gw-copy-ro-instant" data-gw-copy-ro="instant" style="display:none;">复制 Plus/Pro 只读</button>
                       <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-instant" data-gw-copy="instant">复制此卡地址</button>
+                      <button type="button" class="btn btn-sm" id="gw-probe-instant" data-gw-probe="instant">检活测速</button>
                     </div>
+                    <div class="gw-card-probe-box" id="gw-probe-box-instant" style="display:none;"></div>
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
@@ -1042,7 +1081,9 @@
                       <div class="gw-card-url-box" id="gw-url-workers_dev">-</div>
                       <button type="button" class="btn btn-sm" id="gw-copy-ro-workers_dev" data-gw-copy-ro="workers_dev" style="display:none;">复制 Plus/Pro 只读</button>
                       <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-workers_dev" data-gw-copy="workers_dev">复制此卡地址</button>
+                      <button type="button" class="btn btn-sm" id="gw-probe-workers_dev" data-gw-probe="workers_dev">检活测速</button>
                     </div>
+                    <div class="gw-card-probe-box" id="gw-probe-box-workers_dev" style="display:none;"></div>
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
@@ -1107,7 +1148,9 @@
                       <div class="gw-card-url-box" id="gw-url-self_hosted">-</div>
                       <button type="button" class="btn btn-sm" id="gw-copy-ro-self_hosted" data-gw-copy-ro="self_hosted" style="display:none;">复制 Plus/Pro 只读</button>
                       <button type="button" class="btn btn-tonal btn-sm" id="gw-copy-self_hosted" data-gw-copy="self_hosted">复制此卡地址</button>
+                      <button type="button" class="btn btn-sm" id="gw-probe-self_hosted" data-gw-probe="self_hosted">检活测速</button>
                     </div>
+                    <div class="gw-card-probe-box" id="gw-probe-box-self_hosted" style="display:none;"></div>
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">

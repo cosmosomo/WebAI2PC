@@ -5273,3 +5273,204 @@ html[data-theme="dark"] .header-perm-pill[data-safety-mode="readonly"] {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ==========================================================================
+   5-Layer End-to-End Connectivity Check Panel & Per-Card Speed Probe
+   High-contrast WCAG AA (>= 4.5:1) across all light/dark themes & 390px viewports
+   ========================================================================== */
+
+.settings-pane-head-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.conn-check-panel {
+  margin: 0 0 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+}
+
+.conn-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.conn-check-head-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.conn-check-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.conn-check-summary-txt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.conn-check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.conn-check-pill.is-ok {
+  background: #ECFDF5;
+  color: #065F46;
+  border-color: #A7F3D0;
+}
+
+.conn-check-pill.is-warn {
+  background: #FFFBEB;
+  color: #92400E;
+  border-color: #FDE68A;
+}
+
+.conn-check-pill.is-error {
+  background: #FEF2F2;
+  color: #991B1B;
+  border-color: #FECACA;
+}
+
+.conn-check-pill.is-checking,
+.conn-check-pill.is-skipped {
+  background: #F3F4F6;
+  color: #374151;
+  border-color: #D1D5DB;
+}
+
+html[data-theme="dark"] .conn-check-pill.is-ok {
+  background: #0D281E;
+  color: #6EE7B7;
+  border-color: #1F6E58;
+}
+
+html[data-theme="dark"] .conn-check-pill.is-warn {
+  background: #2B210B;
+  color: #FCD34D;
+  border-color: #92400E;
+}
+
+html[data-theme="dark"] .conn-check-pill.is-error {
+  background: #2D1215;
+  color: #FCA5A5;
+  border-color: #991B1B;
+}
+
+html[data-theme="dark"] .conn-check-pill.is-checking,
+html[data-theme="dark"] .conn-check-pill.is-skipped {
+  background: #21262D;
+  color: #C9D1D9;
+  border-color: #363E4B;
+}
+
+.conn-check-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.conn-step-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  min-width: 0;
+}
+
+.conn-step-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.conn-step-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.conn-step-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.conn-step-detail {
+  font-size: 12px;
+  line-height: 1.48;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.conn-step-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.conn-step-subitem {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.conn-step-url {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.gw-card-probe-box {
+  margin: 6px 14px 4px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.48;
+  overflow-wrap: anywhere;
+}

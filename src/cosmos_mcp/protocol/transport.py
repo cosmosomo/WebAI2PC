@@ -2405,11 +2405,22 @@ def create_protocol_app(
         return JSONResponse(res, status_code=st_code, headers={"Cache-Control": "no-store"})
 
     state_fp = hashlib.sha256(os.path.normcase(str(pol.state_root.resolve())).encode("utf-8")).hexdigest()[:12]
+    loopback_healthz_origin_re = re.compile(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", re.IGNORECASE)
 
-    async def health_endpoint(request: Request) -> JSONResponse:
+    async def health_endpoint(request: Request) -> Response:
+        origin_hdr = (request.headers.get("origin") or "").strip()
+        is_loopback_origin = bool(origin_hdr and loopback_healthz_origin_re.fullmatch(origin_hdr))
+        cors_hdrs: Dict[str, str] = {"Cache-Control": "no-store"}
+        if is_loopback_origin:
+            cors_hdrs["Access-Control-Allow-Origin"] = origin_hdr
+            cors_hdrs["Vary"] = "Origin"
+        if request.method == "OPTIONS":
+            if is_loopback_origin:
+                cors_hdrs["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            return Response(status_code=204, headers=cors_hdrs)
         pol.refresh()
         if not is_strict_direct_loopback(request, port):
-            return JSONResponse({"status": "ok"})
+            return JSONResponse({"status": "ok"}, headers=cors_hdrs)
         return JSONResponse(
             {
                 "status": "ok",
@@ -2421,7 +2432,7 @@ def create_protocol_app(
                 "inflight": dispatcher.inflight_count,
                 "tool_count": len(dispatcher.active_tool_specs()),
             },
-            headers={"Cache-Control": "no-store"},
+            headers=cors_hdrs,
         )
 
     auth_routes = create_auth_routes(
@@ -2725,7 +2736,7 @@ def create_protocol_app(
             Route("/consent/complete", endpoint=consent_complete_entry, methods=["GET"]),
             Route("/u/{node_id}/consent", endpoint=consent_entry, methods=["GET", "POST"]),
             Route("/u/{node_id}/consent/complete", endpoint=consent_complete_entry, methods=["GET"]),
-            Route("/healthz", endpoint=health_endpoint, methods=["GET"]),
+            Route("/healthz", endpoint=health_endpoint, methods=["GET", "OPTIONS"]),
         ]
     )
 

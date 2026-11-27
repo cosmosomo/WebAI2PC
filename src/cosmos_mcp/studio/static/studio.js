@@ -3448,6 +3448,55 @@
     if ($("open-gemini-connectors-btn")) {
       $("open-gemini-connectors-btn").addEventListener("click", probeAndOpenGeminiConnectors);
     }
+    if ($("run-conn-check-btn")) {
+      $("run-conn-check-btn").addEventListener("click", function () {
+        runStudioConnectivityCheck("", "workbench");
+      });
+    }
+    if ($("rerun-conn-check-btn")) {
+      $("rerun-conn-check-btn").addEventListener("click", function () {
+        runStudioConnectivityCheck(lastWorkbenchConnGwId, "workbench");
+      });
+    }
+    if ($("copy-conn-diag-btn")) {
+      $("copy-conn-diag-btn").addEventListener("click", function () {
+        copyRedactedConnDiag("workbench", $("copy-conn-diag-btn"));
+      });
+    }
+    if ($("close-conn-check-btn")) {
+      $("close-conn-check-btn").addEventListener("click", function () {
+        if ($("conn-check-panel")) $("conn-check-panel").style.display = "none";
+      });
+    }
+    if ($("settings-conn-check-btn")) {
+      $("settings-conn-check-btn").addEventListener("click", function () {
+        runStudioConnectivityCheck("", "settings");
+      });
+    }
+    if ($("settings-rerun-conn-check-btn")) {
+      $("settings-rerun-conn-check-btn").addEventListener("click", function () {
+        runStudioConnectivityCheck(lastSettingsConnGwId, "settings");
+      });
+    }
+    if ($("settings-copy-conn-diag-btn")) {
+      $("settings-copy-conn-diag-btn").addEventListener("click", function () {
+        copyRedactedConnDiag("settings", $("settings-copy-conn-diag-btn"));
+      });
+    }
+    if ($("settings-close-conn-check-btn")) {
+      $("settings-close-conn-check-btn").addEventListener("click", function () {
+        if ($("settings-conn-check-panel")) $("settings-conn-check-panel").style.display = "none";
+      });
+    }
+    document.querySelectorAll("[data-gw-probe]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var gid = btn.getAttribute("data-gw-probe") || "";
+        if (gid) {
+          runStudioConnectivityCheck(gid, "settings", btn);
+        }
+      });
+    });
     if ($("toggle-conn-details-btn")) {
       $("toggle-conn-details-btn").addEventListener("click", function () {
         userToggledConnDrawer = true;
@@ -5330,7 +5379,543 @@
     }
   }
 
+  var CONN_CHECK_ZH_TO_EN = {
+    "检查连通性": "Check Connectivity",
+    "检测中…": "Checking…",
+    "重新检测": "Re-check",
+    "复制脱敏诊断": "Copy Redacted Report",
+    "检活测速": "Probe Speed",
+    "测速中…": "Probing…",
+    "关闭诊断面板": "Close Diagnostics",
+    "正在并发实测本机服务、代理、公网网关与协议握手…": "Probing local service, system proxy, public gateways, and OAuth/MCP handshake…",
+    "正在并发实测通道连通性与延迟…": "Probing gateway connectivity and latency…",
+    "全部畅通": "All Healthy",
+    "部分需注意": "Attention Needed",
+    "发现阻断项": "Blocker Detected",
+    "正常": "OK",
+    "注意": "Warn",
+    "阻断": "Error",
+    "未开启": "Disabled",
+    "跳过": "Skipped",
+    "1. 本机回环服务与代理排除": "1. Local Loopback & NO_PROXY",
+    "2. 本机系统代理与通道组件": "2. System Proxy & Components",
+    "3. 公网 HTTPS 网关可达": "3. Public HTTPS Gateway /healthz",
+    "4. 云端 AI 协议握手": "4. Cloud AI Protocol Handshake",
+    "5. 当前浏览器授权页直达": "5. Browser Direct Consent Reachability"
+  };
+
+  function registerConnCheckI18n() {
+    if (window.WebAI2PCI18n && window.WebAI2PCI18n.ZH_TO_EN) {
+      try {
+        Object.assign(window.WebAI2PCI18n.ZH_TO_EN, CONN_CHECK_ZH_TO_EN);
+        if (window.WebAI2PCI18n.getLang && window.WebAI2PCI18n.getLang() === "en") {
+          window.WebAI2PCI18n.apply("en");
+        }
+      } catch (e) {}
+    }
+  }
+
+  function isUiLangEn() {
+    if (window.WebAI2PCI18n && typeof window.WebAI2PCI18n.getLang === "function") {
+      return window.WebAI2PCI18n.getLang() === "en";
+    }
+    return document.documentElement.getAttribute("data-lang") === "en";
+  }
+
+  var lastWorkbenchConnGwId = "";
+  var lastSettingsConnGwId = "";
+  var connCheckResultsBySurface = { workbench: null, settings: null };
+  var cardProbeCache = {};
+  var connCheckReqSeq = 0;
+  var langObserverBound = false;
+
+  function resolveBrowserProbeOrigin(gatewayId) {
+    var conn = (state && state.connection) || {};
+    var gws = conn.gateways || state.gateways || {};
+    var rawCand = "";
+    if (gatewayId && gws[gatewayId]) {
+      var sl = gws[gatewayId];
+      if (sl.enabled) {
+        rawCand = sl.mcp_url || sl.public_url || sl.configured_url || "";
+      }
+    } else {
+      var effTop = resolveEffectiveTopView(conn);
+      rawCand = effTop.mcp_url || "";
+      if (!rawCand && effTop.enabledIds && effTop.enabledIds.length > 0) {
+        for (var i = 0; i < effTop.enabledIds.length; i++) {
+          var gItem = gws[effTop.enabledIds[i]];
+          if (gItem && gItem.enabled && (gItem.mcp_url || gItem.public_url || gItem.configured_url)) {
+            rawCand = gItem.mcp_url || gItem.public_url || gItem.configured_url;
+            break;
+          }
+        }
+      }
+    }
+    var s = String(rawCand || "").trim();
+    if (!s || s.indexOf("https://") !== 0) return "";
+    return s.replace(/\/mcp(?:\/readonly)?\/?$/, "").replace(/\/+$/, "");
+  }
+
+  function probeBrowserGatewayDirect(originUrl) {
+    if (!originUrl) {
+      return Promise.resolve({
+        attempted: false,
+        status: "skipped",
+        latency_ms: null,
+        message_zh: "等待公网 HTTPS 网关开启并就绪后检测浏览器直达",
+        message_en: "Waiting for an active public HTTPS gateway before testing browser direct reachability."
+      });
+    }
+    var nowFn = function () {
+      return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    };
+    var t0 = nowFn();
+    var ctrl1 = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer1 = setTimeout(function () {
+      if (ctrl1) ctrl1.abort();
+    }, 2800);
+
+    return fetch(originUrl + "/healthz", {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      signal: ctrl1 ? ctrl1.signal : undefined
+    })
+      .then(function (resp) {
+        clearTimeout(timer1);
+        var ms = Math.max(1, Math.round(nowFn() - t0));
+        if (resp && resp.ok) {
+          return {
+            attempted: true,
+            status: "ok",
+            latency_ms: ms,
+            message_zh: "浏览器直达正常 · " + ms + "ms",
+            message_en: "Browser direct reachability OK · " + ms + "ms"
+          };
+        }
+        var sc = resp ? resp.status : 0;
+        return {
+          attempted: true,
+          status: "warn",
+          latency_ms: ms,
+          message_zh: "浏览器请求公网 /healthz 返回 HTTP " + sc + "，首次打开授权页若遇拦截可使用 6 位动态配对码",
+          message_en: "Browser request to /healthz returned HTTP " + sc + "; use the 6-digit pairing code if consent is blocked."
+        };
+      })
+      .catch(function () {
+        clearTimeout(timer1);
+        var ctrl2 = typeof AbortController !== "undefined" ? new AbortController() : null;
+        var timer2 = setTimeout(function () {
+          if (ctrl2) ctrl2.abort();
+        }, 1600);
+        return fetch(originUrl + "/healthz", {
+          method: "GET",
+          mode: "no-cors",
+          cache: "no-store",
+          credentials: "omit",
+          signal: ctrl2 ? ctrl2.signal : undefined
+        })
+          .then(function () {
+            clearTimeout(timer2);
+            var ms2 = Math.max(1, Math.round(nowFn() - t0));
+            return {
+              attempted: true,
+              status: "ok",
+              latency_ms: ms2,
+              message_zh: "浏览器直达正常 · " + ms2 + "ms",
+              message_en: "Browser direct reachability OK · " + ms2 + "ms"
+            };
+          })
+          .catch(function () {
+            clearTimeout(timer2);
+            return {
+              attempted: true,
+              status: "unreachable",
+              latency_ms: null,
+              message_zh: "",
+              message_en: ""
+            };
+          });
+      });
+  }
+
+  function formatStatusBadgeMeta(st, isEn) {
+    var norm = String(st || "skipped").toLowerCase();
+    if (norm === "ok" || norm === "ready") {
+      return { cls: "is-ok", text: isEn ? "OK" : "正常" };
+    }
+    if (norm === "warn" || norm === "connecting") {
+      return { cls: "is-warn", text: norm === "connecting" ? (isEn ? "Connecting" : "连接中") : (isEn ? "Warn" : "注意") };
+    }
+    if (norm === "error") {
+      return { cls: "is-error", text: isEn ? "Error" : "阻断" };
+    }
+    if (norm === "disabled") {
+      return { cls: "is-skipped", text: isEn ? "Disabled" : "未开启" };
+    }
+    return { cls: "is-skipped", text: isEn ? "Skipped" : "跳过" };
+  }
+
+  function finalizeBrowserStepWithBackend(browserRaw, backendDoc) {
+    if (!browserRaw || browserRaw.status !== "unreachable") {
+      return browserRaw;
+    }
+    var gws = (backendDoc && backendDoc.gateways) || [];
+    var backendGwOk = gws.some(function (g) {
+      return g && g.enabled && g.status === "ok";
+    });
+    if (backendGwOk) {
+      return {
+        attempted: true,
+        status: "warn",
+        latency_ms: null,
+        message_zh: "后端已连通，但当前浏览器无法直达该网关域名（代理分流未覆盖该域名），建议首次点授权临时切全局 10 秒或用 6 位配对码",
+        message_en: "Backend is connected, but this browser cannot reach the gateway domain directly (proxy routing rules do not cover it). Switch proxy to Global for 10s during first authorization or use the 6-digit pairing code."
+      };
+    }
+    return {
+      attempted: true,
+      status: "error",
+      latency_ms: null,
+      message_zh: "当前浏览器与本机后端均无法连通该公网网关地址",
+      message_en: "Neither this browser nor the local backend could reach the public gateway URL."
+    };
+  }
+
+  function renderConnCheckSurface(surfaceName) {
+    var bundle = connCheckResultsBySurface[surfaceName];
+    if (!bundle || !bundle.backend) return;
+    var isSettings = surfaceName === "settings";
+    var panel = $(isSettings ? "settings-conn-check-panel" : "conn-check-panel");
+    var badge = $(isSettings ? "settings-conn-check-badge" : "conn-check-badge");
+    var sumEl = $(isSettings ? "settings-conn-check-summary" : "conn-check-summary");
+    var stepsEl = $(isSettings ? "settings-conn-check-steps" : "conn-check-steps");
+    var copyBtn = $(isSettings ? "settings-copy-conn-diag-btn" : "copy-conn-diag-btn");
+    if (!panel || !badge || !sumEl || !stepsEl) return;
+
+    var isEn = isUiLangEn();
+    var doc = bundle.backend;
+    var brStep = bundle.browser;
+
+    var overall = String(doc.overall_status || "warn").toLowerCase();
+    var sumTxt = isEn ? (doc.summary_en || doc.summary || "") : (doc.summary_zh || doc.summary || "");
+    if (overall === "ok" && brStep && brStep.status === "warn") {
+      overall = "warn";
+      sumTxt = isEn ? brStep.message_en : brStep.message_zh;
+    }
+
+    var dur = typeof doc.duration_ms === "number" ? Math.round(doc.duration_ms) + "ms" : "";
+    if (overall === "ok") {
+      badge.className = "conn-check-pill is-ok";
+      badge.textContent = (isEn ? "All Healthy" : "全部畅通") + (dur ? " · " + dur : "");
+    } else if (overall === "error") {
+      badge.className = "conn-check-pill is-error";
+      badge.textContent = (isEn ? "Blocker Detected" : "发现阻断项") + (dur ? " · " + dur : "");
+    } else {
+      badge.className = "conn-check-pill is-warn";
+      badge.textContent = (isEn ? "Attention Needed" : "部分需注意") + (dur ? " · " + dur : "");
+    }
+    sumEl.textContent = sumTxt;
+    if (copyBtn) copyBtn.disabled = false;
+
+    stepsEl.innerHTML = "";
+
+    function appendStepRow(titleStr, stVal, mainDetailStr, subItems) {
+      var row = document.createElement("div");
+      row.className = "conn-step-row";
+      var main = document.createElement("div");
+      main.className = "conn-step-main";
+
+      var tLine = document.createElement("div");
+      tLine.className = "conn-step-title-line";
+      var tSpan = document.createElement("span");
+      tSpan.className = "conn-step-title";
+      tSpan.textContent = titleStr;
+      tLine.appendChild(tSpan);
+      main.appendChild(tLine);
+
+      if (mainDetailStr) {
+        var dDiv = document.createElement("div");
+        dDiv.className = "conn-step-detail";
+        dDiv.textContent = mainDetailStr;
+        main.appendChild(dDiv);
+      }
+
+      if (subItems && subItems.length > 0) {
+        var subWrap = document.createElement("div");
+        subWrap.className = "conn-step-sublist";
+        subItems.forEach(function (it) {
+          var sRow = document.createElement("div");
+          sRow.className = "conn-step-subitem";
+          var bMeta = formatStatusBadgeMeta(it.status, isEn);
+          var tag = document.createElement("span");
+          tag.className = "conn-check-pill " + bMeta.cls;
+          tag.style.marginRight = "6px";
+          tag.style.padding = "1px 7px";
+          tag.style.fontSize = "11px";
+          tag.textContent = bMeta.text;
+          sRow.appendChild(tag);
+          if (it.label) {
+            var lbl = document.createElement("strong");
+            lbl.textContent = it.label + " ";
+            sRow.appendChild(lbl);
+          }
+          if (it.masked_url) {
+            var uCode = document.createElement("span");
+            uCode.className = "conn-step-url";
+            uCode.textContent = "(" + it.masked_url + ") ";
+            sRow.appendChild(uCode);
+          }
+          var msgNode = document.createTextNode(it.text || "");
+          sRow.appendChild(msgNode);
+          subWrap.appendChild(sRow);
+        });
+        main.appendChild(subWrap);
+      }
+
+      var pillMeta = formatStatusBadgeMeta(stVal, isEn);
+      var rightPill = document.createElement("span");
+      rightPill.className = "conn-check-pill " + pillMeta.cls;
+      rightPill.textContent = pillMeta.text;
+
+      row.appendChild(main);
+      row.appendChild(rightPill);
+      stepsEl.appendChild(row);
+    }
+
+    var ls = doc.local_service || {};
+    appendStepRow(
+      isEn ? "1. Local Loopback & NO_PROXY" : "1. 本机回环服务与代理排除",
+      ls.status || "error",
+      isEn ? (ls.message_en || ls.message_zh || "") : (ls.message_zh || "")
+    );
+
+    var pd = doc.proxy_and_deps || {};
+    appendStepRow(
+      isEn ? "2. System Proxy & Components" : "2. 本机系统代理与通道组件",
+      pd.status || "ok",
+      isEn ? (pd.message_en || pd.message_zh || "") : (pd.message_zh || "")
+    );
+
+    var gwArr = doc.gateways || [];
+    var enGws = gwArr.filter(function (g) { return Boolean(g && g.enabled); });
+    var gwOverall = "warn";
+    if (enGws.some(function (g) { return g.status === "ok"; })) {
+      gwOverall = enGws.some(function (g) { return g.status !== "ok"; }) ? "warn" : "ok";
+    } else if (enGws.some(function (g) { return g.status === "error"; })) {
+      gwOverall = "error";
+    }
+    var gwSubs = gwArr.map(function (g) {
+      return {
+        status: g.status,
+        label: isEn ? (g.label_en || g.gateway_id) : (g.label_zh || g.gateway_id),
+        masked_url: g.masked_url || "",
+        text: isEn ? (g.message_en || g.message_zh || "") : (g.message_zh || "")
+      };
+    });
+    appendStepRow(
+      isEn ? "3. Public HTTPS Gateway /healthz" : "3. 公网 HTTPS 网关可达",
+      gwOverall,
+      "",
+      gwSubs
+    );
+
+    var mp = doc.mcp_protocol || {};
+    var mpSubs = (mp.items || [])
+      .filter(function (it) { return it && it.status !== "skipped"; })
+      .map(function (it) {
+        return {
+          status: it.status,
+          label: it.gateway_id || "",
+          masked_url: it.masked_url || "",
+          text: isEn ? (it.message_en || it.message_zh || "") : (it.message_zh || "")
+        };
+      });
+    appendStepRow(
+      isEn ? "4. Cloud AI Protocol Handshake" : "4. 云端 AI 协议握手",
+      mp.status || "warn",
+      mpSubs.length > 0 ? "" : (isEn ? (mp.message_en || mp.message_zh || "") : (mp.message_zh || "")),
+      mpSubs
+    );
+
+    if (brStep) {
+      appendStepRow(
+        isEn ? "5. Browser Direct Consent Reachability" : "5. 当前浏览器授权页直达",
+        brStep.status || "skipped",
+        isEn ? (brStep.message_en || brStep.message_zh || "") : (brStep.message_zh || "")
+      );
+    }
+
+    panel.style.display = "block";
+  }
+
+  function renderCardProbeInline(gid) {
+    var box = $("gw-probe-box-" + gid);
+    var bundle = cardProbeCache[gid];
+    if (!box || !bundle || !bundle.backend) return;
+    var isEn = isUiLangEn();
+    var doc = bundle.backend;
+    var br = bundle.browser;
+    var gwItem = ((doc.gateways || [])[0]) || {};
+    var mpItem = (((doc.mcp_protocol || {}).items || [])[0]) || {};
+
+    box.innerHTML = "";
+    var meta = formatStatusBadgeMeta(doc.overall_status, isEn);
+    var pill = document.createElement("span");
+    pill.className = "conn-check-pill " + meta.cls;
+    pill.style.marginRight = "8px";
+    var durTxt = typeof doc.duration_ms === "number" ? " · " + Math.round(doc.duration_ms) + "ms" : "";
+    pill.textContent = meta.text + durTxt;
+    box.appendChild(pill);
+
+    var parts = [];
+    var gwMsg = isEn ? (gwItem.message_en || gwItem.message_zh) : gwItem.message_zh;
+    if (gwMsg) parts.push(gwMsg);
+    if (mpItem && mpItem.status && mpItem.status !== "skipped") {
+      var mpMsg = isEn ? (mpItem.message_en || mpItem.message_zh) : mpItem.message_zh;
+      if (mpMsg) parts.push(mpMsg);
+    }
+    if (br && br.status && br.status !== "skipped") {
+      var brMsg = isEn ? (br.message_en || br.message_zh) : br.message_zh;
+      if (brMsg) parts.push(brMsg);
+    }
+    box.appendChild(document.createTextNode(parts.join(" ｜ ")));
+    box.style.display = "block";
+  }
+
+  function copyRedactedConnDiag(surfaceName, btnEl) {
+    var bundle = connCheckResultsBySurface[surfaceName];
+    if (!bundle || !bundle.backend) return;
+    var baseShare = String(bundle.backend.redacted_share_text || "").trim();
+    if (!baseShare) return;
+    var br = bundle.browser;
+    var fullShare = baseShare;
+    if (br && br.status) {
+      fullShare += "\n5. 浏览器直达: [" + String(br.status).toUpperCase() + "] " + (br.message_zh || "");
+    }
+    copyText(fullShare, btnEl);
+    var isEn = isUiLangEn();
+    showToast(
+      isEn
+        ? "Copied redacted diagnostics (real URLs and local paths hidden)"
+        : "已复制脱敏诊断摘要（已自动隐藏真实网址与本机路径）",
+      false
+    );
+  }
+
+  function runStudioConnectivityCheck(gatewayId, surfaceName, triggerBtn) {
+    var targetSurface = surfaceName === "settings" ? "settings" : "workbench";
+    var cleanGw = String(gatewayId || "").trim();
+    if (targetSurface === "settings") {
+      lastSettingsConnGwId = cleanGw;
+    } else {
+      lastWorkbenchConnGwId = cleanGw;
+      userToggledConnDrawer = true;
+      setConnDrawerOpen(true);
+    }
+
+    var isEn = isUiLangEn();
+    var panel = $(targetSurface === "settings" ? "settings-conn-check-panel" : "conn-check-panel");
+    var badge = $(targetSurface === "settings" ? "settings-conn-check-badge" : "conn-check-badge");
+    var sumEl = $(targetSurface === "settings" ? "settings-conn-check-summary" : "conn-check-summary");
+    var stepsEl = $(targetSurface === "settings" ? "settings-conn-check-steps" : "conn-check-steps");
+    var copyBtn = $(targetSurface === "settings" ? "settings-copy-conn-diag-btn" : "copy-conn-diag-btn");
+
+    if (panel) panel.style.display = "block";
+    if (badge) {
+      badge.className = "conn-check-pill is-checking";
+      badge.textContent = isEn ? "Checking…" : "检测中…";
+    }
+    if (sumEl) {
+      sumEl.textContent = isEn
+        ? "Probing local service, system proxy, public gateways, and OAuth/MCP handshake…"
+        : "正在并发实测本机服务、代理、公网网关与协议握手…";
+    }
+    if (stepsEl) stepsEl.innerHTML = "";
+    if (copyBtn) copyBtn.disabled = true;
+
+    var mainBtn = $(targetSurface === "settings" ? "settings-conn-check-btn" : "run-conn-check-btn");
+    if (mainBtn) mainBtn.disabled = true;
+    var origTrigTxt = "";
+    if (triggerBtn) {
+      origTrigTxt = triggerBtn.textContent;
+      triggerBtn.disabled = true;
+      triggerBtn.textContent = isEn ? "Probing…" : "测速中…";
+    }
+
+    var mySeq = ++connCheckReqSeq;
+    var probeOrigin = resolveBrowserProbeOrigin(cleanGw);
+    var reqBody = cleanGw ? { gateway_id: cleanGw } : {};
+
+    Promise.all([
+      apiFetch("/api/studio/connectivity-check", { method: "POST", body: reqBody }),
+      probeBrowserGatewayDirect(probeOrigin)
+    ])
+      .then(function (pair) {
+        if (mainBtn) mainBtn.disabled = false;
+        if (triggerBtn) {
+          triggerBtn.disabled = false;
+          triggerBtn.textContent = isEn ? "Probe Speed" : "检活测速";
+          if (origTrigTxt && !isEn) triggerBtn.textContent = origTrigTxt;
+        }
+        if (mySeq !== connCheckReqSeq) return;
+        var backendRes = pair[0] || {};
+        var browserRaw = pair[1] || null;
+        if (backendRes.need_unlock || backendRes._httpStatus === 403 || backendRes._httpStatus === 400) {
+          var errStr = backendRes.error || (isEn ? "Connectivity check failed." : "连通性检测请求未通过校验。");
+          if (badge) {
+            badge.className = "conn-check-pill is-error";
+            badge.textContent = isEn ? "Error" : "阻断";
+          }
+          if (sumEl) sumEl.textContent = errStr;
+          showToast(errStr, true);
+          return;
+        }
+        var finalBrowser = finalizeBrowserStepWithBackend(browserRaw, backendRes);
+        var bundle = { backend: backendRes, browser: finalBrowser };
+        connCheckResultsBySurface[targetSurface] = bundle;
+        renderConnCheckSurface(targetSurface);
+        if (cleanGw) {
+          cardProbeCache[cleanGw] = bundle;
+          renderCardProbeInline(cleanGw);
+        }
+      })
+      .catch(function () {
+        if (mainBtn) mainBtn.disabled = false;
+        if (triggerBtn) {
+          triggerBtn.disabled = false;
+          triggerBtn.textContent = isEn ? "Probe Speed" : "检活测速";
+        }
+        if (mySeq !== connCheckReqSeq) return;
+        var netErr = isEn
+          ? "Local Studio service did not respond. Please check if the local service is running."
+          : "无法连接本地 Studio 服务，请确认后台服务正在运行。";
+        if (badge) {
+          badge.className = "conn-check-pill is-error";
+          badge.textContent = isEn ? "Blocker Detected" : "发现阻断项";
+        }
+        if (sumEl) sumEl.textContent = netErr;
+        showToast(netErr, true);
+      });
+  }
+
+  function bindConnCheckLangObserver() {
+    if (langObserverBound || typeof MutationObserver === "undefined") return;
+    langObserverBound = true;
+    var mo = new MutationObserver(function () {
+      if (connCheckResultsBySurface.workbench) renderConnCheckSurface("workbench");
+      if (connCheckResultsBySurface.settings) renderConnCheckSurface("settings");
+      Object.keys(cardProbeCache).forEach(function (gid) {
+        renderCardProbeInline(gid);
+      });
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-lang"] });
+  }
+
   function boot() {
+    registerConnCheckI18n();
+    bindConnCheckLangObserver();
     initTheme();
     bindOnboardingEvents();
     var bootEl = $("studio-boot-data");

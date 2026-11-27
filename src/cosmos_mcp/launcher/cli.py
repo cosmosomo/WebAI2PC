@@ -2166,7 +2166,16 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
 def _cmd_doctor(args: argparse.Namespace) -> int:
     st_root = resolve_cli_state_root(args.state_dir)
     out_p = Path(args.output) if getattr(args, "output", "") else None
-    rep = run_doctor(st_root, prefix=args.prefix, bundle=bool(args.bundle), bundle_output=out_p)
+    want_probe = bool(getattr(args, "probe", False))
+    gw_filter = str(getattr(args, "gateway_id", "") or "").strip()
+    rep = run_doctor(
+        st_root,
+        prefix=args.prefix,
+        bundle=bool(args.bundle),
+        bundle_output=out_p,
+        probe=want_probe,
+        gateway_id=gw_filter,
+    )
     if args.json:
         print(json.dumps(rep, ensure_ascii=False, indent=2))
         return 0 if rep.get("ok") else 1
@@ -2175,6 +2184,20 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     print(f"Python 运行时  : {rt.get('suitable_python_version') or '未找到 3.10~3.14'} (核心依赖就绪: {rt.get('venv_deps_ready') or rt.get('ambient_deps_ready')})")
     srv = rep.get("service") or {}
     print(f"在线状态       : {'在线' if srv.get('online') else '离线'} (端口 {srv.get('port')}, 网关健康: {rep.get('gateway_healthy')})")
+    conn_chk = rep.get("connectivity_check")
+    if isinstance(conn_chk, dict):
+        print(f"\n端到端连通性实测 ({conn_chk.get('overall_status', '').upper()} · {conn_chk.get('duration_ms')}ms)：{conn_chk.get('summary')}")
+        ls = conn_chk.get("local_service") or {}
+        print(f"  [1] 本机回环服务 : [{str(ls.get('status', '')).upper()}] {ls.get('message_zh')}")
+        pd = conn_chk.get("proxy_and_deps") or {}
+        print(f"  [2] 代理与组件   : [{str(pd.get('status', '')).upper()}] {pd.get('message_zh')}")
+        for gw_it in (conn_chk.get("gateways") or []):
+            m_url = f" ({gw_it.get('masked_url')})" if gw_it.get("masked_url") else ""
+            print(f"  [3] 网关[{gw_it.get('gateway_id')}]{m_url} : [{str(gw_it.get('status', '')).upper()}] {gw_it.get('message_zh')}")
+        mp = conn_chk.get("mcp_protocol") or {}
+        for pr_it in (mp.get("items") or []):
+            if pr_it.get("status") != "skipped":
+                print(f"  [4] 协议[{pr_it.get('gateway_id')}] : [{str(pr_it.get('status', '')).upper()}] {pr_it.get('message_zh')}")
     if rep.get("bundle_path"):
         print(f"脱敏诊断包已导出: {rep['bundle_path']}")
     return 0 if rep.get("ok") else 1
@@ -2866,6 +2889,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
     sp_ident.add_argument("--passphrase-stdin", action="store_true", help="从标准输入读取首行口令")
 
     sp_doc = sub.add_parser("doctor", help="运行深度隐私脱敏环境诊断", parents=[sub_common])
+    sp_doc.add_argument("--probe", action="store_true", help="实测本机服务、代理、公网 HTTPS 网关及 OAuth/MCP 协议全链路连通性")
+    sp_doc.add_argument("--gateway", dest="gateway_id", default="", help="仅探测指定网关槽位 (instant | workers_dev | self_hosted)")
     sp_doc.add_argument("--bundle", action="store_true", help="导出深度脱敏 ZIP 诊断包")
     sp_doc.add_argument("--output", default="", help="指定诊断包输出路径")
 
