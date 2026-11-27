@@ -38,7 +38,7 @@
 
 1. **下载并完整解压**：前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，其余环境选标准 `zip`），完整解压到普通文件夹。
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`。
-3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开**）：
+3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开；控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue**）：
    - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
    - **网页版 ChatGPT（本机插件页直绑最快，日常干活用 `Chat` 省额度）**：首选在控制台网关就绪后点 **「复制地址并打开 ChatGPT 插件页」**，在已登录本机浏览器打开 `https://chatgpt.com/plugins` -> `＋ -> 添加自定义 MCP 服务器`（`Add custom MCP server`），名称填 `WebAI2PC`、认证选 `OAuth`，粘贴 `/mcp`（工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 只读），在授权页点「本机一键允许连接」并点击 `Install` 安装（遇到连接或 `403` 权限问题点旁侧 **「复制给 ChatGPT 接入 / 排障」**；装好后日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证）。
 
@@ -50,7 +50,7 @@
 请帮我安装并配置 https://github.com/cosmosomo/WebAI2PC ，先读取仓库里的 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md ，如果你有本机命令权限请直接帮我下载解压并启动拿到 /mcp 地址，再一步步带我在网页版 Gemini 或 ChatGPT 里完成绑定。
 ```
 
-> 就算只把仓库链接 `https://github.com/cosmosomo/WebAI2PC` 直接发给上述 Agent 说“帮我装这个”，它们打开首页第一屏也能直接定位到 [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)。
+> 就算只把仓库链接 `https://github.com/cosmosomo/WebAI2PC` 直接发给上述 Agent 说“帮我装这个”，它们打开首页第一屏也能直接定位到 [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)。注意：启动后生成的连接地址与接入指令仅限填入你本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue。
 
 ## 一句话实机效果 · 复制提示词即刻复现
 

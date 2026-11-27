@@ -38,7 +38,7 @@
 
 1. **Download & Extract**: Grab the package from [Releases](https://github.com/cosmosomo/WebAI2PC/releases) (`win64-full.zip` includes embedded Python for Windows; use the standard `.zip` for macOS, Linux, or existing Python 3.10+) and extract it to a regular folder.
 2. **Launch & Copy URL**: Double-click `一键启动_Cosmos_MCP.bat` on Windows (or run `./start_cosmos_mcp.sh` on macOS / Linux). The local console opens at `http://127.0.0.1:8096/` with a ready-to-use `https://<domain>/mcp` endpoint.
-3. **Paste into Web AI Connectors & Allow** (**do NOT open the `/mcp` URL directly in your browser address bar**):
+3. **Paste into Web AI Connectors & Allow** (**do NOT open the `/mcp` URL directly in your browser address bar; connection URLs and setup prompts copied from the console are strictly for your own signed-in AI accounts: do not screenshot or share them in group chats, forums, or public Issues**):
    - **Web Gemini**: Open [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) (or bottom-left menu `Personal Intelligence -> Connected Apps`), click `+ Custom`, paste `https://<domain>/mcp` into **`MCP Server URL`**, click `Next` to approve OAuth 2.1, then set `App actions` to `Always allow`. Start a chat with `@Cosmos`; your same-account mobile Gemini App syncs automatically.
    - **Web ChatGPT (1-click in logged-in browser · `Chat` for daily coding)**: Once the gateway is ready in Studio, click **`复制地址并打开 ChatGPT 插件页` (Copy URL & Open ChatGPT Plugins)** to open `https://chatgpt.com/plugins` in your logged-in local browser -> click `+ -> Add custom MCP server`, enter `WebAI2PC` with `OAuth`, paste `/mcp` (Workspace full access) or `/mcp/readonly` (Personal Plus / Pro read-only), click **`本机一键允许连接` (1-click local allow)** on the consent page, and click **`Install`** (if you hit a connection or `403` permission issue, click **`复制给 ChatGPT 接入 / 排障` (Copy for ChatGPT Setup / Diagnostics)**). Once installed, both modes share `@WebAI2PC`: use everyday **`Chat` mode** for fast local coding, Office edits, and tests without burning `Work / Codex` quota, and use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
 
@@ -50,7 +50,7 @@ Copy and send this one-liner to **Cursor, Claude Code, Codex, Windsurf, Trae, Gi
 Please install and configure https://github.com/cosmosomo/WebAI2PC for me. First read https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md . If you have local shell access, download, extract, and start it to get my /mcp URL, then guide me step by step to connect Web Gemini or Web ChatGPT.
 ```
 
-> Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md) right at the top of the README.
+> Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md) right at the top of the README. Note: once generated, keep your local connection URLs and setup prompts strictly inside your own signed-in AI accounts: never post screenshots or paste them into group chats, forums, or public Issues.
 
 ## One-Shot Local Showcase · Copy & Run
 

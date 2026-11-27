@@ -3169,6 +3169,8 @@
         "4. 最后分别告诉我：连接是否创建或复用、OAuth 是否完成、状态工具是否真实调用成功、在哪个模式完成验证。能分别在 Chat 和 Work 验证就分别验证，无法验证的模式标为未验证。列出已发现的工具和已知权限限制，首次验收只读状态，不改文件或系统设置。",
         "",
         "请直接执行你能完成的步骤。只有遇到必须由我操作的步骤时才暂停，并告诉我在哪个页面、点哪个按钮。最后附上插件链接（如果有）和实际工具调用结果。",
+        "",
+        "【安全提醒：上方包含本机专属连接地址，仅限粘贴给本人登录的账号使用，请勿发往微信群、论坛、公开 Issue 或转给他人。】",
       ].join("\n");
     }
 
@@ -3198,7 +3200,7 @@
         }
         window.open("https://chatgpt.com/plugins", "_blank", "noopener");
         copyText(targetUrl, btn);
-        showToast("已复制连接地址并打开 ChatGPT 插件页：点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，粘贴地址后点「本机一键允许连接」", false);
+        showToast("已复制连接地址并打开 ChatGPT 插件页（仅限填入本人账号，请勿外发给他人或群聊）：点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，粘贴地址后点「本机一键允许连接」", false);
         probeWorkersDevReachabilitySilent();
       });
     });
@@ -3215,7 +3217,7 @@
         }
         var connectPrompt = buildChatGptConnectPrompt(kind, targetUrl, effTop);
         copyText(connectPrompt, btn);
-        showToast("已复制 ChatGPT 接入与排障指令（可直接发给 ChatGPT 执行，不含配对码与本机路径）", false);
+        showToast("已复制 ChatGPT 接入与排障指令（仅限填入本人账号，请勿外发给他人或群聊；不含配对码与本机路径）", false);
       });
     });
 
@@ -3249,6 +3251,7 @@
           return;
         }
         copyText(targetUrl, btn);
+        showToast("已复制连接地址（仅限填入本人账号，请勿外发给他人或群聊）", false);
       });
     });
 
@@ -3265,6 +3268,7 @@
           return;
         }
         copyText(targetUrl, btn);
+        showToast("已复制连接地址（仅限填入本人账号，请勿外发给他人或群聊）", false);
       });
     });
 
@@ -3282,6 +3286,7 @@
           return;
         }
         copyText(targetUrl, btn);
+        showToast("已复制只读连接地址（仅限填入本人账号，请勿外发给他人或群聊）", false);
       });
     });
 
@@ -4283,7 +4288,7 @@
           return;
         }
         copyText(targetUrl, $("quick-bar-copy-url-btn"));
-        showToast("已复制 HTTPS 连接地址", false);
+        showToast("已复制 HTTPS 连接地址（仅限填入本人账号，请勿外发给他人或群聊）", false);
       });
     }
 
@@ -4300,7 +4305,7 @@
         var u = item.kind === "readonly" ? effTop.readonly_mcp_url || "" : effTop.mcp_url || "";
         if (!isSafeHttpsUrl(u)) return;
         copyText(u, null);
-        showToast("已复制连接地址：" + u, false);
+        showToast("已复制连接地址（仅限填入本人账号，请勿外发给他人或群聊）：" + u, false);
       });
     });
 

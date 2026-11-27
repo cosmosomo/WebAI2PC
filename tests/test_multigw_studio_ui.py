@@ -1207,8 +1207,12 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
             assert f"ChatGPT Plus / Pro，授权后可在 Chat 和 Work 中通过 {at_sym}WebAI2PC 使用该服务提供的只读工具。" in ro_prompt
 
+            for p in (full_prompt, ro_prompt):
+                assert p.splitlines()[-1] == "【安全提醒：上方包含本机专属连接地址，仅限粘贴给本人登录的账号使用，请勿发往微信群、论坛、公开 Issue 或转给他人。】"
+
             toast_text = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
-            assert toast_text == "已复制 ChatGPT 接入与排障指令（可直接发给 ChatGPT 执行，不含配对码与本机路径）"
+            assert "仅限填入本人账号，请勿外发给他人或群聊" in toast_text
+            assert toast_text == "已复制 ChatGPT 接入与排障指令（仅限填入本人账号，请勿外发给他人或群聊；不含配对码与本机路径）"
 
             # Strict zero-secret / zero-local-path leak checks
             for secret_val in (secret_meta["pair4"], secret_meta["pair6"], secret_meta["pw"], str(ws_dir)):
