@@ -63,7 +63,7 @@
       <text x="337" y="121" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#60A5FA">Paste</text>
 
       <rect x="22" y="160" width="364" height="48" rx="12" fill="#3B82F6"/>
-      <text x="204" y="191" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">✓  Allow Connection</text>
+      <text x="204" y="191" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Paste in Connectors · Don't open URL</text>
     </g>
   </g>
 

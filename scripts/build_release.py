@@ -254,7 +254,7 @@ def render_quickstart_txt(version: str) -> bytes:
         "",
         "第 ③ 步：复制网址粘贴到网页版 Gemini 或 ChatGPT",
         "  复制本地控制台里显示的 https://.../mcp 加密连接网址，粘贴到：",
-        "  - 网页版 Google Gemini（Customize -> Connectors -> + Custom 添加 /mcp，同机点「本机一键允许连接」）",
+        "  - 网页版 Google Gemini（勿直接浏览器打开 /mcp，请访问 https://gemini.google.com/customize/connectors 点 + Custom 粘贴到 MCP Server URL）",
         "  - 网页版 ChatGPT：",
         "    · 首次添加插件：网关就绪后点「复制给 Work 模式帮我连接」切到 ChatGPT 顶部 Work 模式发送代填",
         "      （Chat 模式无受控浏览器不能代连；网页版 Work 云端浏览器 Take over 授权需输控制台 6 位配对码），",

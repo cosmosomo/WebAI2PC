@@ -59,10 +59,26 @@ cosmos-mcp start --workspace D:\Projects\my-app
 
 ### 1. 网页版 Google Gemini（任务模式与手机端 App）
 
-1. 打开网页版 Gemini，在左侧栏依次点击 `Customize（自定义） -> Connectors（连接器） -> + Custom（添加自定义）`。
-2. `Name` 填写 `Cosmos`，`URL` 粘贴控制台顶部显示的 `https://<你的域名>/mcp`（若展开 `Additional settings`，`Client ID` 与 `Client Secret` 均保持留空），点击连接并在弹出的授权页确认允许。
-3. **开启免审批总开关**：在 `Connectors（连接器）` 列表点开 `Cosmos`，将 `App actions` 总开关设为 `Always allow（始终允许）`。请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，单卡点击会按单工具覆盖并导致其余工具退回逐次确认。
-4. **导入操作守则**：在控制台点击「复制 AI 操作守则（推荐存入 Skills）」（或复制仓库 `host_skills/SKILL.md` 全文），保存到网页版 Gemini 左侧栏 `Customize（自定义） -> Skills（技能）`。
+> **重要提醒**：控制台生成的 `https://<你的域名>/mcp` **不是用来直接在浏览器地址栏打开访问的网址**，而是要复制到下面 Gemini 连接器页面的 **`MCP Server URL`** 配置栏里。
+
+1. **进入 Gemini 连接器页面（两种方式等价，推荐直接点链接）**：
+   - **直达地址（推荐）**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)
+   - **手动点击路径**：打开网页版 Gemini -> 点击左下角菜单 -> 在 `Preferences` 下点击 **`Personal Intelligence`** -> 点击 **`Connected Apps`**，即可进入 `Connectors` 页面。
+
+   | 第 1 步：左下角菜单进入 `Personal Intelligence` | 第 2 步：点击 `Connected Apps` |
+   | :-: | :-: |
+   | ![步骤 1：点击 Personal Intelligence](../assets/tutorials/gemini-step1-personal-intelligence.png) | ![步骤 2：点击 Connected Apps](../assets/tutorials/gemini-step2-connected-apps.png) |
+
+2. **点击 `+ Custom` 并把 `/mcp` 地址粘贴到配置栏**：
+   - 在 `Connectors` 页面右上角点击 **`+ Custom`**。
+   - 在弹出的 **`Connect to an MCP server`** 窗口中，把控制台复制的 `https://<你的域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏（`Additional settings` 保持默认折叠，无需填写 Client ID / Secret），点击 **`Next`** 跳转到本地授权确认页并点 **「本机一键允许连接」**。
+
+   | 第 3 步：点击右上角 `+ Custom` | 第 4 步：粘贴到 `MCP Server URL` 配置栏点 `Next` |
+   | :-: | :-: |
+   | ![步骤 3：点击右上角 + Custom](../assets/tutorials/gemini-step3-connectors-custom.png) | ![步骤 4：粘贴到 MCP Server URL 配置栏](../assets/tutorials/gemini-step4-mcp-server-url.png) |
+
+3. **开启免审批总开关**：绑定成功后，回到 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) 点开刚添加的连接器，将 **`App actions`** 总开关设为 **`Always allow（始终允许）`**。请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，单卡点击会按单工具覆盖并导致其余工具退回逐次确认。
+4. **导入操作守则**：在控制台点击「复制 AI 操作守则（推荐存入 Skills）」（或复制仓库 `host_skills/SKILL.md` 全文），保存到网页版 Gemini 的 `Skills` 设置中。
 5. **首句敲 `@Cosmos` 唤醒**：新建对话后，在输入框首句敲 `@Cosmos` 并选中弹出的 `Cosmos` 标签，例如发送：
    ```text
    @Cosmos 帮我看看当前工作目录里有哪些文件

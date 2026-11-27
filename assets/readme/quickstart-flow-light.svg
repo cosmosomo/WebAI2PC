@@ -74,7 +74,7 @@
 
       <!-- Allow button -->
       <rect x="22" y="160" width="364" height="48" rx="12" fill="#3B82F6"/>
-      <text x="204" y="191" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">✓  点允许，完成绑定</text>
+      <text x="204" y="191" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">贴入配置栏，勿浏览器直开</text>
     </g>
   </g>
 

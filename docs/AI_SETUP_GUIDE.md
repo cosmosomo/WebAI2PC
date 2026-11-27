@@ -36,10 +36,11 @@
    - 若连 **网页版 ChatGPT**，点击顶部切换到 `网页版 ChatGPT`（网关就绪后按钮自动开放）：若准备让 `Work` 模式受控浏览器代填，点击 **「复制给 Work 模式帮我连接」**（仅生成含真实 `/mcp` 或 `/mcp/readonly` 地址的配置请求，不含配对码、口令、令牌与本机路径）；若在本机浏览器手动添加，点击 `复制地址`（Team / Business / Enterprise / Edu 工作区全功能 `/mcp`）或 `复制只读`（个人 Plus / Pro 只读 `/mcp/readonly`）。
 2. **第 2 步：添加到网页端并点允许**
    - **网页版 Gemini（需 18+ Google AI Pro / Ultra 或已开启权限的 Workspace 账号）**：
-     1. 打开网页版 Gemini，在左侧栏依次点击 `Customize（自定义） -> Connectors（连接器） -> + Custom（添加自定义）`。
-     2. 名称填写 `Cosmos`，URL 粘贴刚才复制的 `https://.../mcp`（`Client ID` 与 `Client Secret` 留空不填），提交后会跳转到本地授权确认页。
-     3. 在同一台电脑的浏览器上直接点击 `本机一键允许连接` 即可完成绑定。
-     4. 绑定成功后，点进 `Cosmos` 连接器详情页，将 **`App actions` 总开关设为 `Always allow（始终允许）`**（建议顺手在本地控制台点 `复制 AI 守则` 粘贴到 Gemini 左侧栏 `Customize -> Skills` 保存）。
+     1. **明确提醒用户**：刚才复制的 `https://.../mcp` **不是从浏览器地址栏直接打开访问的网址**，而是要粘贴进 Gemini 连接器配置栏里的 MCP 服务器地址。
+     2. 让用户直接打开 **`https://gemini.google.com/customize/connectors`**（或从 Gemini 首页左下角菜单依次点击 `Personal Intelligence -> Connected Apps` 进入 `Connectors` 页面），点击右上角 **`+ Custom`**。
+     3. 在弹出的 `Connect to an MCP server` 窗口中，把 `https://.../mcp` 粘贴到 **`MCP Server URL`** 配置栏（`Additional settings` 保持默认折叠，无需填写 Client ID / Secret），点击 **`Next`** 跳转到本地授权确认页。
+     4. 在同一台电脑的浏览器上直接点击 `本机一键允许连接` 即可完成绑定。
+     5. 绑定成功后，回到 `https://gemini.google.com/customize/connectors` 点开刚添加的连接器，将 **`App actions` 总开关设为 `Always allow（始终允许）`**（建议顺手在本地控制台点 `复制 AI 守则` 粘贴保存到 Gemini 的 `Skills` 中）。
    - **网页版 ChatGPT（严格区分 `Work` 代连与本机手动添加）**：
      1. **发给 `Work` 模式代填配置**：只有 `Work` 模式具备受控浏览器（网页版 `Work` 自带云端受控浏览器并支持 `Take over` 接管，桌面版 `Work` 支持通过 `@Chrome` / `@Edge` 扩展操作本机标签页），请先在 ChatGPT 顶部切到 `Work` 模式再粘贴发送连接请求；`Chat` 模式没有受控浏览器，无法操作 `chatgpt.com/plugins`，只能输出文字步骤供用户手点。
      2. **手动或按文字引导点击位置**：打开左侧栏 `Plugins -> + -> Add custom MCP server`，名称填 `WebAI2PC`，`Connection` 粘贴对应 HTTPS 地址，认证选 `OAuth`（自动协商，无需填 Client ID / Secret），勾选风险提示确认框后点 `Create as a plugin`，并在插件列表中点击 **`Install`** 完成安装。
@@ -100,6 +101,6 @@
 4. **ChatGPT 个人 Plus / Pro 订阅测试 `/mcp` 时写操作受限**：
    - 当个人订阅受 OpenAI 平台策略限制仅放行自定义连接器的 `read/fetch` 工具时，请在控制台顶部切到 `网页版 ChatGPT`，点击 `复制只读`（或右侧只读栏的 `复制给 Work 模式帮我连接`）使用 `https://<域名>/mcp/readonly` 地址绑定。
 5. **Gemini 每次运行工具都弹出确认卡片**：
-   - 请到 Gemini 左侧栏 `Customize -> Connectors -> Cosmos` 详情页把 `App actions` 改为 `Always allow`；不要在聊天流里的单张工具卡片上单独点允许（会冲掉连接器级免审批），查网页资料时让 `@Cosmos` 用内置 `pc_web_research`。
+   - 请直接打开 `https://gemini.google.com/customize/connectors`（或左下角菜单 `Personal Intelligence -> Connected Apps`）点开对应连接器，把 `App actions` 改为 `Always allow`；不要在聊天流里的单张工具卡片上单独点允许（会冲掉连接器级免审批），查网页资料时让 `@Cosmos` 用内置 `pc_web_research`。
 6. **换新电脑或重装系统后想保留原固定网址**：
    - 在旧电脑打开 `#settings/gateways` 第 1 张卡片底部点击 `导出身份恢复卡 PNG` 设口令保存图片；新电脑点击 `导入恢复卡 PNG` 上传图片并输入口令，即可原样恢复固定网址，无需重绑网页端连接器。

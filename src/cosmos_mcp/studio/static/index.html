@@ -309,7 +309,7 @@
               </summary>
               <div class="wb-fold-body" id="gemini-https-guide">
                 <ol class="wb-guide-ol">
-                  <li><strong>Gemini：</strong>打开 <code>Customize -&gt; Connectors -&gt; + Custom</code>，名称填写 <code>Cosmos</code>，粘贴上方 <code>https://.../mcp</code>（Client ID / Secret 留空），确认页点「本机一键允许连接」并设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
+                  <li><strong>Gemini：</strong><strong>勿在浏览器地址栏直接打开 <code>/mcp</code></strong>，请打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>），点右上角 <code>+ Custom</code>，把上方 <code>https://.../mcp</code> 粘贴到 <code>MCP Server URL</code> 配置栏点 <code>Next</code>，确认页点「本机一键允许连接」并把 <code>App actions</code> 设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
                   <li><strong>ChatGPT（首次代连找 Work，日常干活用 Chat）：</strong>首次添加插件时，网关就绪后点上方「复制给 Work 模式帮我连接」，在 ChatGPT 顶部切到 <code>Work</code> 模式发送由受控浏览器代填（网页版 <code>Work</code> 云端浏览器内点 <code>Take over</code> 打开授权页需输下方 <code>6</code> 位动态配对码；<code>Chat</code> 模式无受控浏览器不能代连），或在本机浏览器手动打开左侧 <code>Plugins -&gt; + -&gt; Add custom MCP server</code> 填名称 <code>WebAI2PC</code> 与对应地址创建并点 <code>Install</code> 安装（本机浏览器授权页直接点「本机一键允许连接」）。装好后同账号互通：日常改代码跑脚本切回 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>get_status</code> 验证；操作守则在工作区/桌面端可存入 <code>Skills</code>，网页版 <code>Chat</code> 与 <code>Work</code> 均可放入 <code>Project Instructions</code> 或自定义指令。</li>
                 </ol>
                 <div class="ws-actions" style="margin-top:10px;">

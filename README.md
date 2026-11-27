@@ -36,8 +36,8 @@
 
 1. **下载并完整解压**：前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，其余环境选标准 `zip`），完整解压到普通文件夹。
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`。
-3. **粘贴到网页端并点允许**：
-   - **网页版 Gemini**：`Customize -> Connectors -> + Custom` 粘贴 `/mcp` 地址并授权，将 `App actions` 设为 `Always allow`，新对话首句输入 `[at]Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
+3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开**）：
+   - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
    - **网页版 ChatGPT（首次代连找 `Work`，日常干活用 `Chat`）**：首次添加插件时，在控制台网关就绪后点 **「复制给 Work 模式帮我连接」** 切换到 ChatGPT 顶部 `Work` 模式发送由受控浏览器代填（网页版 `Work` 云端浏览器内点 `Take over` 打开授权页需输控制台 `6` 位动态配对码；`Chat` 模式无受控浏览器不能自动代连），或在本机浏览器左侧 `Plugins -> + -> Add custom MCP server` 填入 `/mcp`（工作区全功能）或 `/mcp/readonly`（个人 Plus / Pro 只读）创建并点 `Install` 安装 `WebAI2PC`（本机浏览器授权页直接点「本机一键允许连接」）。装好后同账号互通：日常改代码修文档切回 `Chat` 模式发 `@WebAI2PC`（响应快，不扣 `Work / Codex` 额度），跨应用长程交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证。
 
 <details>
@@ -47,7 +47,7 @@
 请做我的 WebAI2PC 配置向导，先读取官方公开配置教程全文（支持联网请直接访问 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md 或 https://github.com/cosmosomo/WebAI2PC/blob/main/docs/AI_SETUP_GUIDE.md ），再按以下核实摘要一步步带我配通（先问清我的电脑系统、是否已下载解压、准备连网页版 Gemini 还是 ChatGPT，每次只教当前这一步，不要一次刷满屏）：
 1. 下载解压：去 https://github.com/cosmosomo/WebAI2PC/releases 下载（Windows 免装 Python 选 win64-full.zip，已装 Python 3.10+ 或 macOS/Linux 选标准 zip），必须先完整解压缩到普通文件夹，再双击 一键启动_Cosmos_MCP.bat（macOS/Linux 运行 ./start_cosmos_mcp.sh），浏览器会自动打开本地控制台 http://127.0.0.1:8096/ 。
 2. 首次免注册直连：控制台默认开启「第 1 类：一键上手免登录直连」（自动生成 https://*.srv.us/mcp 或 *.trycloudflare.com/mcp）；若连 ChatGPT 且想让 AI 代填插件页面，网关就绪后点控制台「复制给 Work 模式帮我连接」，必须切换到 ChatGPT 顶部的 Work 模式再发送（Chat 模式无受控浏览器无法代填，只能输出文字步骤供手动点击；复制文本不含配对码与本机路径）。
-3. 绑定与日常使用：Gemini 打开左侧 Customize -> Connectors -> + Custom，名称填 Cosmos 并粘贴 /mcp 地址（Client ID/Secret 留空），授权页点「本机一键允许连接」，再进连接器详情把 App actions 设为 Always allow，新对话首句发 [at]Cosmos 唤醒；ChatGPT 由 Work 模式受控浏览器代填（网页版 Work 云端浏览器内 Take over 打开授权页需输本地控制台 6 位动态配对码）或在本机浏览器打开左侧 Plugins -> + -> Add custom MCP server 填名称 WebAI2PC 与对应地址（工作区 /mcp，个人只读 /mcp/readonly）创建并点 Install 安装（本机浏览器授权页直接点「本机一键允许连接」）。安装完成后全账号互通：日常改代码跑测试切回 Chat 模式发 @WebAI2PC（快且不扣 Work/Codex 智能体额度），跨应用长程交付与定时任务切 Work 模式发 @WebAI2PC，首次调用 pc_get_status 确认接通。
+3. 绑定与日常使用（提醒用户：不要把 /mcp 地址直接粘进浏览器地址栏打开，而是粘进连接器配置栏）：Gemini 直接打开 https://gemini.google.com/customize/connectors（或左下角菜单 Personal Intelligence -> Connected Apps），点右上角 + Custom，把 /mcp 地址粘进 MCP Server URL 配置栏（Additional settings 保持默认折叠）点 Next，授权页点「本机一键允许连接」，再回到该页点开连接器把 App actions 设为 Always allow，新对话首句发 @Cosmos 唤醒；ChatGPT 由 Work 模式受控浏览器代填（网页版 Work 云端浏览器内 Take over 打开授权页需输本地控制台 6 位动态配对码）或在本机浏览器打开左侧 Plugins -> + -> Add custom MCP server 填名称 WebAI2PC 与对应地址（工作区 /mcp，个人只读 /mcp/readonly）创建并点 Install 安装（本机浏览器授权页直接点「本机一键允许连接」）。安装完成后全账号互通：日常改代码跑测试切回 Chat 模式发 @WebAI2PC（快且不扣 Work/Codex 智能体额度），跨应用长程交付与定时任务切 Work 模式发 @WebAI2PC，首次调用 pc_get_status 确认接通。
 4. 升级 Cloudflare 免费终身固定网址：点控制台右上角「设置 -> 连接与网关」（http://127.0.0.1:8096/#settings/gateways）展开第 2 类「Cloudflare 专属固定网关」，按两步部署免费 *.workers.dev/mcp 地址（令牌部署后自动销毁）。
 5. 目录与 4 档权限：在主控首页左栏点「选文件夹」改工作目录，按需点选「只读 / 仅改文件 / 工作区开发 / 全盘开发」四档权限。
 现在请先问我 3 个简短问题确认起点，带我开始第 1 步。

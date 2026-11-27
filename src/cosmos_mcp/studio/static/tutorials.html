@@ -450,8 +450,8 @@
               <li class="tut-step-item" data-step-wrap="g2">
                 <input type="checkbox" class="tut-step-chk" data-step-id="g2" aria-label="复制主连接地址并新建连接器">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 2 步：填入 <code>Cosmos</code> 名称与 <code>/mcp</code> 地址</div>
-                  <p class="tut-step-desc">在网页版 Gemini 左侧栏依次点击 <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; + Custom（添加自定义）</code>，<code>Name</code> 填 <code>Cosmos</code>，<code>URL</code> 粘贴 <code data-live-url="mcp">https://xxxxx.srv.us/mcp</code>；若展开 <code>Additional settings</code>，<code>Client ID</code> 与 <code>Client Secret</code> 均保持留空。</p>
+                  <div class="tut-step-title">第 2 步：打开 Gemini 连接器设置，把 <code>/mcp</code> 地址粘到配置栏（勿直接浏览器打开）</div>
+                  <p class="tut-step-desc"><strong>注意：不要把 <code data-live-url="mcp">https://xxxxx.srv.us/mcp</code> 直接粘贴到浏览器地址栏里打开。</strong>请点击右上角按钮直接访问 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>https://gemini.google.com/customize/connectors</code></a>（或从 Gemini 首页左下角菜单依次点击 <code>Personal Intelligence -&gt; Connected Apps</code>），点击右上角 <code>+ Custom</code>，在弹出的 <code>Connect to an MCP server</code> 窗口把该地址粘贴到 <code>MCP Server URL</code> 配置栏（<code>Additional settings</code> 保持默认折叠），点击 <code>Next</code>。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="g3">
@@ -465,7 +465,7 @@
                 <input type="checkbox" class="tut-step-chk" data-step-id="g4" aria-label="将 App actions 设为 Always allow">
                 <div class="tut-step-body">
                   <div class="tut-step-title">第 4 步：将 <code>App actions</code> 设为 <code>Always allow（始终允许）</code> 并存入守则</div>
-                  <p class="tut-step-desc">在 <code>Connectors（连接器）</code> 列表点开 <code>Cosmos</code>，把 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>（请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，否则会覆盖其余工具免审批状态）；随后在 Studio 点击「复制 AI 操作守则（推荐存入 Skills）」保存到 <code>Customize（自定义） -&gt; Skills（技能）</code>。</p>
+                  <p class="tut-step-desc">回到 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a> 点开刚添加的连接器，把 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>（请勿在聊天对话流弹出的单张工具确认卡片上单独点允许，否则会覆盖其余工具免审批状态）；随后在 Studio 点击「复制 AI 操作守则（推荐存入 Skills）」保存到 Gemini 的 <code>Skills</code> 中。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="g5">
@@ -1037,7 +1037,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
               </summary>
               <div class="ts-item-body">
                 <div><strong>原因：</strong>网页版 Gemini 与网页版 ChatGPT 会在开启对话时缓存当前连接器的工具 Schema 列表，已在途的旧对话不会自动拉取刚开启的扩展包工具。</div>
-                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code> 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>[at]Cosmos</code>；网页版 ChatGPT 请在左侧 <code>Plugins</code> 打开 <code>WebAI2PC</code> 点击 <code>Refresh</code> 刷新，随后新建 <code>Chat</code> 或 <code>Work</code> 对话输入 <code>@WebAI2PC</code>。</div>
+                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>）点开对应连接器 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>[at]Cosmos</code>；网页版 ChatGPT 请在左侧 <code>Plugins</code> 打开 <code>WebAI2PC</code> 点击 <code>Refresh</code> 刷新，随后新建 <code>Chat</code> 或 <code>Work</code> 对话输入 <code>@WebAI2PC</code>。</div>
               </div>
             </details>
 
@@ -1081,7 +1081,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
               </summary>
               <div class="ts-item-body">
                 <div><strong>原因：</strong>在聊天流弹出的单张工具确认卡上单独点允许，只会针对该单个工具写入局部规则并导致同连接器下其他工具退回逐次确认；或者 Studio 开启了宿主确认开关。</div>
-                <div><strong>解决步骤：</strong>① 打开网页版 Gemini <code>Customize（自定义） -&gt; Connectors（连接器） -&gt; Cosmos</code>，将 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>；② 在本地 Studio「工具中心与安全开关」确认「写文件与运行命令前向宿主请求确认」处于关闭状态。</div>
+                <div><strong>解决步骤：</strong>① 打开网页版 Gemini <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>）点开对应连接器，将 <code>App actions</code> 总开关设为 <code>Always allow（始终允许）</code>；② 在本地 Studio「工具中心与安全开关」确认「写文件与运行命令前向宿主请求确认」处于关闭状态。</div>
               </div>
             </details>
           </div>

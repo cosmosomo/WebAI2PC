@@ -1818,7 +1818,7 @@ def ensure_initialized(
         f"  动态守则地址   : {skill_endpoint}\n"
         f"{loopback_notice}"
         f"  授权页连接口令 : {password_display}\n"
-        "  免审批正确开启 : 请在左侧栏「设置/自定义 -> 已连接的应用/连接器 -> <连接器> -> 应用操作 -> Always allow」开启总开关；\n"
+        "  免审批正确开启 : 请打开 https://gemini.google.com/customize/connectors（或左下角菜单 Personal Intelligence -> Connected Apps）点开连接器将 App actions 设为 Always allow；\n"
         "                   请勿在对话气泡的单次工具确认卡上单点允许，以免冲掉同一连接器下其他工具的免审批设置。\n\n"
         "【本机回环管理参数】\n"
         f"  Streamable HTTP URL : {local_endpoint}\n"
