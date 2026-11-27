@@ -947,7 +947,9 @@ def test_revocable_pat_loopback_mint_scope_isolation_multigw_and_zero_plaintext(
                 body_txt = resp_chk.text
                 assert ro_pat not in body_txt, f"Readonly PAT leaked in {check_path}"
                 assert rw_pat not in body_txt, f"Readwrite PAT leaked in {check_path}"
-                assert "cmcp_" not in body_txt, f"Unexpected `cmcp_` token prefix found in {check_path}"
+                assert re.search(r"cmcp_[A-Za-z0-9_-]+", body_txt) is None, (
+                    f"Unexpected `cmcp_` token leaked in {check_path}"
+                )
 
             st_after = http.get("/api/studio/state").json()
             sess_by_cid = {s["client_id"]: s for s in st_after["authorized_sessions"]}

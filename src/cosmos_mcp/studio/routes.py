@@ -912,10 +912,12 @@ def _normalize_instant_policy(
     submode: str = "",
 ) -> str:
     pol = str(raw_policy or "").strip().lower()
-    if pol in INSTANT_POLICIES:
+    if pol in ("srv_us_only", "quick_only"):
         return pol
     if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
         return "quick_only"
+    if pol in INSTANT_POLICIES:
+        return pol
     return "auto"
 
 

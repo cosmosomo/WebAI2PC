@@ -725,7 +725,7 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
                     hasLangBtn: Boolean(document.getElementById('lang-toggle-btn')),
                     hasPatDetails: Boolean(document.getElementById('pat-mint-details')),
                     hasShowcase: Boolean(document.getElementById('ob-pane-4')) && document.querySelectorAll('#ob-pane-4 [data-ob-copy-showcase]').length >= 3 && document.querySelectorAll('#ob-pane-4 img[src*="/static/showcase/case-0"]').length >= 3,
-                    hasChatgptBtn: Boolean(document.getElementById('open-chatgpt-plugins-full-btn')),
+                    hasChatgptBtn: Boolean(document.getElementById('copy-chatgpt-assist-full-btn')),
                     hasConnBtn: Boolean(document.getElementById('run-conn-check-btn')),
                 })"""
             )

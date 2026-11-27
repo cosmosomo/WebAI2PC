@@ -149,10 +149,12 @@ def normalize_instant_policy(
 ) -> str:
     """Normalize 3-state instant gateway policy (`auto` | `srv_us_only` | `quick_only`) with legacy compat."""
     pol = str(raw_policy or "").strip().lower()
-    if pol in INSTANT_POLICIES:
+    if pol in ("srv_us_only", "quick_only"):
         return pol
     if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
         return "quick_only"
+    if pol in INSTANT_POLICIES:
+        return pol
     return "auto"
 
 
@@ -3046,6 +3048,30 @@ class StandaloneSupervisorLoop:
         prefer_quick = bool(doc.get("prefer_quick_tunnel"))
         prev_prefer_quick = self._last_prefer_quick
         self._last_prefer_quick = prefer_quick
+        if instant_policy == "quick_only":
+            self._stop_pg_workers_supervisor()
+            self._pg_workers_retry_not_before = 0.0
+            self._stop_srvus_supervisor()
+            self._srvus_retry_not_before = 0.0
+            self._srvus_next_auto_recover_mono = 0.0
+            self._srvus_fixed_active = False
+            self._instant_fallback_active = bool(submode == "public_gateway")
+            slot.srvus_status = "disabled"
+            slot.srvus_url = ""
+            slot.srvus_error = ""
+            slot.effective_mode = "cloudflare"
+            if slot.public_url and "trycloudflare.com" not in slot.public_url.lower():
+                slot.public_url = ""
+                slot.ready = False
+                slot.ready_url = ""
+                slot.probing_url = ""
+            self._start_or_maintain_quick_cloudflared(
+                slot,
+                initial=initial,
+                fallback_from_public_gateway=(submode == "public_gateway"),
+                coexist_with_srvus=False,
+            )
+            return
         retry_req_ts = float(doc.get("srvus_retry_requested_at") or 0.0)
         user_requested_srvus = False
         if retry_req_ts > self._last_srvus_retry_req_ts:
@@ -3166,6 +3192,27 @@ class StandaloneSupervisorLoop:
                     slot.trycloudflare_url = ""
                     slot.trycloudflare_status = "disabled"
                     slot.trycloudflare_error = ""
+                return
+
+            if instant_policy == "srv_us_only":
+                self._srvus_fixed_active = False
+                self._instant_fallback_active = False
+                self._stop_cf_quick_supervisor()
+                self._cf_quick_retry_not_before = 0.0
+                slot.srvus_status = "error"
+                if self._last_srvus_error:
+                    slot.srvus_error = self._last_srvus_error
+                slot.trycloudflare_enabled = False
+                slot.trycloudflare_url = ""
+                slot.trycloudflare_status = "disabled"
+                slot.trycloudflare_error = ""
+                if slot.public_url and not slot.public_url.lower().endswith(".srv.us"):
+                    slot.public_url = ""
+                slot.ready = False
+                slot.ready_url = ""
+                slot.probing_url = ""
+                slot.state = "error"
+                slot.last_error = self._last_srvus_error or "srv.us tunnel unavailable"
                 return
 
             # `srv.us` unavailable -> auto-start `trycloudflare` backup/fallback while preserving `srv.us` error

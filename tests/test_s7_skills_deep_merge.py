@@ -556,13 +556,42 @@ def test_studio_loopback_passwordless_remote_guard_poll_vps_diff_and_skills_api(
             assert vps_doc["connection"]["tunnel_mode"] == "vps"
             assert vps_doc["connection"]["vps_ssh"] == "deploy@vps.example.org"
             assert vps_doc["connection"]["vps_remote_port"] == 18099
-            assert vps_doc["connection"]["mcp_url"] == "https://mcp-vps.example.org/mcp"
+            assert vps_doc["connection"]["gateways"]["self_hosted"]["configured_url"] == "https://mcp-vps.example.org"
+            assert vps_doc["connection"]["gateways"]["self_hosted"]["status"] == "unknown"
+            assert vps_doc["connection"]["mcp_url"] == ""
 
-            saved_service = json.loads((st_dir / "state" / "service.json").read_text(encoding="utf-8"))
+            saved_service = json.loads((st_dir / "config" / "service.json").read_text(encoding="utf-8"))
             assert saved_service["tunnel_mode"] == "vps"
             assert saved_service["vps_ssh"] == "deploy@vps.example.org"
             assert saved_service["vps_remote_port"] == 18099
             assert saved_service["public_base"] == "https://mcp-vps.example.org"
+
+            d_status_file = st_dir / "state" / "daemon_status.json"
+            d_status_file.write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "mode": "vps",
+                        "public_url": "https://mcp-vps.example.org",
+                        "tunnel_ready": True,
+                        "gateways": {
+                            "self_hosted": {
+                                "enabled": True,
+                                "submode": "vps",
+                                "effective_mode": "vps",
+                                "phase": "ready",
+                                "tunnel_ready": True,
+                                "public_url": "https://mcp-vps.example.org",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            vps_ready_state = client.get("/api/studio/state").json()
+            assert vps_ready_state["public_https_ready"] is True
+            assert vps_ready_state["mcp_url"] == "https://mcp-vps.example.org/mcp"
+            d_status_file.unlink()
 
             # Switch back to local so we also test local -> cloudflare CTA cleanly
             client.post(
@@ -734,6 +763,36 @@ def test_headless_studio_dual_viewport_and_skills_center_dom_flows(tmp_path: Pat
                     document.getElementById('save-channel-btn').click();
                 }"""
             )
+            driver.wait_until(
+                """() => {
+                    const box = document.getElementById('mcp-url-box');
+                    return Boolean(box && !box.classList.contains('https-ready'));
+                }""",
+                description="VPS config saved without fabricating ready before daemon probe",
+            )
+            (st_dir / "state" / "daemon_status.json").write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "port": srv.port,
+                        "mode": "vps",
+                        "public_url": "https://gemini-bridge.example.net",
+                        "tunnel_ready": True,
+                        "gateways": {
+                            "self_hosted": {
+                                "enabled": True,
+                                "submode": "vps",
+                                "effective_mode": "vps",
+                                "phase": "ready",
+                                "tunnel_ready": True,
+                                "public_url": "https://gemini-bridge.example.net",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            driver.trigger_poll()
             vps_ui_res = driver.wait_until(
                 """() => {
                     const box = document.getElementById('mcp-url-box');
