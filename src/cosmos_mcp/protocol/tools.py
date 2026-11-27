@@ -596,6 +596,25 @@ def build_core_tools(
             ),
         }
 
+    def _resolve_update_state_and_prefix(pol_dict: Dict[str, Any]) -> Tuple[Path, str]:
+        raw_sr = str(pol_dict.get("state_root") or "").strip()
+        st_root = Path(raw_sr).expanduser().resolve() if raw_sr else g.effective_state_root()
+        eff_pref = str(pol_dict.get("prefix") or g.tool_prefix or "pc").strip().lower() or "pc"
+        return st_root, eff_pref
+
+    def _read_last_update_summary(st_root: Path, eff_pref: str) -> Optional[Dict[str, Any]]:
+        try:
+            import json as _json
+            from cosmos_mcp.launcher.updater import last_update_status_path
+
+            st_path = last_update_status_path(st_root, prefix=eff_pref)
+            if not st_path.is_file():
+                return None
+            loaded = _json.loads(st_path.read_text(encoding="utf-8-sig"))
+            return loaded if isinstance(loaded, dict) else None
+        except Exception:
+            return None
+
     # --- Bound Handlers ---
 
     async def _h_get_status(
@@ -604,6 +623,7 @@ def build_core_tools(
         tail_lines: int = 80,
         guide: str = "",
         open_page: str = "",
+        check_update: bool = False,
         caller: str = "",
     ) -> Dict[str, Any]:
         _ = caller
@@ -658,6 +678,19 @@ def build_core_tools(
                 "open_page_hint",
                 f"当前处于只读模式，未自动打开宿主机浏览器；请复制或点击链接自行打开：{target_u}",
             )
+        if isinstance(res_out, dict):
+            st_root_u, eff_pref_u = _resolve_update_state_and_prefix(eff_pol_dict)
+            last_upd = _read_last_update_summary(st_root_u, eff_pref_u)
+            if last_upd is not None:
+                res_out["last_update_status"] = last_upd
+            if bool(check_update):
+                from cosmos_mcp.launcher import updater as updater_mod
+
+                res_out["update_check"] = await asyncio.to_thread(
+                    updater_mod.check_for_updates,
+                    st_root_u,
+                    prefix=eff_pref_u,
+                )
         return res_out
 
     async def _h_find_files(
@@ -1036,6 +1069,9 @@ def build_core_tools(
         python_path: str = "",
         venv: str = "",
         conda_env: str = "",
+        channel: str = "release",
+        allow_tunnel_restart: bool = False,
+        force_active_tasks: bool = False,
         caller: str = "",
     ) -> Dict[str, Any]:
         _ = caller
@@ -1043,7 +1079,58 @@ def build_core_tools(
         cur_tier = normalize_tier(str(pol.get("tier") or g.tier))
         raw_act = (action or "").strip().lower()
         eff_act = "start" if ((not raw_act or raw_act == "list") and (command or "").strip() and not (job_id or "").strip()) else (raw_act or "list")
-        if cur_tier in ("L1", "L2") and eff_act not in ("status", "list"):
+        is_ro_endpoint = bool(status_ro_var.get())
+        try:
+            from cosmos_mcp.protocol.transport import _REQUEST_TRANSPORT_CTX
+
+            if _REQUEST_TRANSPORT_CTX in contextvars.copy_context():
+                req_ctx = _REQUEST_TRANSPORT_CTX.get()
+                if bool(getattr(req_ctx, "readonly_only", False)):
+                    is_ro_endpoint = True
+        except Exception:
+            pass
+
+        if eff_act == "check_update":
+            from cosmos_mcp.launcher import updater as updater_mod
+
+            st_root_u, eff_pref_u = _resolve_update_state_and_prefix(pol)
+            eff_channel = (channel or "release").strip().lower()
+            if eff_channel not in ("release", "main"):
+                eff_channel = "release"
+            chk_res = await asyncio.to_thread(
+                updater_mod.check_for_updates,
+                st_root_u,
+                prefix=eff_pref_u,
+                channel=eff_channel,
+            )
+            last_upd = _read_last_update_summary(st_root_u, eff_pref_u)
+            if isinstance(chk_res, dict) and last_upd is not None:
+                chk_res = {**chk_res, "last_update_status": last_upd}
+            return chk_res
+
+        if eff_act == "self_update":
+            if is_ro_endpoint or cur_tier in ("L1", "L2"):
+                blk = _readonly_tier_block("bg_command", eff_act, cur_tier, ("status", "list", "check_update"))
+                if is_ro_endpoint:
+                    blk["blocked_by_readonly_endpoint"] = True
+                return blk
+            from cosmos_mcp.launcher import updater as updater_mod
+
+            st_root_u, eff_pref_u = _resolve_update_state_and_prefix(pol)
+            eff_channel = (channel or "release").strip().lower()
+            if eff_channel not in ("release", "main"):
+                eff_channel = "release"
+            return await asyncio.to_thread(
+                updater_mod.stage_and_apply_update,
+                st_root_u,
+                prefix=eff_pref_u,
+                channel=eff_channel,
+                allow_tunnel_restart=bool(allow_tunnel_restart),
+                force_active_tasks=bool(force_active_tasks),
+                defer_restart_sec=1.5,
+            )
+
+        if cur_tier in ("L1", "L2") and eff_act not in ("status", "list", "check_update"):
             return _readonly_tier_block("bg_command", eff_act, cur_tier, ("status", "list"))
 
         eff_py = (python_path or "").strip() or str(pol.get("python_path") or "").strip()
@@ -1289,6 +1376,11 @@ def build_core_tools(
                     "Optional local Studio page to open in the user's PC browser ('studio'|'gateways'|'cloudflare'|'permissions'|'runtime'|'tools'|'skills'|'appearance'|'tutorials') when the user asks to open or configure local settings.",
                     default="",
                 ),
+                "check_update": _prop(
+                    "boolean",
+                    "Optional read-only flag (default false) to check GitHub for newer Cosmos MCP releases or commits.",
+                    default=False,
+                ),
             }),
             idempotent=True,
         ),
@@ -1510,9 +1602,14 @@ def build_core_tools(
             handler=_h_bg_command,
             safety_band=SafetyBand.WORKSPACE_EXEC,
             title="Manage Background Command",
-            description="Detached background job controller returning `log_path`/`log_file` and `tail`/`log_tail`.",
+            description="Detached background job controller returning `log_path`/`log_file` and `tail`/`log_tail`, plus self-update check (`check_update`) and deferred zero-drop self-update (`self_update`).",
             input_schema=_obj_schema({
-                "action": _prop("string", "start|status|wait|list|kill", enum=["start", "status", "wait", "list", "kill"], default="list"),
+                "action": _prop(
+                    "string",
+                    "start|status|wait|list|kill|check_update|self_update",
+                    enum=["start", "status", "wait", "list", "kill", "check_update", "self_update"],
+                    default="list",
+                ),
                 "command": _prop("string", "Command to start", default=""),
                 "job_id": _prop("string", "Background job ID", default=""),
                 "cwd": _prop("string", "Working directory", default=""),
@@ -1522,10 +1619,13 @@ def build_core_tools(
                 "python_path": _prop("string", "Optional Python interpreter executable path", default=""),
                 "venv": _prop("string", "Optional virtualenv directory path", default=""),
                 "conda_env": _prop("string", "Optional Conda environment name or prefix", default=""),
+                "channel": _prop("string", "Update channel for check_update/self_update (release|main)", enum=["release", "main"], default="release"),
+                "allow_tunnel_restart": _prop("boolean", "Allow full daemon/tunnel restart during self_update when launcher files changed", default=False),
+                "force_active_tasks": _prop("boolean", "Proceed with self_update even if foreground tasks are active", default=False),
             }),
             param_aliases={"cmd": "command", "workdir": "cwd", "python_exe": "python_path"},
             action_param="action",
-            action_enum=("start", "status", "wait", "list", "kill"),
+            action_enum=("start", "status", "wait", "list", "kill", "check_update", "self_update"),
         ),
         ToolSpec(
             base_name="batch_probe",

@@ -133,7 +133,7 @@ if defined COSMOS_NO_PAUSE set "_COSMOS_SILENT=1"
 if defined LOCALPC_NO_BROWSER set "_COSMOS_SILENT=1"
 if defined PYTEST_CURRENT_TEST set "_COSMOS_SILENT=1"
 if "%~1"=="" exit /b 0
-for %%S in (start stop restart status doctor permissions agent-setup reset-password uninstall setup daemon stdio bind-desktop vps-caddy-snippet --help -h --version) do (
+for %%S in (start stop restart status doctor permissions agent-setup reset-password uninstall setup daemon stdio bind-desktop vps-caddy-snippet update --help -h --version) do (
     if /i "%~1"=="%%~S" set "_COSMOS_PASSTHROUGH=1"
 )
 if defined _COSMOS_PASSTHROUGH if /i not "%~1"=="start" set "_COSMOS_SILENT=1"

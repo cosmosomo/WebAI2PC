@@ -927,6 +927,8 @@ class KernelDispatcher:
             if is_mixed
             else (False, "")
         )
+        if spec.base_name == "bg_command" and eff_act == "check_update":
+            is_ro_act = True
         eff_spec_for_scope = spec
 
         if readonly_only:

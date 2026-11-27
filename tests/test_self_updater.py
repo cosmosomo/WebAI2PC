@@ -831,3 +831,280 @@ def test_live_supervisor_worker_hot_reload_zero_tunnel_drop_and_watchdog_rollbac
         api_srv.close()
         atomic_write_text(daemon.daemon_stop_flag_path(st_root), f"STOP:{time.time()}\n")
         sup_thread.join(timeout=8.0)
+
+
+def _mount_test_dispatcher(ws_dir: Path, st_dir: Path, *, tier: str = "tier3_workspace_dev"):
+    from cosmos_mcp.capabilities import clear_registered_providers
+    from cosmos_mcp.core.config import LiveRuntimePolicy
+    from cosmos_mcp.core.guard import WorkspaceGuard
+    from cosmos_mcp.core.proc import ProcessManager
+    from cosmos_mcp.protocol.dispatcher import KernelDispatcher
+    from cosmos_mcp.protocol.tools import build_core_tools
+
+    clear_registered_providers()
+    guard = WorkspaceGuard(
+        workspace_roots=[ws_dir],
+        restrict_to_workspace=(tier != "tier4_full_power"),
+        state_root=st_dir,
+        tool_prefix="pc",
+    )
+    proc_mgr = ProcessManager(guard=guard, state_root=st_dir)
+    cfg_p = st_dir / "config" / "service.json"
+    policy = LiveRuntimePolicy(
+        tier_key=tier,
+        workspace_roots=[ws_dir],
+        cfg_path=cfg_p,
+        state_root=st_dir,
+        guard=guard,
+    )
+    dispatcher = KernelDispatcher(policy)
+    specs, hooks = build_core_tools(
+        guard=guard,
+        proc_mgr=proc_mgr,
+        policy=policy,
+        policy_getter=lambda: {
+            "prefix": policy.eff_prefix,
+            "tier": policy.short_tier_code,
+            "workspace": policy.workspace,
+            "state_root": str(st_dir),
+            "toolset_profile": policy.toolset_profile,
+            "python_path": policy.python_path,
+            "exposed_tools": [sp.base_name for sp in dispatcher.active_tool_specs()],
+        },
+    )
+    dispatcher.register_tools(specs)
+    for hk in hooks:
+        dispatcher.add_execution_hook(hk)
+    return policy, dispatcher
+
+
+def test_mcp_tool_count_16_and_readonly_update_checks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir(parents=True)
+    st_dir = tmp_path / "state"
+    bootstrap.sync_portable_app_src(st_dir, source_src_dir=REPO_ROOT / "src")
+
+    status_fp = updater.last_update_status_path(st_dir, prefix="pc")
+    status_fp.parent.mkdir(parents=True, exist_ok=True)
+    status_fp.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "succeeded",
+                "from_version": "1.2.0",
+                "to_version": "1.2.1",
+                "restart_mode": "worker_hot_reload",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    api_srv = _LocalUpdateApiServer()
+    api_srv.release_payload = {
+        "tag_name": "v1.2.2",
+        "target_commitish": "1234567890abcdef1234567890abcdef12345678",
+        "body": "Stub release v1.2.2 for MCP readonly check",
+        "assets": [
+            {
+                "name": "Cosmos-MCP-v1.2.2.zip",
+                "browser_download_url": f"{api_srv.base_url}/Cosmos-MCP-v1.2.2.zip",
+            }
+        ],
+    }
+    monkeypatch.setenv("COSMOS_UPDATE_API_BASE", api_srv.base_url)
+    monkeypatch.delenv("COSMOS_UPDATE_ARCHIVE_URL", raising=False)
+    monkeypatch.delenv("COSMOS_UPDATE_MIRROR", raising=False)
+    monkeypatch.delenv("COSMOS_UPDATE_EXPECTED_SHA256", raising=False)
+
+    try:
+        policy, dispatcher = _mount_test_dispatcher(ws_dir, st_dir, tier="tier3_workspace_dev")
+        l3_tools = dispatcher.list_tool_dicts()
+        assert len(l3_tools) == 16
+        by_name = {t["name"]: t for t in l3_tools}
+        assert "check_update" in by_name["pc_get_status"]["inputSchema"]["properties"]
+        bg_enum = by_name["pc_bg_command"]["inputSchema"]["properties"]["action"]["enum"]
+        assert "check_update" in bg_enum and "self_update" in bg_enum
+
+        # Switch to L1 (`tier1_readonly`) and verify both `get_status(check_update=True)` and `bg_command(action="check_update")`
+        policy.update_config({"permission_tier": "tier1_readonly"})
+
+        res_no_net, _ = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {}, readonly_only=True))
+        assert res_no_net.get("ok") is True
+        assert "update_check" not in res_no_net
+        assert res_no_net.get("last_update_status", {}).get("to_version") == "1.2.1"
+
+        res_status_chk, _ = asyncio.run(
+            dispatcher.call_tool_raw("pc_get_status", {"check_update": True}, readonly_only=True)
+        )
+        assert res_status_chk.get("ok") is True
+        uc = res_status_chk.get("update_check") or {}
+        assert uc.get("ok") is True
+        assert uc.get("latest_version") == "1.2.2"
+        assert uc.get("update_available") is True
+
+        res_bg_ro, _ = asyncio.run(
+            dispatcher.call_tool_raw(
+                "pc_bg_command",
+                {"action": "check_update", "channel": "release"},
+                readonly_only=True,
+            )
+        )
+        assert res_bg_ro.get("ok") is True, res_bg_ro
+        assert res_bg_ro.get("latest_version") == "1.2.2"
+        assert res_bg_ro.get("update_available") is True
+
+        res_bg_l1, _ = asyncio.run(
+            dispatcher.call_tool_raw(
+                "pc_bg_command",
+                {"action": "check_update", "channel": "release"},
+                readonly_only=False,
+            )
+        )
+        assert res_bg_l1.get("ok") is True, res_bg_l1
+        assert res_bg_l1.get("latest_version") == "1.2.2"
+    finally:
+        api_srv.close()
+
+
+def test_mcp_bg_command_self_update_permission_gates_and_l3_l4_exec(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir(parents=True)
+    st_dir = tmp_path / "state"
+    policy, dispatcher = _mount_test_dispatcher(ws_dir, st_dir, tier="tier1_readonly")
+
+    calls: List[Dict[str, Any]] = []
+
+    def _fake_stage_and_apply(state_root: Path, **kwargs: Any) -> Dict[str, Any]:
+        calls.append({"state_root": str(state_root), **kwargs})
+        return {
+            "ok": True,
+            "status": "handoff_scheduled",
+            "defer_restart_sec": kwargs.get("defer_restart_sec"),
+            "channel": kwargs.get("channel"),
+        }
+
+    monkeypatch.setattr(updater, "stage_and_apply_update", _fake_stage_and_apply)
+
+    # 1) L1 blocked
+    r_l1, _ = asyncio.run(dispatcher.call_tool_raw("pc_bg_command", {"action": "self_update"}))
+    assert r_l1.get("ok") is False
+    assert r_l1.get("blocked_by_permission_tier") is True
+    assert len(calls) == 0
+
+    # 2) L2 blocked
+    policy.update_config({"permission_tier": "tier2_workspace_edit"})
+    r_l2, _ = asyncio.run(dispatcher.call_tool_raw("pc_bg_command", {"action": "self_update"}))
+    assert r_l2.get("ok") is False
+    assert r_l2.get("blocked_by_permission_tier") is True
+    assert len(calls) == 0
+
+    # 3) L3 on `/mcp/readonly` (`readonly_only=True`) blocked
+    policy.update_config({"permission_tier": "tier3_workspace_dev"})
+    r_ro, _ = asyncio.run(
+        dispatcher.call_tool_raw("pc_bg_command", {"action": "self_update"}, readonly_only=True)
+    )
+    assert r_ro.get("ok") is False
+    assert r_ro.get("blocked_by_readonly_endpoint") is True
+    assert len(calls) == 0
+
+    # 4) L3 allowed -> calls `stage_and_apply_update(..., defer_restart_sec=1.5)`
+    r_l3, _ = asyncio.run(
+        dispatcher.call_tool_raw(
+            "pc_bg_command",
+            {
+                "action": "self_update",
+                "channel": "main",
+                "allow_tunnel_restart": True,
+                "force_active_tasks": True,
+            },
+        )
+    )
+    assert r_l3.get("ok") is True, r_l3
+    assert len(calls) == 1
+    assert calls[0]["channel"] == "main"
+    assert calls[0]["allow_tunnel_restart"] is True
+    assert calls[0]["force_active_tasks"] is True
+    assert calls[0]["defer_restart_sec"] == 1.5
+
+    # 5) L4 allowed
+    policy.update_config({"permission_tier": "tier4_full_power"})
+    r_l4, _ = asyncio.run(dispatcher.call_tool_raw("pc_bg_command", {"action": "self_update"}))
+    assert r_l4.get("ok") is True, r_l4
+    assert len(calls) == 2
+    assert calls[1]["channel"] == "release"
+    assert calls[1]["defer_restart_sec"] == 1.5
+
+
+def test_cli_update_check_and_local_archive_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cosmos_mcp.launcher import cli
+
+    st_dir = tmp_path / "cli_state"
+    bootstrap.sync_portable_app_src(st_dir, source_src_dir=REPO_ROOT / "src")
+
+    api_srv = _LocalUpdateApiServer()
+    api_srv.release_payload = {
+        "tag_name": "v1.2.2",
+        "target_commitish": "abcdef0123456789abcdef0123456789abcdef01",
+        "body": "CLI update check stub v1.2.2",
+        "assets": [
+            {
+                "name": "Cosmos-MCP-v1.2.2.zip",
+                "browser_download_url": f"{api_srv.base_url}/Cosmos-MCP-v1.2.2.zip",
+            }
+        ],
+    }
+    monkeypatch.setenv("COSMOS_UPDATE_API_BASE", api_srv.base_url)
+    monkeypatch.delenv("COSMOS_UPDATE_ARCHIVE_URL", raising=False)
+    monkeypatch.delenv("COSMOS_UPDATE_MIRROR", raising=False)
+    monkeypatch.delenv("COSMOS_UPDATE_EXPECTED_SHA256", raising=False)
+
+    try:
+        rc_chk = cli.main(["update", "--check", "--json", "--state-dir", str(st_dir), "--prefix", "pc"])
+        assert rc_chk == 0
+        chk_doc = json.loads(capsys.readouterr().out)
+        assert chk_doc["ok"] is True
+        assert chk_doc["latest_version"] == "1.2.2"
+        assert chk_doc["update_available"] is True
+
+        local_zip, _ = _build_synthetic_release_zip(tmp_path / "cli_upd_122.zip", version="1.2.2")
+        rc_apply = cli.main(
+            [
+                "update",
+                "--archive",
+                str(local_zip),
+                "--json",
+                "--state-dir",
+                str(st_dir),
+                "--prefix",
+                "pc",
+            ]
+        )
+        assert rc_apply == 0
+        apply_doc = json.loads(capsys.readouterr().out)
+        assert apply_doc["ok"] is True
+        assert apply_doc["to_version"] == "1.2.2"
+        assert apply_doc["restart_mode"] == "offline_updated"
+        assert bootstrap.read_package_init_version(st_dir / "app_src" / "cosmos_mcp" / "__init__.py") == "1.2.2"
+
+        bat_txt = (REPO_ROOT / "一键启动_Cosmos_MCP.bat").read_text(encoding="utf-8")
+        sh_txt = (REPO_ROOT / "start_cosmos_mcp.sh").read_text(encoding="utf-8")
+        assert "vps-caddy-snippet update " in bat_txt
+        assert "vps-caddy-snippet|update|" in sh_txt
+    finally:
+        api_srv.close()
+

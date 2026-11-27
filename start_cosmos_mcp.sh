@@ -57,7 +57,7 @@ fi
 
 FIRST_ARG="${1:-}"
 case "${FIRST_ARG}" in
-    start|stop|restart|status|doctor|permissions|agent-setup|reset-password|uninstall|setup|daemon|stdio|bind-desktop|vps-caddy-snippet|--help|-h|--version)
+    start|stop|restart|status|doctor|permissions|agent-setup|reset-password|uninstall|setup|daemon|stdio|bind-desktop|vps-caddy-snippet|update|--help|-h|--version)
         exec "${PY_BIN}" -B -m cosmos_mcp.launcher.cli "$@"
         ;;
 esac

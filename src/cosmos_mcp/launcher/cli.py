@@ -97,6 +97,12 @@ from cosmos_mcp.launcher.doctor import (
     run_doctor,
     run_uninstall,
 )
+from cosmos_mcp.launcher.updater import (
+    check_for_updates,
+    check_pyproject_deps_satisfied,
+    last_update_status_path,
+    stage_and_apply_update,
+)
 from cosmos_mcp.launcher.tunnels import (
     QUICK_TUNNEL_REBOOT_NOTICE_ZH,
     export_identity_recovery_png,
@@ -2203,6 +2209,104 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if rep.get("ok") else 1
 
 
+def _cmd_update(args: argparse.Namespace) -> int:
+    """Check for updates or stage and apply a zero-drop self-update."""
+    st_root = resolve_cli_state_root(args.state_dir)
+    eff_prefix = _norm_prefix(args.prefix)
+    channel = str(getattr(args, "channel", "release") or "release").strip().lower()
+    if channel not in ("release", "main"):
+        channel = "release"
+    want_check = bool(getattr(args, "check", False))
+    raw_archive = str(getattr(args, "archive", "") or "").strip()
+    arc_path = Path(raw_archive).expanduser().resolve() if raw_archive else None
+
+    if want_check:
+        res = check_for_updates(st_root, prefix=eff_prefix, channel=channel)
+        dep_info: Optional[Dict[str, Any]] = None
+        cand_pyproj = st_root / "app_src" / "pyproject.toml"
+        if not cand_pyproj.is_file():
+            repo_r = find_repo_root()
+            if repo_r is not None and (repo_r / "pyproject.toml").is_file():
+                cand_pyproj = repo_r / "pyproject.toml"
+        if cand_pyproj.is_file():
+            try:
+                vp = venv_python_path(st_root)
+                py_target = str(vp) if vp.is_file() else sys.executable
+                dep_info = check_pyproject_deps_satisfied(
+                    cand_pyproj.read_text(encoding="utf-8", errors="replace"),
+                    python_exe=py_target,
+                )
+            except Exception:
+                dep_info = None
+        if dep_info is not None and isinstance(res, dict):
+            res = {**res, "dependency_check": dep_info}
+        st_fp = last_update_status_path(st_root, prefix=eff_prefix)
+        if st_fp.is_file():
+            try:
+                loaded_last = json.loads(st_fp.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded_last, dict):
+                    res = {**res, "last_update_status": loaded_last}
+            except Exception:
+                pass
+
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+            return 0 if res.get("ok") else 1
+
+        if not res.get("ok"):
+            print(f"检查更新失败   : {res.get('error') or res.get('error_code') or '未知错误'}")
+            return 1
+        cur_v = str(res.get("current_version") or "未知")
+        lat_v = str(res.get("latest_version") or cur_v)
+        cur_rev = str(res.get("current_revision") or "")
+        lat_c = str(res.get("latest_commit") or "")[:12]
+        upd_avail = bool(res.get("update_available"))
+        print(f"更新通道       : {res.get('channel') or channel}" + ("（已自动回退到 main）" if res.get("fallback_to_main") else ""))
+        print(f"当前版本       : {cur_v}" + (f" ({cur_rev})" if cur_rev else ""))
+        print(f"最新版本       : {lat_v}" + (f" ({lat_c})" if lat_c else ""))
+        print(f"检查结论       : {'发现可用更新' if upd_avail else '当前已是最新版本'}")
+        if isinstance(dep_info, dict):
+            missing = dep_info.get("missing_or_outdated") or []
+            print(f"依赖满足状态   : {'全部满足' if dep_info.get('satisfied') else '存在缺失或版本偏低: ' + ', '.join(str(x) for x in missing)}")
+        ti = res.get("tunnel_impact") if isinstance(res.get("tunnel_impact"), dict) else {}
+        if ti.get("only_ephemeral_trycloudflare"):
+            print("隧道提示       : 当前仅使用临时 trycloudflare 链接；常规更新会保留现有隧道不断连。")
+        if res.get("release_notes"):
+            first_line = str(res["release_notes"]).splitlines()[0].strip()
+            if first_line:
+                print(f"更新说明       : {first_line}")
+        return 0
+
+    res_apply = stage_and_apply_update(
+        st_root,
+        prefix=eff_prefix,
+        channel=channel,
+        archive_path=arc_path,
+        allow_tunnel_restart=bool(getattr(args, "allow_tunnel_restart", False)),
+        force_active_tasks=bool(getattr(args, "force", False)),
+        defer_restart_sec=0.0,
+    )
+    if args.json:
+        print(json.dumps(res_apply, ensure_ascii=False, indent=2))
+        return 0 if res_apply.get("ok") else 1
+
+    if not res_apply.get("ok"):
+        print(f"更新未完成     : {res_apply.get('error') or res_apply.get('error_code') or '未知错误'}")
+        if res_apply.get("status") == "rolled_back":
+            print(f"自动回滚结果   : 已恢复到 {res_apply.get('restored_version') or '上一版本'}")
+        return 1
+
+    from_v = str(res_apply.get("from_version") or "未知")
+    to_v = str(res_apply.get("to_version") or from_v)
+    mode_lbl = str(res_apply.get("restart_mode") or "")
+    print(f"更新结果       : 成功 ({from_v} -> {to_v})")
+    if mode_lbl:
+        print(f"切换方式       : {mode_lbl}")
+    if res_apply.get("deferred_daemon_restart_note"):
+        print("隧道保留提示   : 为保留当前临时公网地址，本次仅热重载工作进程；如需更新隧道组件可加 --allow-tunnel-restart。")
+    return 0
+
+
 def _cmd_agent_setup(args: argparse.Namespace) -> int:
     """Non-interactive deployment command; `--guide` prints recommended commands without starting."""
     if not getattr(args, "guide", False):
@@ -2894,6 +2998,18 @@ def build_cli_parser() -> argparse.ArgumentParser:
     sp_doc.add_argument("--bundle", action="store_true", help="导出深度脱敏 ZIP 诊断包")
     sp_doc.add_argument("--output", default="", help="指定诊断包输出路径")
 
+    sp_upd = sub.add_parser("update", help="检查更新或无感应用一键更新（支持 --check 仅检查与本地离线 ZIP 包）", parents=[sub_common])
+    sp_upd.add_argument("--check", action="store_true", help="仅检查版本与依赖差异，不修改本地文件")
+    sp_upd.add_argument(
+        "--channel",
+        choices=("release", "main"),
+        default="release",
+        help="更新通道：release（正式版，无发布时自动回退 main）或 main（主干提交）",
+    )
+    sp_upd.add_argument("--allow-tunnel-restart", action="store_true", help="当守护或隧道文件变动时允许重建临时公网隧道")
+    sp_upd.add_argument("--force", "--force-active-tasks", dest="force", action="store_true", help="忽略在途前台任务检查并强制应用更新")
+    sp_upd.add_argument("--archive", default="", help="指定本地更新 ZIP 压缩包路径")
+
     sp_bind = sub.add_parser("bind-desktop", help="按需显式绑定或解绑桌面客户端配置", parents=[sub_common])
     sp_bind.add_argument(
         "--clients",
@@ -2986,6 +3102,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _cmd_identity(args)
     if cmd == "doctor":
         return _cmd_doctor(args)
+    if cmd == "update":
+        return _cmd_update(args)
     if cmd == "agent-setup":
         return _cmd_agent_setup(args)
     if cmd == "bind-desktop":
