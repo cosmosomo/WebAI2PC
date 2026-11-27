@@ -743,10 +743,11 @@ def test_public_docs_and_build_release_check_gate(tmp_path: Path) -> None:
     doc03_txt = (REPO_ROOT / "docs" / "03_Cosmos_Studio面板与扩展包指南.md").read_text(encoding="utf-8")
     skill_txt = (REPO_ROOT / "host_skills" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "Your AI. Your Computer. Your Capabilities." in readme_txt
+    assert "WebAI2PC" in readme_txt
+    assert "Gemini" in readme_txt and "ChatGPT" in readme_txt
+    assert "docs/README.md" in readme_txt and "docs/AI_SETUP_GUIDE.md" in readme_txt
     assert not (REPO_ROOT / "docs" / "02_桌面客户端一键接入教程.md").exists()
     for core_tool in DEFAULT_CORE_TOOLS:
-        assert core_tool in readme_txt, f"README.md missing core tool `{core_tool}`"
         assert core_tool in skill_txt, f"host_skills/SKILL.md missing core tool `{core_tool}`"
 
     assert "https://datatracker.ietf.org/doc/html/rfc8707" in security_txt

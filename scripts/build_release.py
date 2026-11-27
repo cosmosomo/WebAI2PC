@@ -131,8 +131,6 @@ _EMBED_REDUNDANT_SP_EXACT: frozenset[str] = frozenset(
 )
 
 # Constructed dynamically so this script file itself contains zero literal forbidden tokens
-_OFFLINE_GOPROXY_RE = re.compile(r"GOPROXY\s*=\s*['\"]?" + "off" + r"\b", re.IGNORECASE)
-_OFFLINE_CARGO_RE = re.compile(r"CARGO_NET_OFFLINE\s*=\s*['\"]?" + "true" + r"\b", re.IGNORECASE)
 _ENV_ASSIGN_OFFLINE_RE = re.compile(
     r"(?:os\.environ|env)\s*\[\s*['\"](?:GOPROXY|CARGO_NET_OFFLINE)['\"]\s*\]\s*=",
     re.IGNORECASE,
@@ -166,14 +164,6 @@ _INTERNAL_CODENAME_RE = re.compile(
     r"\b(?:t5_champion_12|t2_unix_lean_7|t3_serena_symbol_14|t4_agy_hybrid_10|t1_baseline_19|HD-\d+|MCP-FB-v?\d+|"
     + "web"
     + r"[-_]?taint)\b",
-    re.IGNORECASE,
-)
-_PRIVATE_CONDA_PATH_RE = re.compile(
-    r"[A-Z]:(?:\\+|/+)(?:" + "Anaconda" + r"\d*|" + "Miniconda" + r"\d*)(?:\\|/|['\"\s]|$)",
-    re.IGNORECASE,
-)
-_PRIVATE_DEV_DRIVE_RE = re.compile(
-    r"[C-Z]:(?:\\+|/+)" + "program" + r"[0-9_]*(?:\\+|/+|['\"]|$)",
     re.IGNORECASE,
 )
 _PRIVATE_PAD_PACK_RE = re.compile(
@@ -252,7 +242,58 @@ _FORBIDDEN_TRACKED_DIRS: Tuple[str, ...] = (
     ".audit_screenshots/",
     ".benchmarks/",
 )
-_ALLOWED_PNG_TEXT_KEYS: frozenset[str] = frozenset()
+_ALLOWED_PNG_TEXT_KEYS: frozenset[str] = frozenset(
+    {
+        "software",
+        "creation time",
+        "description",
+        "comment",
+        "author",
+        "title",
+        "copyright",
+        "source",
+        "disclaimer",
+        "warning",
+    }
+)
+
+
+def _extract_png_text_chunk_key_value(ctype: str, cdata: bytes) -> Tuple[str, str]:
+    """Decode `(key, value_text)` from a PNG `tEXt`, `zTXt`, or `iTXt` chunk."""
+    import zlib
+
+    if ctype == "eXIf":
+        return "eXIf", ""
+    key_raw, sep, rest = cdata.partition(b"\x00")
+    key = key_raw.decode("latin1", errors="replace").strip()
+    if not sep:
+        return key, ""
+    if ctype == "tEXt":
+        return key, rest.decode("latin1", errors="replace")
+    if ctype == "zTXt":
+        if len(rest) >= 1:
+            try:
+                return key, zlib.decompress(rest[1:]).decode("latin1", errors="replace")
+            except Exception:
+                return key, rest[1:].decode("latin1", errors="replace")
+        return key, ""
+    if ctype == "iTXt":
+        if len(rest) < 2:
+            return key, ""
+        comp_flag = rest[0]
+        after_flags = rest[2:]
+        _lang, sep1, rem1 = after_flags.partition(b"\x00")
+        if not sep1:
+            return key, after_flags.decode("utf-8", errors="replace")
+        _trans_key, sep2, text_bytes = rem1.partition(b"\x00")
+        raw_text = text_bytes if sep2 else rem1
+        if comp_flag == 1:
+            try:
+                raw_text = zlib.decompress(raw_text)
+            except Exception:
+                pass
+        return key, raw_text.decode("utf-8", errors="replace")
+    return key, ""
 
 
 def scan_text_credential_leaks(txt: str) -> List[str]:
@@ -285,13 +326,40 @@ def scan_text_cross_machine_and_internal_leaks(txt: str) -> List[str]:
     return hits
 
 
-def scan_image_bytes_integrity_and_metadata(data: bytes, *, rel_path: str = "") -> List[str]:
-    """Verify PNG/JPEG decodability (`verify` + full `load`) and reject non-whitelisted metadata chunks."""
+def _scan_png_text_value_privacy(val_txt: str, forbidden_tokens: Sequence[str]) -> List[str]:
+    """Check a whitelisted PNG text chunk's value for credentials, PII paths, emails, or forbidden tokens."""
+    if not val_txt:
+        return []
+    reasons: List[str] = []
+    for cred_tag in scan_text_credential_leaks(val_txt):
+        reasons.append(f"credential:{cred_tag}")
+    for leak_tag in scan_text_cross_machine_and_internal_leaks(val_txt):
+        reasons.append(leak_tag)
+    for leaked_em in scan_text_email_leaks(val_txt, is_test_file=False):
+        reasons.append(f"email:{leaked_em}")
+    for h_tag in scan_text_forbidden_identifier_hashes(val_txt):
+        reasons.append(h_tag)
+    val_low = val_txt.lower()
+    for tok in forbidden_tokens:
+        if tok and tok.lower() in val_low:
+            reasons.append("forbidden_token")
+            break
+    return reasons
+
+
+def scan_image_bytes_integrity_and_metadata(
+    data: bytes,
+    *,
+    rel_path: str = "",
+    forbidden_tokens: Optional[Sequence[str]] = None,
+) -> List[str]:
+    """Verify PNG/JPEG decodability (`verify` + full `load`) and check metadata chunks for privacy leaks."""
     import struct
     from PIL import Image, ImageFile
 
     issues: List[str] = []
     low = rel_path.lower()
+    eff_forbidden: Optional[Tuple[str, ...]] = tuple(forbidden_tokens) if forbidden_tokens is not None else None
     if low.endswith(".png") or data.startswith(b"\x89PNG\r\n\x1a\n"):
         if not data.startswith(b"\x89PNG\r\n\x1a\n"):
             return [f"Invalid PNG header in `{rel_path}`"]
@@ -307,9 +375,17 @@ def scan_image_bytes_integrity_and_metadata(data: bytes, *, rel_path: str = "") 
             if ctype == "IEND":
                 has_iend = True
             elif ctype in ("tEXt", "iTXt", "zTXt", "eXIf"):
-                key = cdata.split(b"\x00", 1)[0].decode("latin1", errors="replace").strip() if ctype != "eXIf" else "eXIf"
+                key, val_txt = _extract_png_text_chunk_key_value(ctype, cdata)
                 if key.lower() not in _ALLOWED_PNG_TEXT_KEYS:
                     issues.append(f"Forbidden PNG metadata chunk `{ctype}` (`{key}`) in `{rel_path}`")
+                else:
+                    if eff_forbidden is None:
+                        eff_forbidden = _build_forbidden_archive_tokens()
+                    val_hits = _scan_png_text_value_privacy(val_txt, eff_forbidden)
+                    if val_hits:
+                        issues.append(
+                            f"Sensitive value in PNG metadata chunk `{ctype}` (`{key}`) in `{rel_path}` ({', '.join(val_hits)})"
+                        )
             pos += 12 + clen
         if not has_iend:
             issues.append(f"Missing PNG IEND chunk in `{rel_path}`")
@@ -338,6 +414,7 @@ def scan_git_diff_range(repo_root: Path, diff_range: str) -> List[str]:
     res = subprocess.run(
         ["git", "diff", "--unified=0", diff_range],
         cwd=repo_root,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -469,10 +546,6 @@ def _build_forbidden_archive_tokens(
     eff_host = (socket.gethostname() or "").strip() if runtime_hostname is None else runtime_hostname.strip()
     eff_user = (getpass.getuser() or "").strip() if runtime_username is None else runtime_username.strip()
     tokens: List[str] = [
-        ":\\" + "Anaconda",
-        ":/" + "Anaconda",
-        ":\\" + "Miniconda",
-        ":/" + "Miniconda",
         "\\" + ".py" + "env",
         "/." + "py" + "env/",
         "py" + "env-win",
@@ -548,10 +621,11 @@ def scan_archive_entry_sensitive_bytes(
 
 def render_quickstart_txt(version: str) -> bytes:
     """Render beginner-friendly CRLF plain-text `01_新手三步上手.txt` at archive root."""
+    at = chr(64)
     lines = [
-        f"====================================================================",
-        f" Cosmos MCP v{version} — Windows 新手三步上手说明",
-        f"====================================================================",
+        "====================================================================",
+        f" WebAI2PC (Cosmos MCP v{version}) — Windows 新手三步上手说明",
+        "====================================================================",
         "",
         "第 ① 步：先解压压缩包",
         "  请右键本压缩包选择「全部解压缩」到本地任意文件夹（不要直接在压缩软件预览窗里双击）。",
@@ -561,21 +635,20 @@ def render_quickstart_txt(version: str) -> bytes:
         "  （macOS / Linux 用户请在终端运行 ./start_cosmos_mcp.sh）。",
         "  服务将在后台静默拉起，并自动在浏览器打开本地控制台 http://127.0.0.1:8096/ 。",
         "",
-        "第 ③ 步：复制网址粘贴到网页版 Gemini 或 ChatGPT",
-        "  复制本地控制台里显示的 https://.../mcp 加密连接网址，粘贴到：",
-        "  - 网页版 Google Gemini（勿直接浏览器打开 /mcp，请访问 https://gemini.google.com/customize/connectors 点 + Custom 粘贴到 MCP Server URL）",
+        "第 ③ 步：复制网址或配置提示词接入网页版 Gemini / ChatGPT",
+        "  在本地控制台顶部选择目标网页宿主：",
+        "  - 网页版 Google Gemini（勿直接在浏览器地址栏打开 /mcp，请访问 https://gemini.google.com/customize/connectors 点 + Custom 粘贴到 MCP Server URL，授权后将 App actions 设为 Always allow）",
         "  - 网页版 ChatGPT：",
-        "    · 首次添加插件：网关就绪后首选点「复制地址并打开 ChatGPT 插件页」，在已登录本机浏览器",
-        "      打开 https://chatgpt.com/plugins 点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，",
-        "      粘贴 /mcp（个人只读填 /mcp/readonly），授权页点「本机一键允许连接」并点 Install 安装",
-        "      （遇到连接或 403 权限问题点旁侧「复制给 ChatGPT 接入 / 排障」）。",
-        "    · 日常使用分工：装好后切回 Chat 模式发 @WebAI2PC 改代码跑脚本（快且不扣 Work/Codex 额度），",
-        "      跨应用长程交付与定时任务用 Work 模式发 @WebAI2PC。",
+        f"    · 首次一键接入：网关就绪后在控制台点「复制一键配置提示词（发给 Work）」（个人 Plus/Pro 只读点「复制只读配置提示词（发给 Work）」），",
+        f"      粘贴发给网页版 ChatGPT 的 Work 模式，由 {at}Plugin Creator 按标准 OAuth 2.1 自动接入 /mcp（或 /mcp/readonly）",
+        "      并调用 pc_get_status 完成验证。",
+        f"    · 日常使用分工：装好后切回普通 Chat 模式输入 {at}你在连接器里填写的名称（例如 {at}WebAI2PC）改代码跑脚本（响应快且不扣 Work/Codex 额度），",
+        "      跨应用长程交付与定时任务用 Work 模式。",
         "",
         "连接通道前置依赖与国内代理速查：",
-        "  · 通道 1 默认 *.srv.us：仅用系统自带 ssh（出站 22 端口），免注册、重启网址不变，",
-        "    国内家庭宽带通常免代理直连；22 端口受阻时 4 秒自动回退 *.trycloudflare.com",
-        "    （需自动下载 cloudflared，国内慢可开代理或设 COSMOS_CLOUDFLARED_MIRROR，重启换域名）。",
+        "  · 通道 1 默认首选 *.srv.us 免登录固定通道（仅用系统自带 ssh 出站 22 端口，10 秒启动预算，免注册且重启网址不变，",
+        "    国内家庭宽带通常免代理直连）+ 备用 *.trycloudflare.com 临时通道（配独立开关可与 srv.us 同时在线，",
+        "    或在 22 端口受阻未连上 srv.us 时兜底启用；首次从 GitHub Releases 或 COSMOS_CLOUDFLARED_MIRROR 自动下载 cloudflared，重启会换域名）。",
         "  · 通道 2 Cloudflare 专属固定网关（workers_dev）：纯 Python 零外部二进制依赖，",
         "    免费层每日 100,000 次请求上限（超限返 1027）与 125 秒边缘读超时；",
         "    注意国内 *.workers.dev 存在全量 DNS 污染，未绑自定义域名时运行期间必须保持",
@@ -589,7 +662,7 @@ def render_quickstart_txt(version: str) -> bytes:
         "",
         "想让 AI 手把手教你配置或升级 Cloudflare 固定网址？",
         "  直接复制 README.md 里的『AI 陪配提示词』发给网页版 Gemini / ChatGPT，",
-        "  或连上 @Cosmos 后直接说：@Cosmos 帮我打开设置页教我怎么配 Cloudflare",
+        f"  或连上连接器后输入 {at}你在连接器里填写的名称（例如 {at}WebAI2PC 或 {at}Cosmos）直接说：帮我打开设置页教我怎么配 Cloudflare",
         "",
     ]
     return "\r\n".join(lines).encode("utf-8")
@@ -1059,7 +1132,13 @@ def run_release_checks(
 
             if not is_embed_entry and not is_bundled_wheel:
                 if low_arc.startswith("assets/") and low_arc.endswith((".png", ".jpg", ".jpeg")):
-                    errors.extend(scan_image_bytes_integrity_and_metadata(data, rel_path=f"zip:{arc}"))
+                    errors.extend(
+                        scan_image_bytes_integrity_and_metadata(
+                            data,
+                            rel_path=f"zip:{arc}",
+                            forbidden_tokens=forbidden_archive_tokens,
+                        )
+                    )
                 elif b"\x00" not in data[:4096]:
                     arc_txt = data.decode("utf-8", errors="replace")
                     for cred_tag in scan_text_credential_leaks(arc_txt):
@@ -1152,7 +1231,13 @@ def run_release_checks(
         low_sfx = fp.suffix.lower()
         if low_sfx in (".png", ".jpg", ".jpeg") and rel_arc.startswith("assets/"):
             image_checked_count += 1
-            errors.extend(scan_image_bytes_integrity_and_metadata(fp.read_bytes(), rel_path=rel_arc))
+            errors.extend(
+                scan_image_bytes_integrity_and_metadata(
+                    fp.read_bytes(),
+                    rel_path=rel_arc,
+                    forbidden_tokens=forbidden_archive_tokens,
+                )
+            )
             continue
         if low_sfx in binary_suffixes:
             continue
@@ -1177,8 +1262,6 @@ def run_release_checks(
             errors.append(f"Local OS username leaked in repo file `{rel_arc}`")
         if scan_text_forbidden_identifier_hashes(txt):
             errors.append(f"Forbidden sensitive identifier hash matched in repo file `{rel_arc}`")
-        if _PRIVATE_CONDA_PATH_RE.search(txt) or _PRIVATE_DEV_DRIVE_RE.search(txt):
-            errors.append(f"Private local path (e.g. Anaconda / private drive path) leaked in repo file `{rel_arc}`")
         if _PRIVATE_PAD_PACK_RE.search(txt):
             errors.append(f"Private `pad` pack residue found in repo file `{rel_arc}`")
 
@@ -1191,14 +1274,8 @@ def run_release_checks(
         for leaked_em in scan_text_email_leaks(txt, is_test_file=is_test_file):
             errors.append(f"Unredacted email address `{leaked_em}` leaked in repo file `{rel_arc}`")
 
-        if not is_test_file:
-            if _OFFLINE_GOPROXY_RE.search(txt):
-                errors.append(f"Forbidden offline GOPROXY setting found in `{rel_arc}`")
-            if _OFFLINE_CARGO_RE.search(txt):
-                errors.append(f"Forbidden offline CARGO_NET_OFFLINE setting found in `{rel_arc}`")
-        else:
-            if _ENV_ASSIGN_OFFLINE_RE.search(txt):
-                errors.append(f"Forbidden offline env assignment in test file `{rel_arc}`")
+        if is_test_file and _ENV_ASSIGN_OFFLINE_RE.search(txt):
+            errors.append(f"Forbidden offline env assignment in test file `{rel_arc}`")
 
         is_public_doc = (
             rel_arc

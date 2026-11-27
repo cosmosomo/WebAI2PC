@@ -487,8 +487,8 @@
               <li class="tut-step-item" data-step-wrap="g5">
                 <input type="checkbox" class="tut-step-chk" data-step-id="g5" aria-label="发送首句唤醒词实测">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 5 步：新建对话首句输入 <code>@Cosmos</code> 实测</div>
-                  <p class="tut-step-desc">新建对话后，在输入框首句输入 <code>@Cosmos</code> 并点选弹出的连接器标签，发送右侧首句测试词即可读取本机目录。</p>
+                  <div class="tut-step-title">第 5 步：新建对话首句输入 <code>@你在连接器里填写的名称</code> 实测</div>
+                  <p class="tut-step-desc">新建对话后，在输入框首句输入 <code>@你在连接器里填写的名称</code>（例如 <code>@WebAI2PC</code> 或 <code>@Cosmos</code>）并点选弹出的连接器标签，发送右侧首句测试词即可读取本机目录。</p>
                 </div>
               </li>
             </ul>
@@ -513,9 +513,10 @@
                 2. 填入面板显示的 <strong>6 位动态配对码</strong>（当前本机：<code id="live-pair-code-6">------</code>）或 20 位固定备用口令完成授权。
               </div>
 
-              <pre class="tut-term-pre" id="gemini-first-wake-code">@Cosmos 帮我看看当前工作目录里有哪些文件</pre>
+              <pre class="tut-term-pre" id="gemini-first-wake-code">@WebAI2PC 帮我看看当前工作目录里有哪些文件</pre>
+              <div class="tut-term-note">提示：若绑定连接器时填写了其他名称（如 <code>@Cosmos</code>），请将开头的 <code>@WebAI2PC</code> 替换为你填写的连接器名称。</div>
               <div style="display:flex;flex-wrap:wrap;gap:7px;">
-                <button type="button" class="btn btn-primary btn-sm" id="copy-gemini-wake-btn" data-copy-prompt="@Cosmos 帮我看看当前工作目录里有哪些文件">复制首句唤醒词</button>
+                <button type="button" class="btn btn-primary btn-sm" id="copy-gemini-wake-btn" data-copy-prompt="@WebAI2PC 帮我看看当前工作目录里有哪些文件">复制首句唤醒词</button>
                 <button type="button" class="btn btn-sm" data-copy-live="mcp">复制 /mcp 主地址</button>
               </div>
             </div>
@@ -526,9 +527,9 @@
         <article class="card tut-module" id="mod-chatgpt" data-module-id="mod-chatgpt">
           <div class="tut-mod-header">
             <div>
-              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（已登录浏览器直绑最快 · 装好后日常用 Chat 模式省额度）</div>
-              <h2 class="card-title">网页版 ChatGPT 接入（一键配置 · Chat 与 Work 日常分工）</h2>
-              <p class="card-desc" style="margin-bottom:0;">最快方式是点击下方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动接入并验证 <code>WebAI2PC</code>（如遇工作区限制外部域名 MCP 也会自动通过私有 <code>ChatGPT Sites</code> 转发接入）。安装后同账号共享：日常改代码、修 Office 与跑测试切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（不扣减 <code>Work / Codex</code> 额度）；跨应用长程交付与 <code>Scheduled Tasks</code> 定时任务用 <code>Work</code> 模式。</p>
+              <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（Work 模式一键配置 · 装好后日常用 Chat 模式省额度）</div>
+              <h2 class="card-title">网页版 ChatGPT 接入（标准 OAuth 一键配置 · Chat 与 Work 日常分工）</h2>
+              <p class="card-desc" style="margin-bottom:0;">点击下方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 按标准 OAuth 2.1 接入并验证 <code>WebAI2PC</code>。安装后同账号共享：日常改代码、修 Office 与跑测试切回普通 <code>Chat</code> 模式发 <code>@你在连接器里填写的名称</code>（默认 <code>@WebAI2PC</code>，不扣减 <code>Work / Codex</code> 额度）；跨应用长程交付与 <code>Scheduled Tasks</code> 定时任务用 <code>Work</code> 模式。</p>
             </div>
             <div class="tut-sub-seg tut-sub-seg-light" role="tablist" aria-label="ChatGPT 账号类型选择">
               <button type="button" class="tut-sub-btn active" id="cgpt-tab-workspace" data-cgpt-mode="workspace">工作区账号 (/mcp)</button>
@@ -542,10 +543,10 @@
                 <strong>Team / Business / Enterprise / Edu 工作区账号</strong>
                 <span class="tag tag-ok">全功能读写 (/mcp)</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；装好后日常切回 <code>Chat</code> 模式调用 <code>@WebAI2PC</code> 不扣减 <code>Work / Codex</code> 智能体额度，跨应用长程交付与定时任务用 <code>Work</code> 模式。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；装好后日常切回 <code>Chat</code> 模式输入 <code>@你在连接器里填写的名称</code>（默认 <code>@WebAI2PC</code>）调用，不扣减 <code>Work / Codex</code> 智能体额度，跨应用长程交付与定时任务用 <code>Work</code> 模式。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="mcp" data-copy-live="mcp">https://xxxxx.srv.us/mcp</div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="复制一键配置提示词（含预授权专属地址）发给 ChatGPT Work 一键创建并验证">复制一键配置提示词（发给 Work）</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="复制标准 OAuth 2.1 一键配置提示词发给 ChatGPT Work 创建并验证">复制一键配置提示词（发给 Work）</button>
                 <button type="button" class="btn btn-sm" data-copy-live="mcp">仅复制地址</button>
               </div>
             </div>
@@ -555,10 +556,10 @@
                 <strong>个人 Plus / Pro 订阅账号</strong>
                 <span class="tag tag-warn">只读连接保护</span>
               </div>
-              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具（越权写调用返回 <code>403</code> 拦截）；装好后在 <code>Chat</code> 模式（省 <code>Work / Codex</code> 额度）与 <code>Work</code> 模式均可输入 <code>@WebAI2PC</code> 调用。</p>
+              <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具（越权写调用返回 <code>403</code> 拦截）；装好后在 <code>Chat</code> 模式（省 <code>Work / Codex</code> 额度）与 <code>Work</code> 模式均可输入 <code>@你在连接器里填写的名称</code>（默认 <code>@WebAI2PC</code>）调用。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="readonly" data-copy-live="readonly">https://xxxxx.srv.us/mcp/readonly</div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="复制只读一键配置提示词（含只读预授权专属地址）发给 ChatGPT Work 一键创建并验证">复制只读配置提示词（发给 Work）</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="复制标准 OAuth 2.1 只读配置提示词发给 ChatGPT Work 创建并验证">复制只读配置提示词（发给 Work）</button>
                 <button type="button" class="btn btn-sm" data-copy-live="readonly">仅复制地址</button>
               </div>
             </div>
@@ -570,21 +571,21 @@
                 <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制一键配置提示词发给 Work">
                 <div class="tut-step-body">
                   <div class="tut-step-title">第 1 步：网关就绪后点「复制一键配置提示词（发给 Work）」</div>
-                  <p class="tut-step-desc">按钮自动向本机控制台申请高熵预授权专属地址（<code>/c/&lt;token&gt;/mcp</code> 或 <code>/c/&lt;token&gt;/mcp/readonly</code>）并生成完整 <code>@Plugin Creator</code> 指令；该地址可随时在控制台「已连会话」一键断开或「更换私密地址」立即作废。</p>
+                  <p class="tut-step-desc">按钮会基于当前选中的就绪公网网关生成标准 OAuth 2.1（<code>/mcp</code> 或 <code>/mcp/readonly</code>）的 <code>@Plugin Creator</code> 配置指令；授权后可随时在主控首页「配对与已连会话」查看或一键撤销会话。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c2">
                 <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="粘贴发给 ChatGPT Work 自动创建并安装 WebAI2PC">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 2 步：在 ChatGPT <code>Work</code> 模式粘贴发送，自动接入并验证</div>
-                  <p class="tut-step-desc">直接发给 ChatGPT <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动接入并安装 <code>WebAI2PC</code>；若当前工作区限制直接绑定外部域名 MCP（如返回 <code>403</code>），会自动通过私有 <code>ChatGPT Sites</code> 部署轻量 MCP 转发并完成安装，无需手动配 OAuth 密钥。</p>
+                  <div class="tut-step-title">第 2 步：在 ChatGPT <code>Work</code> 模式粘贴发送并完成 OAuth 授权</div>
+                  <p class="tut-step-desc">将提示词粘贴发给 ChatGPT <code>Work</code> 模式，由 <code>@Plugin Creator</code> 按服务端公布的 OAuth 2.1 元数据创建并接入 <code>WebAI2PC</code>；弹出授权页时同机浏览器直接点「本机一键允许连接」（若在 <code>Work</code> 云端受控浏览器点 <code>Take over</code> 打开授权页，则填入主控首页 6 位动态配对码）。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c3">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="日常切回 Chat 模式 @WebAI2PC 调用，长任务用 Work 模式">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c3" aria-label="日常切回 Chat 模式调用，长任务用 Work 模式">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 3 步：装好后日常切回 <code>Chat</code> 模式 <code>@WebAI2PC</code>（长程与定时任务用 <code>Work</code>）</div>
-                  <p class="tut-step-desc">插件安装后同账号共享：日常查改本地代码、修 Office 与跑无窗口测试优先切回 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（走普通对话限额，零消耗 <code>Work / Codex</code> 智能体额度）；跨邮件/Slack/网盘做多步交付或设 <code>Scheduled Tasks</code> 时切 <code>Work</code> 模式发 <code>@WebAI2PC</code>。操作守则在工作区/桌面端可存入原生 <code>Skills</code>，网页版 <code>Chat</code> 与 <code>Work</code> 均可放入 <code>Project Instructions</code> 或自定义指令。</p>
+                  <div class="tut-step-title">第 3 步：装好后日常切回 <code>Chat</code> 模式调用（长程与定时任务用 <code>Work</code>）</div>
+                  <p class="tut-step-desc">连接器安装后同账号共享：日常查改本地代码、修 Office 与跑无窗口测试优先切回 <code>Chat</code> 模式输入 <code>@你在连接器里填写的名称</code>（默认 <code>@WebAI2PC</code>，走普通对话限额，零消耗 <code>Work / Codex</code> 智能体额度）；跨邮件/Slack/网盘做多步交付或设 <code>Scheduled Tasks</code> 时切 <code>Work</code> 模式调用。操作守则在工作区/桌面端可存入原生 <code>Skills</code>，网页版 <code>Chat</code> 与 <code>Work</code> 均可放入 <code>Project Instructions</code> 或自定义指令。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c4">
@@ -677,13 +678,13 @@
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>通道 1 默认：<code>*.srv.us</code></strong></td>
+                  <td><strong>通道 1 首选：<code>*.srv.us</code></strong></td>
                   <td>系统自带 OpenSSH（<code>ssh</code>）+ 出站 TCP <code>22</code>，零额外二进制</td>
-                  <td>免注册，重启网址固定不变</td>
-                  <td>国内家庭宽带通常<strong>免代理直连</strong>（<code>22</code> 受阻 4 秒回退 <code>trycloudflare</code>）</td>
+                  <td>免注册，启动等待预算 <code>10s</code>，重启网址固定不变</td>
+                  <td>国内家庭宽带通常<strong>免代理直连</strong>；可与备用 <code>trycloudflare</code> 独立开关并存</td>
                 </tr>
                 <tr>
-                  <td><strong>通道 1 回退：<code>*.trycloudflare.com</code></strong></td>
+                  <td><strong>通道 1 备用：<code>*.trycloudflare.com</code></strong>（独立开关）</td>
                   <td>官方 <code>cloudflared</code>（未装时首次从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 自动下载至 <code>bin/</code>）</td>
                   <td>重启必换域名，无 SLA，单流 <code>ha-connections:1</code> 重连空窗 <code>4–21s</code>（返 <code>530</code>/<code>1033</code>），限 <code>200</code> 并发与 <code>125s</code> 读超时</td>
                   <td>国内无代理拉取 GitHub 慢时需开代理、设 <code>COSMOS_CLOUDFLARED_MIRROR</code> 或预装；高丢包建议开 HTTP 代理</td>
@@ -713,12 +714,12 @@
           <div class="channel-guide-pane active" id="channel-pane-1">
             <div class="tut-workbench-grid">
               <div>
-                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：一键上手免登录直连（<code>*.srv.us</code> 持久固定网址 + 4 秒自动回退）</h3>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：一键上手免登录直连（首选 <code>*.srv.us</code> 10 秒固定通道 + 备用 <code>trycloudflare</code> 独立开关并存）</h3>
                 <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary);">
-                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：优先通过系统自带 OpenSSH（<code>ssh</code>）锁定免登录固定网址 <code>https://*.srv.us/mcp</code>（关机重启网址不变，国内家庭宽带通常免代理直连）；若校园网或企业网封禁出站 <code>22</code> 端口，系统在 <strong>4 秒内自动切换</strong>至快速通道 <code>https://*.trycloudflare.com</code>（首次需从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 自动下载 <code>cloudflared</code> 至 <code>bin/</code>；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上免登录固定网址后，可在卡片内点击「导出身份恢复卡 PNG」备份密钥。
+                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：优先通过系统自带 OpenSSH（<code>ssh</code>）连接免登录固定网址 <code>https://*.srv.us/mcp</code>（启动等待预算 <code>10</code> 秒，关机重启网址不变，国内家庭宽带通常免代理直连）；卡片内同时提供「开启备用（可与 srv.us 同时在线）」独立开关，可随时开启 <code>https://*.trycloudflare.com</code> 备用通道（校园网或企业网封禁出站 <code>22</code> 端口或超过 <code>10</code> 秒未连通时亦可直接启用，首次自动从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 下载 <code>cloudflared</code> 至 <code>bin/</code>；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上免登录固定网址后，可在卡片内点击「导出身份恢复卡 PNG」备份密钥。
                 </p>
                 <div class="callout callout-info" style="margin-bottom:0;">
-                  在 Studio「总览与网页连接 -&gt; 第 1 类」可通过卡片右上角独立开关随时启停，支持在「免登录固定网址 (*.srv.us)」与「临时快速通道 (*.trycloudflare.com)」间切换，也可与通道 2、通道 3 同时开启并存互不踢掉。
+                  在主控台「连接与网关 -&gt; 第 1 类」可通过卡片右上角总开关与内部「开启备用（可与 srv.us 同时在线）」独立开关控制两条子通道，也可与通道 2、通道 3 同时开启并存互不中断。
                 </div>
               </div>
               <div class="tut-terminal-box" data-pose-trigger="terminal">
@@ -1003,7 +1004,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
             <div>
               <div class="tut-mod-kicker">教程 5 · 防误改、防越界、防恶意技能供应链</div>
               <h2 class="card-title">四档安全围栏、Skills 技能管理与修改历史快照</h2>
-              <p class="card-desc" style="margin-bottom:0;">支持顶栏免口令 0.1 秒急停切只读、外层参考库只读分层、三级 AST 技能扫描以及 <code>.undo_history</code> 差异回滚。</p>
+              <p class="card-desc" style="margin-bottom:0;">支持主控首页「当前权限设置」4 档切换条与系统托盘免口令 0.1 秒急停切只读、外层参考库只读分层、三级 AST 技能扫描以及 <code>.undo_history</code> 差异回滚。</p>
             </div>
           </div>
 
@@ -1011,28 +1012,28 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
             <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="readonly">
               <span class="tag tag-warn">L1 · 0.1s 急停保护</span>
               <span class="safety-tier-name">只读浏览模式</span>
-              <span class="safety-tier-code">按钮：切为只读浏览</span>
+              <span class="safety-tier-code">权限条：只读</span>
             </button>
             <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="edit_only">
               <span class="tag tag-info">L2 · 禁跑脚本命令</span>
               <span class="safety-tier-name">仅改文件禁跑命令</span>
-              <span class="safety-tier-code">按钮：切为仅改文件</span>
+              <span class="safety-tier-code">权限条：仅改文件</span>
             </button>
             <button type="button" class="safety-tier-pill active" role="tab" aria-selected="true" data-tier-key="full_dev">
               <span class="tag tag-ok">L3 · 默认推荐档位</span>
               <span class="safety-tier-name">工作区内顺畅开发</span>
-              <span class="safety-tier-code">按钮：切为工作区内开发</span>
+              <span class="safety-tier-code">权限条：工作区开发</span>
             </button>
             <button type="button" class="safety-tier-pill" role="tab" aria-selected="false" data-tier-key="full_power">
               <span class="tag">L4 · 不限目录带回收箱</span>
               <span class="safety-tier-name">全盘顺畅开发（不限目录）</span>
-              <span class="safety-tier-code">按钮：开启全盘顺畅开发</span>
+              <span class="safety-tier-code">权限条：全盘开发</span>
             </button>
           </div>
 
           <div class="safety-detail-box" id="safety-live-matrix">
             <div style="font-weight:700;font-size:13.8px;margin-bottom:4px;" id="safety-detail-title">当前查看：工作区内顺畅开发（L3 默认档位）</div>
-            <div style="font-size:13px;color:var(--text-secondary);" id="safety-detail-desc">仅限在已开放的读写工作目录内修改代码与 Office 文档、运行无窗口终端命令和 Python 脚本；按需开启「受管浏览器包」与「桌面窗口操控包」。在 Studio 顶部随时点击「一键切换只读保护」（免输口令）可在 0.1 秒内切回只读并终止全部在途命令。</div>
+            <div style="font-size:13px;color:var(--text-secondary);" id="safety-detail-desc">仅限在已开放的读写工作目录内修改代码与 Office 文档、运行无窗口终端命令和 Python 脚本；按需开启「受管浏览器包」与「桌面窗口操控包」。在主控首页左栏「当前权限设置」4 档切换条点选「只读」（或通过系统托盘右键菜单切换）无需输入口令，可在 0.1 秒内切回只读并终止全部在途命令。</div>
           </div>
 
           <div class="tut-workbench-grid" style="margin-bottom:12px;">
@@ -1071,17 +1072,17 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
                 被清理的文件禁止物理直删（自动拦截 <code>rm -rf</code> / <code>del</code> / <code>Remove-Item</code>），统一移入安全回收箱支持一键原位恢复；修改失误可在 Studio 点「查看对比 Diff -&gt; 撤回此修改」或发送下方指令回滚：
               </div>
               <div>
-                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@Cosmos 请列出最近修改过的文件快照，并将刚才修改的文件通过 pc_manage_files(action=&quot;undo&quot;) 撤回到修改前版本。">复制一键回滚指令</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="@WebAI2PC 请列出最近修改过的文件快照，并将刚才修改的文件通过 pc_manage_files(action=&quot;undo&quot;) 撤回到修改前版本。">复制一键回滚指令</button>
               </div>
             </div>
           </div>
 
           <ul class="tut-step-list">
             <li class="tut-step-item" data-step-wrap="s1">
-              <input type="checkbox" class="tut-step-chk" data-step-id="s1" aria-label="熟悉顶栏一键切换只读保护按钮">
+              <input type="checkbox" class="tut-step-chk" data-step-id="s1" aria-label="熟悉当前权限设置 4 档切换条与系统托盘急停入口">
               <div class="tut-step-body">
-                <div class="tut-step-title">安全打卡 1：认识 Studio 顶栏免口令「一键切换只读保护」急停按钮</div>
-                <p class="tut-step-desc">点击后 0.1 秒内终止所有在途命令与外设会话并锁定只读模式（Windows 右下角托盘右键菜单同样提供切换入口）。</p>
+                <div class="tut-step-title">安全打卡 1：熟悉主控首页「当前权限设置」4 档切换条与系统托盘急停入口</div>
+                <p class="tut-step-desc">在主控首页左栏「当前权限设置」点选「只读」（或通过系统托盘右键菜单切换），0.1 秒内终止所有在途命令与外设会话并锁定只读模式；点回「工作区开发」即可恢复。</p>
               </div>
             </li>
             <li class="tut-step-item" data-step-wrap="s2">
@@ -1153,7 +1154,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
               </summary>
               <div class="ts-item-body">
                 <div><strong>原因：</strong>网页版 Gemini 与网页版 ChatGPT 会在开启对话时缓存当前连接器的工具 Schema 列表，已在途的旧对话不会自动拉取刚开启的扩展包工具。</div>
-                <div><strong>解决步骤：</strong>在 Studio「工具中心与安全开关」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>）点开对应连接器 刷新连接器并<strong>新建一个对话</strong>首句输入 <code>@Cosmos</code>；网页版 ChatGPT 请在左侧 <code>Plugins</code> 打开 <code>WebAI2PC</code> 点击 <code>Refresh</code> 刷新，随后新建 <code>Chat</code> 或 <code>Work</code> 对话输入 <code>@WebAI2PC</code>。</div>
+                <div><strong>解决步骤：</strong>在 Studio「设置 -&gt; 工具与扩展」打开「受管浏览器包」（<code>pc_browser_use</code>）、「桌面窗口操控包」（<code>pc_cua_window</code>）或点「保存工具前缀」后，前往网页版 Gemini <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>）点开对应连接器刷新并<strong>新建一个对话</strong>首句输入 <code>@你在连接器里填写的名称</code>（如 <code>@WebAI2PC</code> 或 <code>@Cosmos</code>）；网页版 ChatGPT 请打开连接器点击 <code>Refresh</code> 刷新，随后新建 <code>Chat</code> 或 <code>Work</code> 对话输入 <code>@你在连接器里填写的名称</code>（默认 <code>@WebAI2PC</code>）。</div>
               </div>
             </details>
 
@@ -1174,7 +1175,7 @@ cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 180
                 <span class="tag tag-ok">写入保护</span>
               </summary>
               <div class="ts-item-body">
-                <div><strong>现象：</strong>让 <code>@Cosmos</code> 修改 <code>.docx</code> 或 <code>.xlsx</code> 文件时返回 <code>ERR_OFFICE_FILE_LOCKED</code>。</div>
+                <div><strong>现象：</strong>让网页端连接器（如 <code>@WebAI2PC</code> 或 <code>@Cosmos</code>）修改 <code>.docx</code> 或 <code>.xlsx</code> 文件时返回 <code>ERR_OFFICE_FILE_LOCKED</code>。</div>
                 <div><strong>原因与解决：</strong>当目标文件正被本地 Word 或 Excel 打开（目录中存在 <code>~$</code> 临时锁文件或操作系统文件句柄独占）时，<code>pc_edit_file</code> 自动拒绝强行写入，避免冲掉您窗口中尚未保存的手工编辑。请先在 Word / Excel 中按 <code>Ctrl+S</code> 保存并关闭该文档，再回到聊天窗口让 AI 重试即可。</div>
               </div>
             </details>

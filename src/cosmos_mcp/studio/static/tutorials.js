@@ -38,8 +38,8 @@
 
   var SAFETY_TIER_DESCRIPTIONS = {
     readonly: {
-      title: "当前查看：只读浏览模式（L1 · 顶栏免口令 0.1 秒急停）",
-      desc: "仅允许在已开放工作目录与只读参考目录内读取文件、提取 PDF / .docx / .xlsx / .pptx 文本、查看图片与搜索代码，禁止一切文件写入与命令执行。点击 Studio 顶栏「一键切换只读保护」（或托盘右键菜单）无需输入口令，0.1 秒内立即终止所有在途命令与外设会话，并将受管浏览器包与桌面窗口操控包自动关闭置灰。"
+      title: "当前查看：只读浏览模式（L1 · 权限条与托盘免口令 0.1 秒急停）",
+      desc: "仅允许在已开放工作目录与只读参考目录内读取文件、提取 PDF / .docx / .xlsx / .pptx 文本、查看图片与搜索代码，禁止一切文件写入与命令执行。在主控首页左栏「当前权限设置」4 档切换条点选「只读」（或通过系统托盘右键菜单切换）无需输入口令，0.1 秒内立即终止所有在途命令与外设会话，并将受管浏览器包与桌面窗口操控包自动关闭置灰。"
     },
     edit_only: {
       title: "当前查看：仅改文件禁跑命令（L2 · 文档与纯代码编辑围栏）",
@@ -486,10 +486,6 @@
     for (var j = 0; j < roNodes.length; j++) {
       roNodes[j].textContent = state.readonlyUrl;
     }
-    var openCgptBtns = document.querySelectorAll("[data-open-chatgpt-plugins]");
-    for (var m = 0; m < openCgptBtns.length; m++) {
-      openCgptBtns[m].disabled = !state.isLiveSynced;
-    }
     var assistBtns = document.querySelectorAll("[data-copy-chatgpt-assist]");
     for (var k = 0; k < assistBtns.length; k++) {
       assistBtns[k].disabled = !state.isLiveSynced;
@@ -810,23 +806,6 @@
         return;
       }
 
-      var openCgptTarget = ev.target.closest("[data-open-chatgpt-plugins]");
-      if (openCgptTarget) {
-        if (!state.isLiveSynced || !isUsablePublicHttpsUrl(state.mcpUrl)) {
-          showToast("网关尚未就绪，请先在本地 Studio 开启任一公网 HTTPS 通道后再操作。");
-          return;
-        }
-        var oKind = openCgptTarget.getAttribute("data-open-chatgpt-plugins");
-        var oUrl = oKind === "readonly" ? state.readonlyUrl : state.mcpUrl;
-        window.open("https://chatgpt.com/plugins", "_blank", "noopener");
-        copyTextToClipboard(
-          oUrl,
-          openCgptTarget,
-          "已复制连接地址并打开 ChatGPT 插件页（仅限填入本人账号，请勿外发给他人或群聊）：点 ＋ -> 添加自定义 MCP 服务器，名称填 WebAI2PC，粘贴地址后点「本机一键允许连接」"
-        );
-        return;
-      }
-
       var assistTarget = ev.target.closest("[data-copy-chatgpt-assist]");
       if (assistTarget) {
         if (!state.isLiveSynced || !isUsablePublicHttpsUrl(state.mcpUrl)) {
@@ -853,21 +832,23 @@
             : "读写我本地授权目录的文件并执行本地开发工具";
         function buildTutOneclickPrompt(effUrl) {
           return [
-            "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e) 帮我创建一个插件，把我的本地电脑服务 WebAI2PC 接入当前 ChatGPT 账号，并完成首次调用验证（请在 Work 模式下执行；装好后日常可在 Chat 模式通过 @WebAI2PC 直接调用，不扣 Work/Codex 额度）。",
+            "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e) 帮我把本地电脑的 WebAI2PC 服务接入当前 ChatGPT 账号，并完成首次调用验证（请在 Work 模式下执行；安装完成后日常可在 Chat 模式通过 @WebAI2PC 直接调用，不扣 Work/Codex 额度）。",
             "",
             "插件名称：WebAI2PC",
             "MCP 地址：" + effUrl,
-            "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0，采用标准 OAuth 2.0 授权），用于" +
+            "认证方式：标准 OAuth 2.1（服务端已发布 /.well-known/oauth-protected-resource 与 /.well-known/oauth-authorization-server 元数据，支持动态客户端注册与 PKCE，无需手动填写 Client ID / Secret）",
+            "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0），用于" +
               scopeDesc +
               "；首次验证工具为 " +
               statusHint +
               "。",
             "",
-            "执行要求：",
-            "1. 请使用 @Plugin Creator 直接接入上述 MCP 地址创建并安装 WebAI2PC 插件，按服务端公布的 OAuth 元数据自动协商认证，需要我点授权确认时提示我操作。",
-            "2. 插件就绪后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
+            "执行步骤：",
+            "1. 使用 @Plugin Creator 直接连接上述 MCP 地址，选择标准 OAuth 认证创建并安装 WebAI2PC 插件。",
+            "2. 弹出 OAuth 授权确认页时提示我点击允许（同机浏览器可直接点「本机一键允许连接」）。",
+            "3. 授权安装完成后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
             "",
-            "安全提醒：上方包含本机专属连接地址，仅限发给本人登录的 ChatGPT 账号，请勿发往群聊、论坛、公开 Issue 或转给他人（若不慎外发可在本地控制台一键更换作废）。"
+            "安全提醒：上方包含本机连接地址，仅限在本人登录的 ChatGPT 账号中使用，请勿转发至群聊、论坛或公开 Issue。"
           ].join("\n");
         }
         var csrfTok = String((state.lastStateDoc && state.lastStateDoc.csrf_token) || "");

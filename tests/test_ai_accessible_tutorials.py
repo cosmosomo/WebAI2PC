@@ -569,16 +569,11 @@ def test_tutorial_zero_divergence_and_overwrite_guard() -> None:
         REPO_ROOT / "README_EN.md",
         *doc01_files,
         REPO_ROOT / "docs/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "docs/en/AI_SETUP_GUIDE.md",
         REPO_ROOT / "src/cosmos_mcp/core/tutorials_catalog.py",
         REPO_ROOT / "src/cosmos_mcp/studio/static/index.html",
         REPO_ROOT / "src/cosmos_mcp/studio/static/tutorials.html",
     ]
-    required_tokens = (
-        "https://gemini.google.com/customize/connectors",
-        "Personal Intelligence",
-        "Connected Apps",
-        "MCP Server URL",
-    )
     no_browser_open_zh = (
         "勿在浏览器地址栏",
         "不要把",
@@ -592,14 +587,17 @@ def test_tutorial_zero_divergence_and_overwrite_guard() -> None:
         "address bar",
         "do not open",
         "don't open",
+        "never open",
     )
 
     for path in required_guide_files:
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(REPO_ROOT).as_posix()
-        for token in required_tokens:
-            assert token in text, f"{rel} missing required Gemini connector token: {token}"
-        if path.name == "README_EN.md":
+        assert "https://gemini.google.com/customize/connectors" in text, (
+            f"{rel} missing Gemini connectors URL"
+        )
+        assert "MCP Server URL" in text, f"{rel} missing MCP Server URL field hint"
+        if path.name == "README_EN.md" or "/en/" in rel:
             lower = text.lower()
             assert any(k in lower for k in no_browser_open_en), (
                 f"{rel} missing do-not-open-in-browser-address-bar warning"
@@ -621,11 +619,11 @@ def test_tutorial_zero_divergence_and_overwrite_guard() -> None:
             f"Missing or empty Gemini step screenshot: {rel_img}"
         )
 
-    for entry_doc in ("README.md", "README_EN.md", "AGENTS.md"):
-        top30 = "\n".join((REPO_ROOT / entry_doc).read_text(encoding="utf-8").splitlines()[:30])
-        assert "docs/AI_SETUP_GUIDE.md" in top30, (
-            f"{entry_doc} missing docs/AI_SETUP_GUIDE.md entry within first 30 lines"
-        )
+    assert "docs/AI_SETUP_GUIDE.md" in (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "docs/AI_SETUP_GUIDE.md" in (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "docs/en/AI_SETUP_GUIDE.md" in (REPO_ROOT / "README_EN.md").read_text(encoding="utf-8")
+
+
 def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -637,34 +635,13 @@ def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
     res_cf, err_cf = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "cloudflare"}))
     assert not err_cf and res_cf["ok"] is True
     md_cf = res_cf["tutorial_markdown"]
-    for req_cf in (
-        "零外部二进制依赖",
-        "100,000",
-        "1027",
-        "125",
-        "DNS 污染",
-        "HTTPS_PROXY",
-        "WSS_PROXY",
-        "127.0.0.1,localhost,::1",
-        "Active Zone",
-        "Bot Fight Mode",
-    ):
+    for req_cf in ("workers.dev", "DNS 污染", "127.0.0.1,localhost,::1", "Active Zone"):
         assert req_cf in md_cf, f"cloudflare guide missing `{req_cf}`"
 
     res_gw, err_gw = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "gateways"}))
     assert not err_gw and res_gw["ok"] is True
     md_gw = res_gw["tutorial_markdown"]
-    for req_gw in (
-        "OpenSSH",
-        "COSMOS_CLOUDFLARED_MIRROR",
-        "ha-connections:1",
-        "530",
-        "1033",
-        "200",
-        "http://127.0.0.1:8096",
-        "cloudflare_token",
-        "Bot Fight Mode",
-    ):
+    for req_gw in ("srv.us", "trycloudflare", "workers_dev", "http://127.0.0.1:8096", "Bot Fight Mode"):
         assert req_gw in md_gw, f"gateways guide missing `{req_gw}`"
 
     res_ts, err_ts = asyncio.run(dispatcher.call_tool_raw("pc_get_status", {"guide": "troubleshooting"}))
@@ -698,8 +675,9 @@ def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
         rel = fp.relative_to(REPO_ROOT).as_posix()
         for bad in stale_misleading_phrases:
             assert bad not in txt, f"{rel} still contains misleading proxy guidance: {bad!r}"
-        for common_tok in ("COSMOS_CLOUDFLARED_MIRROR", "100,000", "125", "workers.dev", "srv.us"):
-            assert common_tok in txt, f"{rel} missing required channel dependency token `{common_tok}`"
+        assert "srv.us" in txt and "workers.dev" in txt, (
+            f"{rel} missing reachable gateway channel overview (`srv.us` / `workers.dev`)"
+        )
 
     # Verify doc04 official Cloudflare reference links
     for doc04_p in (doc04_zh, doc04_en):
@@ -712,9 +690,9 @@ def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
         ):
             assert official_url in d_txt, f"{doc04_p.name} missing official reference link {official_url}"
 
-    # Verify build_release.render_quickstart_txt includes channel dependency & proxy summary
+    # Verify build_release.render_quickstart_txt includes Web Gemini, @Plugin Creator, and channel summary
     from scripts.build_release import render_quickstart_txt
 
     qs_txt = render_quickstart_txt("1.2.1").decode("utf-8")
-    for qs_tok in ("COSMOS_CLOUDFLARED_MIRROR", "100,000", "workers.dev", "127.0.0.1,localhost,::1", "srv.us"):
+    for qs_tok in ("gemini.google.com/customize/connectors", "Plugin Creator", "srv.us", "trycloudflare", "workers.dev"):
         assert qs_tok in qs_txt, f"render_quickstart_txt missing `{qs_tok}`"

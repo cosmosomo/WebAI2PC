@@ -12,7 +12,7 @@
   <img alt="Hosts" src="https://img.shields.io/badge/Hosts-Web%20Gemini%20%26%20ChatGPT-0F766E.svg" />
 </p>
 
-<p><a href="README.md">简体中文</a> · <strong>English</strong> · <a href="docs/README.md">Docs Hub (docs/)</a></p>
+<p><a href="README.md">简体中文</a> · <strong>English</strong> · <a href="docs/en/README.md">Docs Hub (docs/en/)</a></p>
 
 </div>
 
@@ -21,7 +21,7 @@
   <img alt="WebAI2PC 3-step quick start: Launch & Copy URL, Paste into Web AI, Control Your PC" src="assets/readme/quickstart-flow-en-light.svg#gh-light-mode-only" width="100%" />
 </p>
 
-> **AI Agent Setup Entry**: If you are an AI agent helping a user install or configure this repo (Cursor, Claude Code, Codex, Windsurf, WorkBuddy, etc.), read **[docs/AI_SETUP_GUIDE.md](docs/AI_SETUP_GUIDE.md)** first (Raw URL: `https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md`).
+> **AI Agent Setup Entry**: If you are an AI agent helping a user install or configure this repo (Cursor, Claude Code, Codex, Windsurf, WorkBuddy, etc.), read **[docs/en/AI_SETUP_GUIDE.md](docs/en/AI_SETUP_GUIDE.md)** first (Raw URL: `https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/en/AI_SETUP_GUIDE.md`).
 
 **WebAI2PC** is a local MCP (Model Context Protocol) server and visual control console for your computer. Paste the generated HTTPS URL into a custom connector in **Web Google Gemini** (including the same-account mobile Gemini App) or **Web ChatGPT** with `$0` extra API keys: once connected to Web ChatGPT, **even everyday `Chat` mode (alongside `Work` mode) directly runs multi-file local projects, edits Word / Excel files with formatting & formulas intact, extracts PPT structure/text, and runs tests without burning `Work / Codex` quota**.
 
@@ -39,18 +39,18 @@
 1. **Download & Extract**: Grab the package from [Releases](https://github.com/cosmosomo/WebAI2PC/releases) (`win64-full.zip` includes embedded Python for Windows; use the standard `.zip` for macOS, Linux, or existing Python 3.10+) and extract it to a regular folder.
 2. **Launch & Copy URL**: Double-click `一键启动_Cosmos_MCP.bat` on Windows (or run `./start_cosmos_mcp.sh` on macOS / Linux). The local console opens at `http://127.0.0.1:8096/` with a ready-to-use `https://<domain>/mcp` endpoint. (If Windows SmartScreen appears on first launch, click More info -> Run anyway.)
 3. **Paste into Web AI Connectors & Allow** (**do NOT open the `/mcp` URL directly in your browser address bar; connection URLs and setup prompts copied from the console are strictly for your own signed-in AI accounts: do not screenshot or share them in group chats, forums, or public Issues**):
-   - **Web Gemini**: Open [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) (or bottom-left menu `Personal Intelligence -> Connected Apps`), click `+ Custom`, paste `https://<domain>/mcp` into **`MCP Server URL`**, click `Next` to approve OAuth 2.1, then set `App actions` to `Always allow`. Start a chat with `@Cosmos`; your same-account mobile Gemini App syncs automatically.
-   - **Web ChatGPT (1-click in `Work` mode · `Chat` for daily coding)**: Once the gateway is ready in Studio, click **`复制一键配置提示词（发给 Work）` (Copy 1-Click Setup Prompt for Work)** (or the read-only button for Personal Plus / Pro) and paste it into ChatGPT `Work` mode so `@Plugin Creator` installs and verifies `WebAI2PC` over standard OAuth (if your workspace admin disabled external MCP plugins, ask the admin to enable them or use a personal account). Once installed, both modes share `@WebAI2PC`: use everyday **`Chat` mode** for fast local coding, Office edits, and tests without burning `Work / Codex` quota, and use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
+   - **Web Gemini**: Open [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors) (or bottom-left menu `Personal Intelligence -> Connected Apps`), click `+ Custom`, paste `https://<domain>/mcp` into **`MCP Server URL`**, click `Next` to approve OAuth 2.1, then set `App actions` to `Always allow`. Start a chat with `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`); your same-account mobile Gemini App syncs automatically.
+   - **Web ChatGPT (1-click in `Work` mode · `Chat` for daily coding)**: Once the gateway is ready in Studio, click **`复制一键配置提示词（发给 Work）` (Copy 1-Click Setup Prompt for Work)** (or the read-only button for Personal Plus / Pro) and paste it into ChatGPT `Work` mode so `@Plugin Creator` installs and verifies `WebAI2PC` over standard OAuth 2.1 (if your workspace admin disabled external MCP plugins, ask the admin to enable them or use a personal account). Once installed, both modes share `@<your-connector-name>` (default `@WebAI2PC`): use everyday **`Chat` mode** for fast local coding, Office edits, and tests without burning `Work / Codex` quota, and use **`Work` mode** for multi-source deliverables and `Scheduled Tasks`, verifying first with `pc_get_status`.
 
 ### Let Your AI Agent Set It Up for You
 
 Copy and send this one-liner to **Cursor, Claude Code, Codex, Windsurf, Trae, GitHub Copilot, Cline / Roo Code, Antigravity, Qoder, OpenCode, Doubao Work, WorkBuddy, OpenClaw, Manus, Web Gemini, or Web ChatGPT** (**local agents with shell access will clone the latest source, launch the service, and hand you the `/mcp` URL automatically; chat-only AIs will walk you through step by step**):
 
 ```text
-Please install and configure https://github.com/cosmosomo/WebAI2PC from source for me. First read https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md . If you have local shell access, clone the latest source and start it to get my /mcp URL, then guide me step by step to connect Web Gemini or Web ChatGPT.
+Please install and configure https://github.com/cosmosomo/WebAI2PC from source for me. First read https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/en/AI_SETUP_GUIDE.md . If you have local shell access, clone the latest source and start it to get my /mcp URL, then guide me step by step to connect Web Gemini or Web ChatGPT.
 ```
 
-> Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md) right at the top of the README. Note: once generated, keep your local connection URLs and setup prompts strictly inside your own signed-in AI accounts: never post screenshots or paste them into group chats, forums, or public Issues.
+> Even if you only paste `https://github.com/cosmosomo/WebAI2PC` and say "set this up for me", the agent will spot [`docs/en/AI_SETUP_GUIDE.md`](docs/en/AI_SETUP_GUIDE.md) right at the top of the README. Note: once generated, keep your local connection URLs and setup prompts strictly inside your own signed-in AI accounts: never post screenshots or paste them into group chats, forums, or public Issues.
 
 ## Channel Dependencies & Proxy Notes
 
@@ -58,8 +58,8 @@ The local console includes 3 gateway cards (all supporting independent toggles f
 
 | Channel | Local Runtime & Binary Dependencies | Cloud Account, Quotas & Timeouts | Network & Proxy Notes (incl. Mainland China) |
 | :- | :- | :- | :- |
-| **Channel 1 Default: `*.srv.us`**<br>(Login-Free Fixed Direct) | Built-in OS OpenSSH (`ssh`) client + outbound TCP port `22` only (zero extra binaries) | Zero signup; URL persists across reboots | Connects **directly without a proxy** on typical Mainland China home broadband; if port `22` is blocked (campus/corporate networks), falls back within `4`s to `*.trycloudflare.com` |
-| **Channel 1 Fallback: `*.trycloudflare.com`**<br>(Quick Tunnel / `--mode cloudflare`) | Official `cloudflared` binary; if absent from `PATH`, auto-downloaded with SHA-256 verification on first launch from [GitHub Releases](https://github.com/cloudflare/cloudflared/releases/latest) or `COSMOS_CLOUDFLARED_MIRROR` HTTPS mirror into state `bin/` | Zero signup, **URL changes on every restart**; [no uptime SLA](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/), single control stream (`ha-connections:1`) with `4–21s` reconnect gaps (HTTP `530`/`1033`), `200` max concurrent requests, `125s` edge read timeout | In Mainland China without a proxy, GitHub downloads may be slow: enable a system proxy, set `COSMOS_CLOUDFLARED_MIRROR`, or pre-install `cloudflared`; enabling a local HTTP proxy reduces disconnects on lossy cross-border links |
+| **Channel 1 Primary: `*.srv.us`**<br>(Login-Free Fixed Direct) | Built-in OS OpenSSH (`ssh`) client + outbound TCP port `22` only (zero extra binaries) | Zero signup; `10s` startup wait budget; URL persists across reboots | Connects **directly without a proxy** on typical Mainland China home broadband; Card 1 includes an independent backup toggle to run `*.trycloudflare.com` concurrently or when port `22` is blocked |
+| **Channel 1 Backup: `*.trycloudflare.com`**<br>(Independent Toggle / `--mode cloudflare`) | Official `cloudflared` binary; if absent from `PATH`, auto-downloaded with SHA-256 verification on first launch from [GitHub Releases](https://github.com/cloudflare/cloudflared/releases/latest) or `COSMOS_CLOUDFLARED_MIRROR` HTTPS mirror into state `bin/` | Zero signup, **URL changes on every restart**; [no uptime SLA](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/), single control stream (`ha-connections:1`) with `4–21s` reconnect gaps (HTTP `530`/`1033`), `200` max concurrent requests, `125s` edge read timeout | In Mainland China without a proxy, GitHub downloads may be slow: enable a system proxy, set `COSMOS_CLOUDFLARED_MIRROR`, or pre-install `cloudflared`; enabling a local HTTP proxy reduces disconnects on lossy cross-border links |
 | **Channel 2: `Cloudflare Dedicated Fixed Gateway`**<br>(`workers_dev`) | Pure Python stdlib `443 WSS` client, **zero external binary dependencies** (no `Node.js`, `wrangler`, or `cloudflared`) | Free Cloudflare account + one-time least-privilege API Token (zero-overwritten and shredded locally right after deploy); subject to [Workers Free](https://developers.cloudflare.com/workers/platform/limits/) `100,000` req/day cap (Error `1027`) and [default `125s` edge read timeout](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-524/) | **In Mainland China, default `*.workers.dev` suffers full DNS pollution (`100%` direct timeout): without a custom domain, keep a local HTTP/HTTPS proxy (Clash / Mihomo / v2rayN, or `HTTPS_PROXY` / `WSS_PROXY`) continuously open with rules covering `*.workers.dev`** (browser `/consent` login also requires proxying `*.workers.dev`; keep `127.0.0.1,localhost,::1` in `NO_PROXY` if set). **Mainland proxy-free option**: bind an Active Zone Custom Domain on the same Cloudflare account |
 | **Channel 3 Primary: 24h Cloud Server Hub**<br>(`vps_hub` / `vps`) | Local `ssh` client + a Linux server with ports `80`/`443` open | Uses your own server; **zero Cloudflare dependency, zero daily request cap, zero `125s` edge timeout**, stays online `24/7` when PC is off | **100% proxy-free direct connection** on Mainland China (with ICP-filed domain) or HK/SG servers |
 | **Channel 3 Sub-option: `Cloudflare Named Tunnel`**<br>(`--mode cloudflare_token`) | Official `cloudflared` binary (same auto-download or `COSMOS_CLOUDFLARED_MIRROR` support) | Cloudflare Zero Trust account + Active Zone domain + Public Hostname route pointing to `http://127.0.0.1:8096`; `125s` edge read timeout | Avoids `workers.dev` DNS pollution; disable `Bot Fight Mode` and skip WAF managed challenges on `/mcp*` and OAuth paths in Cloudflare so Google / OpenAI cloud requests are not blocked |
@@ -70,7 +70,7 @@ The local console includes 3 gateway cards (all supporting independent toggles f
 
 <p align="center"><img src="assets/readme/cases-trio-banner-en-dark.png" alt="WebAI2PC One-Shot Local 3D Showcase Wall" width="100%" /></p>
 
-With zero external textures, libraries, or CDNs, prepend `@Cosmos ` in Web Gemini or `@WebAI2PC ` in everyday Web ChatGPT `Chat` mode (`$0` extra API bills and zero `Work / Codex` quota usage) to generate and run these offline WebGL2 projects at 60fps directly inside your local workspace folder:
+With zero external textures, libraries, or CDNs, prepend `@<your-connector-name> ` (e.g., `@WebAI2PC ` or `@Cosmos `) in Web Gemini or everyday Web ChatGPT `Chat` mode (`$0` extra API bills and zero `Work / Codex` quota usage) to generate and run these offline WebGL2 projects at 60fps directly inside your local workspace folder:
 
 | Case | Local Output | What Runs Locally at 60fps |
 | :- | :- | :- |
@@ -117,13 +117,13 @@ With zero external textures, libraries, or CDNs, prepend `@Cosmos ` in Web Gemin
   <img src="assets/readme/studio-console-en.png" alt="WebAI2PC Local Visual Console" width="100%" />
 </p>
 
-> Looking for the **architecture diagram, safety guardrails, full 16-tool reference, and mobile OAuth screenshots**? Open the **[Docs Hub (`docs/`)](docs/README.md)**.
+> Looking for the **architecture diagram, safety guardrails, full 16-tool reference, and mobile OAuth screenshots**? Open the **[Docs Hub (`docs/en/`)](docs/en/README.md)**.
 
 ## Documentation & Policies
 
-- [Docs Hub (`docs/README.md`)](docs/README.md) — Step-by-step tutorials (01–05), architecture, and 16-tool reference
-- [AI Setup Guide (`docs/AI_SETUP_GUIDE.md`)](docs/AI_SETUP_GUIDE.md) — Single-file guide for AI-assisted onboarding
-- [AGENTS.md](AGENTS.md) · [host_skills/SKILL.md](host_skills/SKILL.md) · [PRIVACY.md](PRIVACY.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md)
+- [Docs Hub (`docs/en/README.md`)](docs/en/README.md) — Step-by-step tutorials (01–05), architecture, and 16-tool reference
+- [AI Setup Guide (`docs/en/AI_SETUP_GUIDE.md`)](docs/en/AI_SETUP_GUIDE.md) — Single-file guide for AI-assisted onboarding
+- [AGENTS.md](AGENTS.md) · [host_skills/SKILL.md](host_skills/SKILL.md) · [PRIVACY_EN.md](PRIVACY_EN.md) · [SECURITY_EN.md](SECURITY_EN.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

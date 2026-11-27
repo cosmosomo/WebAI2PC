@@ -36,7 +36,7 @@ This document describes the authentication architecture, cross-endpoint audience
 ## 3. On-Demand Downgrade, Peripheral Boundaries & `sandbox/` Container Isolation
 
 ### 1. Live On-Demand Downgrade & Process Lifecycle Management
-- Permissions can be tightened in real time via the "One-Click Read-Only" button in the `Cosmos Studio` top bar (or "Switch to Read-Only" on the Tools & Security page, the system tray menu "Switch to Read-Only Mode") or `cosmos-mcp permissions --tier L1` (or `L2`). Upon downgrade or `--revoke-all`, `KillSignalWatchdog` terminates all in-flight foreground/background child process trees and closes peripheral sessions within 0.1 seconds.
+- Permissions can be tightened in real time via the "Current Permissions" 4-tier bar on the local console home page by selecting `Read-Only` (or via `Settings -> Tools & Extensions`, the system tray right-click menu "Switch to Read-Only Mode"), or `cosmos-mcp permissions --tier L1` (or `L2`). Upon downgrade or `--revoke-all`, `KillSignalWatchdog` terminates all in-flight foreground/background child process trees and closes peripheral sessions within 0.1 seconds.
 - On Windows, the background supervisor manages `uvicorn`, `cloudflared`, and `ssh` child processes inside a `JobObject` (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), reaping child processes cleanly on supervisor exit to prevent orphaned processes from holding ports.
 
 ### 2. Peripheral Expansion Packs & OS-Level Sandbox (`sandbox/`)
