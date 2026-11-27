@@ -317,6 +317,33 @@ def test_browser_pack_remote_ssrf_isolation_and_worker_ctx_refresh(
 
     assert seen_worker_remote_flags == [True, False]
 
+    # 4) Verify macOS `.local` mDNS immunity: `_local_machine_ips(ttl_sec=0)` never calls slow `socket.getaddrinfo`
+    #    on Darwin while still blocking `http://<host_lan_ip>:<mcp_port>/` via `ifconfig` interface enumeration.
+    def _forbidden_getaddrinfo(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("socket.getaddrinfo must not be called for local host IPs on Darwin")
+
+    monkeypatch.setattr(browser_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(browser_mod.socket, "getaddrinfo", _forbidden_getaddrinfo)
+    monkeypatch.setattr(browser_mod.shutil, "which", lambda name: "/sbin/ifconfig" if name == "ifconfig" else None)
+    monkeypatch.setattr(
+        browser_mod.subprocess,
+        "run",
+        lambda *_a, **_kw: SimpleNamespace(
+            returncode=0,
+            stdout="lo0: flags=8049<UP,LOOPBACK>\n\tinet 127.0.0.1 netmask 0xff000000\nen0: flags=8863<UP>\n\tinet 192.168.77.88 netmask 0xffffff00\n",
+        ),
+    )
+    browser_mod._LOCAL_MACHINE_IPS_CACHE = (0.0, set())
+    darwin_ips = browser_mod._local_machine_ips(ttl_sec=0.0)
+    assert "192.168.77.88" in darwin_ips
+    with pytest.raises(PermissionError, match="protected local MCP/control port"):
+        validate_outbound_http_url("http://192.168.77.88:18741/api/studio/state", mcp_port=18741, allow_loopback_dev=True)
+    assert (
+        validate_outbound_http_url("http://192.168.77.88:3000/", mcp_port=18741, allow_loopback_dev=True)
+        == "http://192.168.77.88:3000/"
+    )
+    browser_mod._LOCAL_MACHINE_IPS_CACHE = (0.0, set())
+
 
 def test_get_status_open_page_readonly_mode_blocks_popup_preserves_l3_l4(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

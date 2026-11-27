@@ -709,15 +709,62 @@ def _normalize_browser_selector(raw_sel: str) -> str:
     return s
 
 
-def _local_machine_ips() -> Set[str]:
+_LOCAL_MACHINE_IPS_CACHE: Tuple[float, Set[str]] = (0.0, set())
+
+
+def _local_machine_ips(*, ttl_sec: float = 30.0) -> Set[str]:
+    """Return local host IP addresses without blocking on macOS `.local` Bonjour mDNS timeouts."""
+    global _LOCAL_MACHINE_IPS_CACHE
+    now = time.monotonic()
+    cached_ts, cached_ips = _LOCAL_MACHINE_IPS_CACHE
+    if cached_ips and (now - cached_ts) < ttl_sec:
+        return set(cached_ips)
+
     ips: Set[str] = {"127.0.0.1", "::1", "0.0.0.0", "::"}
-    with contextlib.suppress(Exception):
-        hn = socket.gethostname()
-        if hn:
-            for info in socket.getaddrinfo(hn, None):
-                addr = str(info[4][0]).split("%", 1)[0]
-                if addr:
-                    ips.add(addr)
+    # 1) Zero-packet kernel routing socket lookup (<0.2ms on Windows/Linux/macOS, zero DNS/mDNS)
+    for fam, probe_dst in ((socket.AF_INET, ("192.0.2.1", 80)), (socket.AF_INET6, ("2001:db8::1", 80))):
+        with contextlib.suppress(Exception):
+            with socket.socket(fam, socket.SOCK_DGRAM) as sock:
+                sock.connect(probe_dst)
+                bound_ip = str(sock.getsockname()[0]).split("%", 1)[0]
+                if bound_ip:
+                    ips.add(bound_ip)
+
+    # 2) Enumerate multi-NIC local interface addresses without `.local` mDNS stalls on Darwin/POSIX
+    if sys.platform == "win32":
+        with contextlib.suppress(Exception):
+            hn = socket.gethostname()
+            if hn:
+                for info in socket.getaddrinfo(hn, None):
+                    addr = str(info[4][0]).split("%", 1)[0]
+                    if addr:
+                        ips.add(addr)
+    else:
+        for cmd in (["ip", "-o", "addr"], ["ifconfig"], ["hostname", "-I"]):
+            exe = shutil.which(cmd[0]) or ("/sbin/ifconfig" if cmd[0] == "ifconfig" and os.path.isfile("/sbin/ifconfig") else None)
+            if not exe:
+                continue
+            with contextlib.suppress(Exception):
+                proc = subprocess.run(
+                    [exe, *cmd[1:]],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=0.5,
+                )
+                if proc.returncode == 0 and proc.stdout:
+                    if cmd[0] == "hostname":
+                        for tok in proc.stdout.split():
+                            with contextlib.suppress(ValueError):
+                                ips.add(str(ipaddress.ip_address(tok.split("%", 1)[0])))
+                    else:
+                        for m in re.finditer(r"\binet6?\s+(?:addr:)?([0-9a-fA-F:.]+)", proc.stdout):
+                            cand = m.group(1).split("%", 1)[0]
+                            with contextlib.suppress(ValueError):
+                                ips.add(str(ipaddress.ip_address(cand)))
+                    break
+
+    _LOCAL_MACHINE_IPS_CACHE = (now, set(ips))
     return ips
 
 
@@ -867,7 +914,6 @@ def validate_outbound_http_url(
         if int(bp or 0) > 0:
             forbidden_ports.add(int(bp))
 
-    local_ips = _local_machine_ips()
     is_loopback_host = host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".localhost")
     literal_ip: Optional[Union[ipaddress.IPv4Address, ipaddress.IPv6Address]] = None
     with contextlib.suppress(ValueError):
@@ -875,7 +921,7 @@ def validate_outbound_http_url(
 
     if literal_ip is not None:
         eff_lit = getattr(literal_ip, "ipv4_mapped", None) or literal_ip
-        if eff_lit.is_loopback or str(eff_lit) in local_ips:
+        if eff_lit.is_loopback or (eff_port in forbidden_ports and str(eff_lit) in _local_machine_ips()):
             is_loopback_host = True
 
     if is_loopback_host and eff_port in forbidden_ports:
