@@ -62,7 +62,14 @@ from cosmos_mcp.core.fs_tx import (
     save_undo_snapshot as _tx_save_undo_snapshot,
     undo_last_edit as _tx_undo_last_edit,
 )
-from cosmos_mcp.core.guard import WorkspaceGuard, normalize_tier
+from cosmos_mcp.core.guard import (
+    WorkspaceGuard,
+    canonical_realpath,
+    expand_env_and_tilde,
+    has_ntfs_ads_stream,
+    normalize_tier,
+    strip_file_uri,
+)
 from cosmos_mcp.core.patch import (
     WINDOW_DRIFT_LINES,
     OperationType,
@@ -234,6 +241,85 @@ def _with_office_lock_code(lk: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
     out = dict(lk)
     out.setdefault("error_code", "ERR_OFFICE_FILE_LOCKED")
     return out
+
+
+def _resolve_authorized_link_target(
+    fp: Path,
+    guard: WorkspaceGuard,
+    *,
+    mode: str,
+    tool_name: str,
+) -> Tuple[Path, Optional[Dict[str, Any]]]:
+    """Allow symlinks/junctions whose `realpath` target passes `guard.check_path_access`; block unauthorized escapes."""
+    if not is_link_or_junction(fp):
+        return fp, None
+    real_tgt = canonical_realpath(fp)
+    g_err = guard.check_path_access(str(real_tgt), mode=mode, tool_name=tool_name)
+    if g_err is not None:
+        return fp, {
+            "ok": False,
+            "blocked_by_guardrail": True,
+            "path": str(fp),
+            "error": g_err,
+        }
+    if is_link_or_junction(real_tgt):
+        return fp, {
+            "ok": False,
+            "blocked_by_guardrail": True,
+            "path": str(fp),
+            "error": f"Refusing unresolvable or circular symlink/junction: {fp}",
+        }
+    return real_tgt, None
+
+
+def _resolve_unexpanded_leaf_link_for_trash(
+    raw_path: Union[Path, str],
+    guard: WorkspaceGuard,
+) -> Tuple[Optional[Path], Optional[Dict[str, Any]]]:
+    """Inspect unexpanded leaf path before `realpath`: if leaf is a symlink/junction, validate parent write permission only."""
+    raw_s = str(raw_path or "").strip()
+    if not raw_s:
+        return None, None
+    expanded_s = strip_file_uri(expand_env_and_tilde(raw_s))
+    if not expanded_s:
+        return None, None
+    if has_ntfs_ads_stream(raw_s, for_command_token=False) or has_ntfs_ads_stream(expanded_s, for_command_token=False):
+        return None, None
+    if os.name == "nt":
+        expanded_s = expanded_s.replace("/", "\\")
+    raw_p = Path(expanded_s)
+    cands: List[Path] = []
+    if raw_p.is_absolute():
+        cands.append(Path(os.path.abspath(str(raw_p))))
+    else:
+        roots = _ws_roots_list(guard)
+        if roots:
+            for r in roots:
+                cands.append(Path(os.path.abspath(str(r / raw_p))))
+        else:
+            cands.append(Path(os.path.abspath(str(Path.cwd() / raw_p))))
+
+    for cand in cands:
+        if is_link_or_junction(cand):
+            parent_real = guard.normalize_target_path(str(cand.parent))
+            link_self = parent_real / cand.name
+            if guard._is_state_secret_or_conn_file(link_self):
+                return None, {
+                    "ok": False,
+                    "blocked_by_guardrail": True,
+                    "path": str(link_self),
+                    "error": "[GUARD CREDENTIAL ISOLATION]: MCP secrets, state directory, and connection info files are isolated.",
+                }
+            parent_err = guard.check_path_access(str(parent_real), mode="write", tool_name="trash_file")
+            if parent_err is not None:
+                return None, {
+                    "ok": False,
+                    "blocked_by_guardrail": True,
+                    "path": str(link_self),
+                    "error": parent_err,
+                }
+            return link_self, None
+    return None, None
 
 
 _SIG_PARAM_CACHE: Dict[Any, frozenset[str]] = {}
@@ -1391,10 +1477,11 @@ def read_file(
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
 
     fp: Path = r_info["path"]
+    fp, lnk_err = _resolve_authorized_link_target(fp, g, mode="read", tool_name="read_file")
+    if lnk_err is not None:
+        return lnk_err
     if fp.is_dir():
         return {"ok": False, "path": str(fp), "error": f"Path is a directory, not a file: {fp} (use list_dir or find_files)."}
-    if is_link_or_junction(fp):
-        return {"ok": False, "path": str(fp), "error": f"Refusing symlink or junction file: {fp}"}
 
     ext = fp.suffix.lower()
     healed_note = str(r_info.get("healed_note") or "")
@@ -1618,8 +1705,9 @@ def write_file(
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
 
     fp: Path = r_info["path"]
-    if is_link_or_junction(fp):
-        return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing to write through symlink or junction: {fp}"}
+    fp, lnk_err_w = _resolve_authorized_link_target(fp, g, mode="write", tool_name="write_file")
+    if lnk_err_w is not None:
+        return lnk_err_w
 
     eff_mode = (mode or "overwrite").strip().lower()
     if eff_mode not in ("overwrite", "append"):
@@ -1968,8 +2056,9 @@ def edit_docx_text_stdlib(
     if not r_info["ok"]:
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
     fp: Path = r_info["path"]
-    if is_link_or_junction(fp):
-        return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing symlink or junction: {fp}"}
+    fp, lnk_err_d = _resolve_authorized_link_target(fp, g, mode="write", tool_name="edit_file")
+    if lnk_err_d is not None:
+        return lnk_err_d
 
     with get_file_lock(fp):
         pre_lk = _with_office_lock_code(check_office_or_os_file_lock(fp, for_write=True))
@@ -2271,8 +2360,9 @@ def edit_xlsx_cells(
     if not r_info["ok"]:
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
     fp: Path = r_info["path"]
-    if is_link_or_junction(fp):
-        return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing symlink or junction: {fp}"}
+    fp, lnk_err_x = _resolve_authorized_link_target(fp, g, mode="write", tool_name="edit_file")
+    if lnk_err_x is not None:
+        return lnk_err_x
 
     with get_file_lock(fp):
         pre_lk = _with_office_lock_code(check_office_or_os_file_lock(fp, for_write=True))
@@ -2490,14 +2580,11 @@ def edit_file(
                         **{k: (str(v) if isinstance(v, Path) else v) for k, v in r_chk.items() if v is not None},
                     }
                 resolved_op_p: Path = r_chk["path"]
-                if is_link_or_junction(resolved_op_p):
-                    return {
-                        "ok": False,
-                        "blocked_by_guardrail": True,
-                        "rolled_back_all": True,
-                        "path": str(resolved_op_p),
-                        "error": f"Refusing symlink or junction in patch_text: {resolved_op_p}",
-                    }
+                resolved_op_p, lnk_op_err = _resolve_authorized_link_target(
+                    resolved_op_p, g, mode="write", tool_name="edit_file"
+                )
+                if lnk_op_err is not None:
+                    return {**lnk_op_err, "rolled_back_all": True}
                 if first_target is None:
                     first_target = resolved_op_p
                 if idx_p == 0 and resolved_op_p.exists() and resolved_op_p.is_file() and op.hunks:
@@ -2538,8 +2625,9 @@ def edit_file(
         if not r_ins["ok"]:
             return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_ins.items() if v is not None}
         fp_ins: Path = r_ins["path"]
-        if is_link_or_junction(fp_ins):
-            return {"ok": False, "blocked_by_guardrail": True, "path": str(fp_ins), "error": f"Refusing symlink or junction: {fp_ins}"}
+        fp_ins, lnk_ins_err = _resolve_authorized_link_target(fp_ins, g, mode="write", tool_name="edit_file")
+        if lnk_ins_err is not None:
+            return lnk_ins_err
         if any(m in str(new_text or "") for m in REDACTED_PLACEHOLDER_MARKERS) and fp_ins.exists() and fp_ins.is_file():
             orig_ins_txt, _ = detect_and_decode_bytes(fp_ins.read_bytes(), strict_for_edit=False)
             red_err = _check_redacted_placeholder_writeback(fp_ins, orig_ins_txt, str(new_text or ""))
@@ -2568,8 +2656,9 @@ def edit_file(
         if not r_info["ok"]:
             return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
         fp_single: Path = r_info["path"]
-        if is_link_or_junction(fp_single):
-            return {"ok": False, "blocked_by_guardrail": True, "path": str(fp_single), "error": f"Refusing symlink or junction: {fp_single}"}
+        fp_single, lnk_s_err = _resolve_authorized_link_target(fp_single, g, mode="write", tool_name="edit_file")
+        if lnk_s_err is not None:
+            return lnk_s_err
         single_ext = fp_single.suffix.lower()
         if single_ext == ".docx":
             return edit_docx_text_stdlib(
@@ -2964,12 +3053,29 @@ def trash_file(
     g = _default_guard(guard)
     if normalize_tier(g.tier) == "L1":
         return _readonly_tier_denied("trash_file", "trash")
+
+    link_leaf, link_err = _resolve_unexpanded_leaf_link_for_trash(path, g)
+    if link_err is not None:
+        return link_err
+    if link_leaf is not None:
+        res_lnk = _call_with_ws_roots(
+            _tx_safe_trash_file,
+            link_leaf,
+            guard=g,
+            target_path=link_leaf.parent,
+            reason=reason,
+            workspace_root=_matching_ws_root(link_leaf.parent, g),
+        )
+        if isinstance(res_lnk, dict) and res_lnk.get("ok"):
+            res_lnk = {"action": "trash", "path": str(link_leaf), **res_lnk}
+        return res_lnk
+
     r_info = heal_and_resolve_path(str(path), g, mode="write", must_exist=True, tool_name="trash_file")
     if not r_info["ok"]:
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
     fp: Path = r_info["path"]
     if is_link_or_junction(fp):
-        return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing to trash symlink or junction: {fp}"}
+        return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing to trash unexpanded symlink or junction: {fp}"}
     res = _call_with_ws_roots(
         _tx_safe_trash_file,
         fp,
@@ -3079,8 +3185,9 @@ def manage_files(
         if not r_info["ok"]:
             return {k: (str(v) if isinstance(v, Path) else v) for k, v in r_info.items() if v is not None}
         fp: Path = r_info["path"]
-        if is_link_or_junction(fp):
-            return {"ok": False, "blocked_by_guardrail": True, "path": str(fp), "error": f"Refusing symlink or junction path: {fp}"}
+        fp, lnk_mk_err = _resolve_authorized_link_target(fp, g, mode="write", tool_name="manage_files")
+        if lnk_mk_err is not None:
+            return lnk_mk_err
         existed_before = fp.exists()
         first_missing: Optional[Path] = None
         if not existed_before:
@@ -3112,8 +3219,9 @@ def manage_files(
         if not src_info["ok"]:
             return {k: (str(v) if isinstance(v, Path) else v) for k, v in src_info.items() if v is not None}
         src_p: Path = src_info["path"]
-        if is_link_or_junction(src_p):
-            return {"ok": False, "blocked_by_guardrail": True, "path": str(src_p), "error": f"Refusing symlink or junction source: {src_p}"}
+        src_p, lnk_src_err = _resolve_authorized_link_target(src_p, g, mode=src_mode, tool_name="manage_files")
+        if lnk_src_err is not None:
+            return lnk_src_err
 
         if src_p.is_file():
             src_lk = check_office_or_os_file_lock(src_p, for_write=(act != "copy"))
@@ -3135,8 +3243,9 @@ def manage_files(
             if g_err_sub:
                 return {"ok": False, "blocked_by_guardrail": True, "path": str(dst_p), "error": g_err_sub}
 
-        if is_link_or_junction(dst_p):
-            return {"ok": False, "blocked_by_guardrail": True, "path": str(dst_p), "error": f"Refusing symlink or junction destination: {dst_p}"}
+        dst_p, lnk_dst_err = _resolve_authorized_link_target(dst_p, g, mode="write", tool_name="manage_files")
+        if lnk_dst_err is not None:
+            return lnk_dst_err
 
         if os.path.normcase(str(src_p)) == os.path.normcase(str(dst_p)):
             return {"ok": True, "action": act, "path": str(src_p), "destination": str(dst_p), "noop": True}

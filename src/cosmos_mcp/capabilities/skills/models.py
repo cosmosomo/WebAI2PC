@@ -132,19 +132,24 @@ def is_subpath(child: Union[str, Path], parent: Union[str, Path]) -> bool:
 
 
 def is_link_or_junction(path: Union[str, Path]) -> bool:
-    """Detect symlinks and Windows NTFS directory junctions without resolving the target."""
+    """Detect symlinks and Windows NTFS directory junctions without falsely flagging OneDrive/Cloud Files."""
     p_str = str(path)
     try:
-        if os.path.islink(p_str):
-            return True
-        if hasattr(os.path, "isjunction") and os.path.isjunction(p_str):  # type: ignore[attr-defined]
-            return True
-        if os.name == "nt":
-            st = os.lstat(p_str)
-            reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-            return bool(getattr(st, "st_file_attributes", 0) & reparse_flag)
-    except OSError:
+        st = os.lstat(p_str)
+    except FileNotFoundError:
         return False
+    except OSError:
+        return os.path.islink(p_str)
+    reparse_tag = int(getattr(st, "st_reparse_tag", 0) or 0)
+    if reparse_tag != 0:
+        return reparse_tag in (0xA000000C, 0xA0000003)
+    if stat.S_ISLNK(getattr(st, "st_mode", 0)) or os.path.islink(p_str):
+        return True
+    if hasattr(os.path, "isjunction") and os.path.isjunction(p_str):  # type: ignore[attr-defined]
+        return True
+    if os.name == "nt":
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        return bool(getattr(st, "st_file_attributes", 0) & reparse_flag)
     return False
 
 

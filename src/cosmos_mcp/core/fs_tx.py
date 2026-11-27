@@ -1605,9 +1605,11 @@ def safe_trash_file(
             with contextlib.suppress(OSError):
                 link_target = str(os.readlink(link_p))
 
+            reparse_tag_cur = int(getattr(st_cur, "st_reparse_tag", 0) or 0)
             is_junc_fn = getattr(link_p, "is_junction", None)
-            if (callable(is_junc_fn) and is_junc_fn()) or (
-                not stat.S_ISLNK(st_cur.st_mode)
+            if reparse_tag_cur == 0xA0000003 or (callable(is_junc_fn) and is_junc_fn()) or (
+                reparse_tag_cur == 0
+                and not stat.S_ISLNK(st_cur.st_mode)
                 and bool(getattr(st_cur, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400))
             ):
                 link_kind = "junction"

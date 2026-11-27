@@ -71,10 +71,12 @@ HOST_CREDENTIAL_PATH_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Cloud provider and GPG key directories are isolated by Guard.",
     ),
     (
-        r"(?i)(?:[\\/]\.(?:pypirc|npmrc|netrc|git-credentials|docker[\\/]config\.json)|[\\/]\.cargo[\\/]credentials(?:\.toml)?|[\\/]\.?huggingface[\\/](?:token|stored_tokens))(?:$|[\\/\"'\s;|&><)`:])",
+        r"(?i)(?:[\\/]\.(?:pypirc|netrc|git-credentials|docker[\\/]config\.json)|[\\/]\.cargo[\\/]credentials(?:\.toml)?|[\\/]\.?huggingface[\\/](?:token|stored_tokens))(?:$|[\\/\"'\s;|&><)`:])",
         "Package registry and container credential files are isolated by Guard.",
     ),
 )
+
+_NPMRC_TOKEN_RE = re.compile(r"(?i)(?:^|[\\/\"'\s=(;|&><])([^\s\"'|&;<>()`]*[\\/]\.npmrc|\.npmrc)(?=$|[\\/\"'\s;|&><)`:])")
 
 DOTENV_PATH_PATTERN: Tuple[str, str] = (
     r"(?i)(?:^|[\\/])\.env(?:\.(?!(?:example|template|sample|dist|defaults)(?:$|[\\/\"'\s;|&><)`:]))[a-z0-9_.-]+)?(?:$|[\\/\"'\s;|&><)`:])",
@@ -122,9 +124,27 @@ SSRF_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
     ),
 )
 
+_CLAUSE_HEAD_DELETE_VERB_RE = re.compile(
+    r"(?i)^\s*(?:[(&{]\s*)*(?:(?:call|sudo|nohup|command|builtin)\s+|&+\s+|[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+    r"(?:[^\s\"'|&;<>()`]*[\\/])?(?:rm|del|erase|rd|rmdir|Remove-Item|ri|unlink|rimraf|Clear-Content|clc)(?:\.exe)?\b"
+)
+_CLAUSE_HEAD_KILL_VERB_RE = re.compile(
+    r"(?i)^\s*(?:[(&{]\s*)*(?:(?:call|sudo|nohup|command|builtin)\s+|&+\s+|[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+    r"(?:[^\s\"'|&;<>()`]*[\\/])?(?:taskkill|Stop-Process|kill|spps|pkill|killall)(?:\.exe)?\b"
+)
+_PROTECTED_HOST_PROC_KILL_RE = re.compile(
+    r"(?ix)"
+    r"(?:"
+    r"  (?:^|[\s\"'=/\\,])(?:explorer|chrome|msedge|firefox|safari|code|cursor|antigravity|windsurf|pwsh|powershell|lsass|csrss|svchost|wininit)\.exe\b"
+    r"  | /im\s+[\"']?(?:explorer|chrome|msedge|firefox|safari|code|cursor|antigravity|windsurf|pwsh|powershell|lsass|csrss|svchost|wininit)(?:\.exe)?[\"']?(?=$|[\s;|&)])"
+    r"  | \b(?:Stop-Process|spps)\b[^\n;|&]*?(?:-Name\s+|\s)[\"']?(?:explorer|chrome|msedge|firefox|safari|code|cursor|antigravity|windsurf|pwsh|powershell|lsass|csrss|svchost|wininit)[\"']?(?=$|[\s,;|&)])"
+    r"  | \b(?:pkill|killall)\b(?:(?!-f\b)\s+-[A-Za-z0-9]+)*\s+[\"']?(?:explorer|chrome|msedge|firefox|safari|code|cursor|antigravity|windsurf|pwsh|powershell|lsass|csrss|svchost|wininit)(?:\.exe)?[\"']?(?=$|[\s;|&)])"
+    r")"
+)
+
 USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (
-        r"(?i)(?:^|[;&|\s\(])(?:rm|del|erase|rd|rmdir|Remove-Item|ri|unlink|rimraf|Clear-Content|clc)\b",
+        _CLAUSE_HEAD_DELETE_VERB_RE.pattern,
         "Direct permanent file deletion (rm / del / rd / Remove-Item / Clear-Content) is blocked; move files to recoverable trash instead.",
     ),
     (
@@ -132,7 +152,7 @@ USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Direct permanent file deletion in scripts (rmtree / os.remove / unlink) is blocked; use trash_file instead.",
     ),
     (
-        r"(?i)\bgit\s+(?:reset\s+--(?!soft\b)\S+|clean\b[^\n;]*-[a-zA-Z]*[fdFD]|checkout\s+(?:--|-[fF]\b)|restore\s+(?!--staged\b)|push\s+[^\n;]*(?:--force|-f\b)|branch\s+-D\b|stash\s+(?:drop|clear)\b)",
+        r"(?i)\bgit\s+(?:reset\s+--(?!soft\b)\S+|clean\b[^\n;]*-[a-zA-Z]*[fdFD]|checkout\s+(?:--|-[fF]\b)|restore\s+(?!--staged\b)|push\s+[^\n;]*(?:--force(?!-with-lease\b|-if-includes\b)\b|-f\b)|branch\s+-D\b|stash\s+(?:drop|clear)\b)",
         "Destructive Git commands that erase uncommitted work or history are blocked.",
     ),
     (
@@ -140,7 +160,7 @@ USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
         "Disk formatting, boot modification, or system shutdown/reboot commands are blocked.",
     ),
     (
-        r"(?i)\b(?:taskkill|Stop-Process|kill|spps|pkill|killall)\b[^\n;]*(?:explorer|chrome|msedge|firefox|safari|code|cursor|antigravity|windsurf|pwsh|powershell|lsass|csrss|svchost|wininit)",
+        _PROTECTED_HOST_PROC_KILL_RE.pattern,
         "Terminating user browsers, IDEs, shells, or OS system processes is blocked.",
     ),
     (
@@ -151,7 +171,7 @@ USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
 
 MCP_SELF_PROTECT_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (
-        r"(?i)\b(?:Stop-Process|spps|kill|taskkill)\b[^\n;]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
+        r"(?i)\b(?:Stop-Process|spps|kill|taskkill|pkill|killall)\b[^\n;]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
         "Terminating MCP daemon or active tunnel processes is blocked.",
     ),
 )
@@ -159,15 +179,18 @@ MCP_SELF_PROTECT_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = (
 DESTRUCTIVE_CMD_PATTERNS: Tuple[Tuple[str, str], ...] = USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS + MCP_SELF_PROTECT_CMD_PATTERNS
 
 _PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----")
-SECRET_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
-    (_PRIVATE_KEY_RE, "[REDACTED_PRIVATE_KEY_BY_GUARD]"),
+MCP_SELF_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bcmcp_[A-Za-z0-9_\-]{16,}\b"), "[REDACTED_MCP_TOKEN]"),
     (re.compile(r"\blpcmcp_[A-Za-z0-9_-]{16,}\b"), "[REDACTED_MCP_TOKEN]"),
+)
+PROJECT_SECRET_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
+    (_PRIVATE_KEY_RE, "[REDACTED_PRIVATE_KEY_BY_GUARD]"),
     (
         re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{16,})\b"),
         "[REDACTED_API_CREDENTIAL]",
     ),
 )
+SECRET_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = MCP_SELF_REDACT_PATTERNS + PROJECT_SECRET_REDACT_PATTERNS
 
 _SHELL_RC_NAMES = frozenset({
     ".bashrc",
@@ -244,6 +267,13 @@ _SAFE_BUILD_CLEAN_NAMES = frozenset({
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    "node_modules",
+    ".next",
+    ".nuxt",
+    ".vite",
+    ".turbo",
+    "target",
+    "coverage",
 })
 _STANDARD_TOOLCHAIN_BIN_RE = re.compile(
     r"^(?:python(?:\d+(?:\.\d+)*)?|py|pytest|ruff|node|npm|npx|pnpm|yarn|bun|go|gofmt|cargo|rustc|rust-analyzer|ast-grep|sg|tsc|git|rg|uv|uvx)$",
@@ -307,16 +337,16 @@ def canonical_realpath(raw_p: Union[str, Path]) -> Path:
             norm_s = drv + "\\".join(cleaned)
     try:
         p_cur = Path(norm_s)
-        if p_cur.exists():
+        if p_cur.exists() or os.path.lexists(str(p_cur)):
             rp = os.path.realpath(str(p_cur))
             return Path(_win32_long_path(rp))
         # Walk up to deepest existing ancestor so 8.3 short dirs or symlinked parent dirs still resolve
         missing_tail: List[str] = []
         probe = p_cur
-        while probe != probe.parent and not probe.exists():
+        while probe != probe.parent and not (probe.exists() or os.path.lexists(str(probe))):
             missing_tail.append(probe.name)
             probe = probe.parent
-        if probe.exists():
+        if probe.exists() or os.path.lexists(str(probe)):
             base_real = Path(_win32_long_path(os.path.realpath(str(probe))))
             for seg in reversed(missing_tail):
                 base_real = base_real / seg
@@ -514,6 +544,54 @@ def _strip_python_strings_and_comments(code: str) -> str:
         return "\n".join(ln for ln in code.splitlines() if not ln.lstrip().startswith("#"))
 
 
+def _mask_shell_quoted_literals(raw_cmd: str) -> str:
+    """Replace contents inside single-quoted and double-quoted shell strings with benign placeholders."""
+    if not raw_cmd or ("'" not in raw_cmd and '"' not in raw_cmd):
+        return raw_cmd
+    out: List[str] = []
+    i = 0
+    n = len(raw_cmd)
+    while i < n:
+        ch = raw_cmd[i]
+        if ch == "'":
+            out.append("'")
+            i += 1
+            while i < n:
+                if raw_cmd[i] == "'":
+                    if i + 1 < n and raw_cmd[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            out.append("__COSMOS_QUOTED__'")
+            continue
+        if ch == '"':
+            out.append('"')
+            i += 1
+            while i < n:
+                if raw_cmd[i] in ("\\", "`") and i + 1 < n:
+                    i += 2
+                    continue
+                if raw_cmd[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            out.append('__COSMOS_QUOTED__"')
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+_INLINE_SUBSHELL_RE = re.compile(
+    r"""(?is)(?:^|[\s;|&(\"'\\/])(?:cmd(?:\.exe)?\s+/[ck]|(?:powershell|pwsh)(?:\.exe)?(?:\s+-[A-Za-z0-9_-]+(?:\s+(?![-\"'])\S+)?)*\s+(?:-Command|-c)|(?:ba|z|da|k)?sh(?:\.exe)?\s+-c)\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)')"""
+)
+_DOCKER_BIND_VOL_RE = re.compile(
+    r"^(?P<host>(?:[A-Za-z]:[\\/][^\r\n:]*|\.{1,2}(?:$|[\\/][^\r\n:]*)|~(?:$|[\\/][^\r\n:]*)|/[^\r\n:]+)):(?P<container>/[^\r\n:]*)(?::[A-Za-z0-9_,=-]+)?$"
+)
+
+
 def has_ntfs_ads_stream(raw_path: str, *, for_command_token: bool = False) -> bool:
     """Detect Windows NTFS Alternate Data Streams (`file.txt:stream`, `::$DATA`)."""
     s = str(raw_path or "").strip().strip("\"'")
@@ -525,25 +603,43 @@ def has_ntfs_ads_stream(raw_path: str, *, for_command_token: bool = False) -> bo
         return True
     s_clean = strip_file_uri(s)
     s_clean = _WIN_EXT_PREFIX_RE.sub("", s_clean)
-    rest = s_clean[2:] if re.match(r"^[A-Za-z]:", s_clean) else s_clean
+    if re.match(r"^[A-Za-z]:$", s_clean):
+        return False
+    has_win_drive = bool(re.match(r"^[A-Za-z]:[\\/]", s_clean))
+    rest = s_clean[2:] if has_win_drive else s_clean
     if ":" not in rest:
         return False
-    if sys.platform != "win32" and not re.match(r"^[A-Za-z]:[\\/]", s_clean):
+    if not for_command_token:
+        if sys.platform != "win32" and not has_win_drive:
+            return False
+        return ":" in rest
+
+    # `for_command_token=True`: exclude `HEAD:refs/heads/main`, `main:src/app.py`, `./data:/data`, ports, etc.
+    rest_no_pytest = re.sub(r"::(?!\$)[A-Za-z0-9_\[\].,/*+-]+", "", rest)
+    if ":" not in rest_no_pytest:
         return False
-    if for_command_token:
-        rest_no_pytest = re.sub(r"::(?!\$)[A-Za-z0-9_\[\].,-]+", "", rest)
-        if ":" not in rest_no_pytest:
-            return False
-        if not (
-            re.match(r"^[A-Za-z]:[\\/]", s_clean)
-            or ("/" in s_clean or "\\" in s_clean)
-            or re.match(r"^[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8}:(?!:)", s_clean)
-        ):
-            return False
-    return ":" in rest
+    file_part, stream_part = rest_no_pytest.split(":", 1)
+    if not file_part or not stream_part:
+        return False
+    # NTFS ADS stream names cannot contain path slashes `/`/`\`, extra colons, whitespace, or be pure port digits
+    if stream_part.isdigit() or not re.fullmatch(r"[A-Za-z0-9_.$+-]{1,128}", stream_part):
+        return False
+    if has_win_drive:
+        return bool(re.search(r"[\\/][^\\/:]+$", file_part))
+    if "\\" in file_part:
+        return not file_part.endswith("\\")
+    # Relative slash-containing prefixes like `origin/main:foo` or `ghcr.io/org/img:tag` are not local files unless `./` or `../` or existing on disk
+    try:
+        if Path(file_part).exists():
+            return True
+    except OSError:
+        pass
+    if "/" in file_part and not file_part.startswith(("./", "../")):
+        return False
+    return bool(re.search(r"(?:^|[\\/])[A-Za-z0-9_.-]+\.[A-Za-z][A-Za-z0-9]{0,11}$", file_part))
 
 
-def check_persistence_components(p: Path) -> Optional[str]:
+def check_persistence_components(p: Path, *, check_git_repo_meta: bool = True) -> Optional[str]:
     parts_low = [pt.lower() for pt in p.parts]
     name_low = p.name.lower()
     if name_low in _SHELL_RC_NAMES:
@@ -564,7 +660,7 @@ def check_persistence_components(p: Path) -> Optional[str]:
             return "Writing to macOS LaunchAgents/LaunchDaemons is prohibited."
         if parts_low[i] == ".config" and parts_low[i + 1] == "autostart":
             return "Writing to Linux autostart directory is prohibited."
-        if parts_low[i] == ".git" and parts_low[i + 1] in ("hooks", "config"):
+        if check_git_repo_meta and parts_low[i] == ".git" and parts_low[i + 1] in ("hooks", "config"):
             return "Modifying Git repository hooks or .git/config via MCP is prohibited."
     return None
 
@@ -1423,6 +1519,8 @@ class WorkspaceGuard:
         protect_host_credentials: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         block_destructive_commands: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        policy: Optional[Any] = None,
         restrict_to_workspace: bool = True,
         tier: Union[str, int] = "L3",
         state_root: Optional[Union[str, Path]] = None,
@@ -1436,6 +1534,8 @@ class WorkspaceGuard:
         self.protect_host_credentials: bool = bool(protect_host_credentials) if protect_host_credentials is not None else True
         self.protect_dotenv_files: bool = bool(protect_dotenv_files) if protect_dotenv_files is not None else False
         self.block_destructive_commands: bool = bool(block_destructive_commands) if block_destructive_commands is not None else True
+        self.redact_project_secrets: bool = bool(redact_project_secrets) if redact_project_secrets is not None else False
+        self.policy: Optional[Any] = policy
         self.tier: str = to_short_tier_code(tier, restrict_to_workspace=bool(restrict_to_workspace))
         self.restrict_to_workspace: bool = False if self.tier == "L4" else bool(restrict_to_workspace)
         self.state_root: Optional[Path] = canonical_realpath(state_root) if state_root else None
@@ -1453,6 +1553,8 @@ class WorkspaceGuard:
                 protect_host_credentials=protect_host_credentials,
                 protect_dotenv_files=protect_dotenv_files,
                 block_destructive_commands=block_destructive_commands,
+                redact_project_secrets=redact_project_secrets,
+                policy=policy,
                 state_root=state_root,
                 product_root=product_root,
                 extra_access_gate=extra_access_gate,
@@ -1482,10 +1584,22 @@ class WorkspaceGuard:
         protect_host_credentials: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         block_destructive_commands: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        policy: Optional[Any] = None,
         state_root: Optional[Union[str, Path]] = None,
         product_root: Optional[Union[str, Path]] = None,
         extra_access_gate: Optional[Callable[..., Optional[str]]] = None,
     ) -> None:
+        if policy is not None:
+            self.policy = policy
+        elif self.policy is None:
+            frm = inspect.currentframe()
+            try:
+                caller_obj = frm.f_back.f_locals.get("self") if (frm is not None and frm.f_back is not None) else None
+                if caller_obj is not None and type(caller_obj).__name__ == "LiveRuntimePolicy":
+                    self.policy = caller_obj
+            finally:
+                del frm
         parsed_roots = list(_parse_workspace_roots_input(workspace_roots))
         all_norms = {str(p).lower().rstrip("\\/") for p in parsed_roots}
         if readonly_workspace_roots is not None:
@@ -1510,6 +1624,8 @@ class WorkspaceGuard:
             self.protect_dotenv_files = bool(protect_dotenv_files)
         if block_destructive_commands is not None:
             self.block_destructive_commands = bool(block_destructive_commands)
+        if redact_project_secrets is not None:
+            self.redact_project_secrets = bool(redact_project_secrets)
         eff_tier = to_short_tier_code(tier_key, restrict_to_workspace=bool(restrict_to_workspace))
         if eff_tier == "L4":
             self.restrict_to_workspace = False
@@ -1533,22 +1649,86 @@ class WorkspaceGuard:
             "protect_host_credentials": self.protect_host_credentials,
             "protect_dotenv_files": self.protect_dotenv_files,
             "block_destructive_commands": self.block_destructive_commands,
+            "redact_project_secrets": bool(getattr(self.policy, "redact_project_secrets", False)) or self.redact_project_secrets,
             "restrict_to_workspace": self.restrict_to_workspace,
             "tier": self.tier,
             "state_root": str(self.effective_state_root()),
         }
 
+    def _effective_protect_host_credentials(self) -> bool:
+        if self.policy is not None and hasattr(self.policy, "protect_host_credentials"):
+            return bool(getattr(self.policy, "protect_host_credentials"))
+        return bool(self.protect_host_credentials)
+
+    def _effective_block_destructive_commands(self) -> bool:
+        if self.policy is not None and hasattr(self.policy, "block_destructive_commands"):
+            return bool(getattr(self.policy, "block_destructive_commands"))
+        return bool(self.block_destructive_commands)
+
+    def _should_block_git_repo_meta(self) -> bool:
+        if self.tier == "L4":
+            return False
+        if not self._effective_protect_host_credentials():
+            return False
+        if not self._effective_block_destructive_commands():
+            return False
+        return True
+
+    def _is_blocked_npmrc_target(self, cand_path: Path, raw_hint: str = "") -> Optional[str]:
+        if not self._effective_protect_host_credentials():
+            return None
+        if cand_path.name.lower() != ".npmrc":
+            return None
+        reason = "Package registry and container credential files are isolated by Guard."
+        home_real = canonical_realpath(Path.home())
+        cand_par_norm = os.path.normcase(str(cand_path.parent).rstrip("\\/"))
+        home_norm = os.path.normcase(str(home_real).rstrip("\\/"))
+        if cand_par_norm == home_norm or cand_par_norm in ("/etc", r"c:\etc"):
+            return reason
+        if raw_hint and re.search(
+            r"(?i)(?:^|[\s\"'=(;|&><])(?:~|\$\{?(?:env:)?(?:HOME|USERPROFILE)\}?|%(?:USERPROFILE|HOMEPATH)%)[\\/]\.npmrc(?=$|[\\/\"'\s;|&><)`:])",
+            raw_hint,
+        ):
+            return reason
+        is_ro_ctx = (self.tier == "L1") or bool(_READONLY_CALL_CTX.get())
+        if is_ro_ctx:
+            return reason
+        if self.tier == "L4" or self._is_under_any_workspace(cand_path):
+            return None
+        return reason
+
+    def _check_readonly_workspace_write(self, cand_path: Path) -> Optional[str]:
+        if not self.readonly_workspace_roots:
+            return None
+        cand_low = str(cand_path).lower().rstrip("\\/")
+        ro_norms = {str(r).lower().rstrip("\\/") for r in self.readonly_workspace_roots}
+        best_root: Optional[Path] = None
+        best_len = -1
+        for ws in (*self.workspace_roots, *self.readonly_workspace_roots):
+            ws_low = str(ws).lower().rstrip("\\/")
+            if _is_under_prefix(cand_low, ws_low) and len(ws_low) > best_len:
+                best_root = ws
+                best_len = len(ws_low)
+        if best_root is not None and str(best_root).lower().rstrip("\\/") in ro_norms:
+            return f"ERR_READONLY_WORKSPACE: Secondary workspace `{best_root}` is mounted as read-only; write access to `{cand_path}` is prohibited."
+        return None
+
     def _active_sensitive_path_patterns(self) -> Tuple[Tuple[str, str], ...]:
-        pats: List[Tuple[str, str]] = list(MCP_OWN_SECRET_PATTERNS)
-        if self.protect_host_credentials:
+        pats: List[Tuple[str, str], ...] = list(MCP_OWN_SECRET_PATTERNS)  # type: ignore[assignment]
+        if self._effective_protect_host_credentials():
             pats.extend(HOST_CREDENTIAL_PATH_PATTERNS)
         is_ro_ctx = (self.tier == "L1") or bool(_READONLY_CALL_CTX.get())
-        if self.protect_dotenv_files or is_ro_ctx:
+        eff_dotenv = (
+            bool(getattr(self.policy, "protect_dotenv_files", self.protect_dotenv_files))
+            if self.policy is not None
+            else self.protect_dotenv_files
+        )
+        if eff_dotenv or is_ro_ctx:
             pats.append(DOTENV_PATH_PATTERN)
         return tuple(pats)
 
     def _active_destructive_cmd_patterns(self) -> Tuple[Tuple[str, str], ...]:
-        if self.block_destructive_commands:
+        if self._effective_block_destructive_commands():
             return USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS + MCP_SELF_PROTECT_CMD_PATTERNS
         return MCP_SELF_PROTECT_CMD_PATTERNS
 
@@ -1851,6 +2031,10 @@ class WorkspaceGuard:
                 if re.search(pat, c_str) or re.search(pat, expanded) or re.search(pat, raw_clean):
                     self.record_security_event(f"path_{mode}_blocked", c_str, reason)
                     return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
+            npmrc_err = self._is_blocked_npmrc_target(cand, raw_clean)
+            if npmrc_err:
+                self.record_security_event(f"path_{mode}_blocked", c_str, npmrc_err)
+                return f"[GUARD CREDENTIAL ISOLATION]: {npmrc_err}"
 
         if mode == "write" and self.tier == "L1":
             reason = f"Tier L1 is strictly read-only; write access to `{norm}` is prohibited."
@@ -1859,6 +2043,8 @@ class WorkspaceGuard:
 
         if mode == "write":
             write_blocked = self._write_blocked_prefixes()
+            eff_block_destr = self._effective_block_destructive_commands()
+            block_git_meta = self._should_block_git_repo_meta()
             for cand in candidates:
                 c_str = str(cand)
                 c_low = c_str.lower()
@@ -1871,11 +2057,12 @@ class WorkspaceGuard:
                         reason = "Modifying MCP server code, configuration, logs, or secrets is prohibited."
                         self.record_security_event("self_tamper_blocked", c_str, reason)
                         return f"[GUARD ANTI-TAMPER]: {reason}"
-                if self.block_destructive_commands:
-                    pers_err = check_persistence_components(cand)
-                    if pers_err:
+                if eff_block_destr or block_git_meta:
+                    pers_err = check_persistence_components(cand, check_git_repo_meta=block_git_meta)
+                    if pers_err and (eff_block_destr or "Git repository" in pers_err):
                         self.record_security_event("persistence_write_blocked", c_str, pers_err)
                         return f"[GUARD PERSISTENCE ISOLATION]: {pers_err}"
+                if eff_block_destr:
                     os_dirs = WINDOWS_OS_DIRS if sys.platform == "win32" else POSIX_OS_DIRS
                     for sys_dir in os_dirs:
                         if _is_under_prefix(c_low, sys_dir):
@@ -1893,20 +2080,11 @@ class WorkspaceGuard:
                     self.record_security_event(f"workspace_boundary_{mode}_blocked", norm, reason)
                     return f"[GUARD WORKSPACE SANDBOX]: {reason}"
 
-        if mode == "write" and self.restrict_to_workspace and self.readonly_workspace_roots:
-            cand_low = str(resolved).lower().rstrip("\\/")
-            ro_norms = {str(r).lower().rstrip("\\/") for r in self.readonly_workspace_roots}
-            best_root: Optional[Path] = None
-            best_len = -1
-            for ws in (*self.workspace_roots, *self.readonly_workspace_roots):
-                ws_low = str(ws).lower().rstrip("\\/")
-                if _is_under_prefix(cand_low, ws_low) and len(ws_low) > best_len:
-                    best_root = ws
-                    best_len = len(ws_low)
-            if best_root is not None and str(best_root).lower().rstrip("\\/") in ro_norms:
-                reason = f"ERR_READONLY_WORKSPACE: Secondary workspace `{best_root}` is mounted as read-only; write access to `{norm}` is prohibited."
-                self.record_security_event("readonly_workspace_write_blocked", norm, reason)
-                return f"[GUARD WORKSPACE SANDBOX]: {reason}"
+        if mode == "write" and self.readonly_workspace_roots:
+            ro_reason = self._check_readonly_workspace_write(resolved)
+            if ro_reason:
+                self.record_security_event("readonly_workspace_write_blocked", norm, ro_reason)
+                return f"[GUARD WORKSPACE SANDBOX]: {ro_reason}"
 
         gate_err = _invoke_extra_access_gate(
             self.extra_access_gate,
@@ -2574,10 +2752,30 @@ class WorkspaceGuard:
                     if inline_err:
                         return inline_err
 
-        has_shell_write = (not is_python_code) and bool(_SHELL_WRITE_CMD_RE.search(eff_cmd))
+        masked_eff_cmd = _mask_shell_quoted_literals(eff_cmd) if not is_python_code else eff_cmd
+        has_shell_write = (not is_python_code) and bool(_SHELL_WRITE_CMD_RE.search(masked_eff_cmd))
         null_devs = frozenset({"/dev/null", "nul", "//./nul"})
         read_blocked = self._read_blocked_prefixes()
         write_blocked = self._write_blocked_prefixes()
+        eff_block_destr = self._effective_block_destructive_commands()
+        block_git_meta = self._should_block_git_repo_meta()
+
+        if not is_python_code and self._effective_protect_host_credentials():
+            for m_npm in _NPMRC_TOKEN_RE.finditer(eff_cmd):
+                npm_tok = m_npm.group(1).strip()
+                npm_cand = self.normalize_target_path(npm_tok, base_dir=eff_base)
+                npm_err = self._is_blocked_npmrc_target(npm_cand, npm_tok)
+                if npm_err:
+                    self.record_security_event("cmd_credential_access_blocked", command, npm_err)
+                    return f"[GUARD CREDENTIAL ISOLATION]: {npm_err}"
+
+        # Collect redirection target tokens in shell clauses so `readonly_workspace_roots` blocks `> ro/file` even in L4
+        redir_write_tokens: Set[str] = set()
+        if not is_python_code and self.readonly_workspace_roots:
+            for m_rd in re.finditer(r"(?:^|[\s;|(&])\d*>{1,2}\s*(?:\"([^\"\r\n]+)\"|'([^'\r\n]+)'|([^\s\"'|&;<>()`]+))", eff_cmd):
+                rt = (m_rd.group(1) or m_rd.group(2) or m_rd.group(3) or "").strip()
+                if rt:
+                    redir_write_tokens.add(rt)
 
         for tok, is_exec_pos in self._extract_command_path_items(eff_cmd, is_python_code=is_python_code):
             raw_tok_norm = tok.strip().strip("\"'").replace("\\", "/").lower()
@@ -2589,6 +2787,16 @@ class WorkspaceGuard:
                 return f"[GUARD WORKSPACE SANDBOX]: {reason}"
 
             tok_for_norm = re.sub(r"::(?!\$).*$", "", tok) if "::" in tok and not _NTFS_ADS_STREAM_TYPE_RE.search(tok) else tok
+            if not is_python_code and ":" in tok_for_norm:
+                m_vol = _DOCKER_BIND_VOL_RE.match(tok_for_norm)
+                if m_vol is not None:
+                    tok_for_norm = m_vol.group("host")
+                elif not _WIN_DRIVE_ABS_RE.match(tok_for_norm):
+                    # Non-ADS colon-separated CLI spec such as `HEAD:refs/heads/main`, `main:src/app.py`, or `image:tag`
+                    rhs_part = tok_for_norm.split(":", 1)[1]
+                    if not _PARENT_TRAVERSAL_RE.search(rhs_part) and not _HOME_ENV_TOKEN_RE.search(tok_for_norm):
+                        continue
+
             base_cand = self.normalize_target_path(tok_for_norm, base_dir=eff_base)
             if str(base_cand).replace("\\", "/").lower() in null_devs:
                 continue
@@ -2603,15 +2811,30 @@ class WorkspaceGuard:
                 if re.search(pat, nc_str):
                     self.record_security_event("cmd_credential_access_blocked", command, reason)
                     return f"[GUARD CREDENTIAL ISOLATION]: {reason}"
-            if self.block_destructive_commands and (has_shell_write or not is_python_code):
-                pers_err = check_persistence_components(base_cand)
-                if pers_err:
+            npm_tok_err = self._is_blocked_npmrc_target(base_cand, tok_for_norm)
+            if npm_tok_err:
+                self.record_security_event("cmd_credential_access_blocked", command, npm_tok_err)
+                return f"[GUARD CREDENTIAL ISOLATION]: {npm_tok_err}"
+            if has_shell_write and (eff_block_destr or block_git_meta):
+                pers_err = check_persistence_components(base_cand, check_git_repo_meta=block_git_meta)
+                if pers_err and (eff_block_destr or "Git repository" in pers_err):
                     self.record_security_event("cmd_persistence_blocked", command, pers_err)
                     return f"[GUARD PERSISTENCE ISOLATION]: {pers_err}"
             if has_shell_write and any(_is_under_prefix(nc_low, w) for w in write_blocked):
                 reason = "Modifying MCP server code, config, or audit logs via shell is prohibited."
                 self.record_security_event("cmd_self_tamper_blocked", command, reason)
                 return f"[GUARD ANTI-TAMPER]: {reason}"
+            if self.readonly_workspace_roots and not is_exec_pos and (
+                tok in redir_write_tokens
+                or (
+                    has_shell_write
+                    and not re.search(r"(?i)\b(?:cp|Copy-Item|cpi)\b", masked_eff_cmd)
+                )
+            ):
+                ro_cmd_err = self._check_readonly_workspace_write(base_cand)
+                if ro_cmd_err:
+                    self.record_security_event("readonly_workspace_write_blocked", command, ro_cmd_err)
+                    return f"[GUARD WORKSPACE SANDBOX]: {ro_cmd_err}"
 
             if restrict_ws and not self._is_under_any_workspace(base_cand):
                 if (not is_python_code) and is_exec_pos and self._is_allowed_runtime_executable(base_cand):
@@ -2719,7 +2942,11 @@ class WorkspaceGuard:
                 if os.path.islink(unres) or (callable(getattr(unres, "is_junction", None)) and unres.is_junction()):
                     return False
                 st_u = os.lstat(unres)
-                if bool(getattr(st_u, "st_file_attributes", 0) & 0x0400):
+                tag_u = int(getattr(st_u, "st_reparse_tag", 0) or 0)
+                if tag_u != 0:
+                    if tag_u in (0xA000000C, 0xA0000003):
+                        return False
+                elif bool(getattr(st_u, "st_file_attributes", 0) & 0x0400):
                     return False
             except FileNotFoundError:
                 pass
@@ -2742,7 +2969,7 @@ class WorkspaceGuard:
                 return False
         return True
 
-    def check_destructive_command(self, command: str, cwd: Optional[str] = None) -> Optional[str]:
+    def check_destructive_command(self, command: str, cwd: Optional[str] = None, *, _depth: int = 0) -> Optional[str]:
         pipelock_err = self.check_command_pipelock(command, cwd=cwd, is_python_code=False)
         if pipelock_err:
             return pipelock_err
@@ -2752,22 +2979,62 @@ class WorkspaceGuard:
             or (str(self.workspace_roots[0]) if self.workspace_roots else "")
             or str(Path.cwd())
         )
-        clauses = [c for c in _SHELL_CLAUSE_SPLIT_RE.split(cleaned) if c and c.strip()]
-        active_cmd_patterns = self._active_destructive_cmd_patterns()
-        for idx_p, (pat, reason) in enumerate(active_cmd_patterns):
-            if self.block_destructive_commands and idx_p == 0 and clauses:
-                bad_hit = False
-                for cl in clauses:
-                    if re.search(pat, cl) and not self._is_safe_workspace_build_clean_clause(cl, eff_base):
-                        bad_hit = True
-                        break
-                if bad_hit:
+        # Inspect inline `python -c "..."` and subshell `-c`/`/c`/`-Command` payloads before masking quoted strings
+        if _depth < 2:
+            for m_pyc in _INLINE_PY_DASH_C_RE.finditer(cleaned):
+                raw_inline = m_pyc.group(1) if m_pyc.group(1) is not None else (m_pyc.group(2) or "")
+                py_inline = raw_inline.replace('\\"', '"').replace("\\\\", "\\") if m_pyc.group(1) is not None else raw_inline
+                if py_inline.strip():
+                    py_err = self.check_python_code_safety(py_inline, cwd=eff_base)
+                    if py_err:
+                        return py_err
+            for m_sub in _INLINE_SUBSHELL_RE.finditer(cleaned):
+                raw_sub = m_sub.group(1) if m_sub.group(1) is not None else (m_sub.group(2) or "").replace("''", "'")
+                sub_sh = raw_sub.replace('\\"', '"').replace("\\\\", "\\") if m_sub.group(1) is not None else raw_sub
+                if sub_sh.strip():
+                    sub_err = self.check_destructive_command(sub_sh, cwd=eff_base, _depth=_depth + 1)
+                    if sub_err:
+                        return sub_err
+
+        masked = _mask_shell_quoted_literals(cleaned)
+        raw_clauses = [c for c in _SHELL_CLAUSE_SPLIT_RE.split(cleaned) if c and c.strip()]
+        masked_clauses = [c for c in _SHELL_CLAUSE_SPLIT_RE.split(masked) if c and c.strip()]
+        eff_block_destr = self._effective_block_destructive_commands()
+
+        if eff_block_destr:
+            del_pat, del_reason = USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS[0]
+            # Pair masked and raw clauses if split counts align (fallback to raw_clauses with per-clause masking)
+            clause_pairs = (
+                list(zip(masked_clauses, raw_clauses))
+                if len(masked_clauses) == len(raw_clauses)
+                else [(_mask_shell_quoted_literals(rc), rc) for rc in raw_clauses]
+            )
+            for m_cl, r_cl in clause_pairs:
+                if re.search(del_pat, m_cl) and not self._is_safe_workspace_build_clean_clause(r_cl, eff_base):
+                    self.record_security_event("destructive_cmd_blocked", command, del_reason)
+                    return f"[GUARD DANGEROUS COMMAND BLOCKED]: {del_reason}"
+
+            for idx_u, (pat, reason) in enumerate(USER_CONFIGURABLE_DESTRUCTIVE_CMD_PATTERNS[1:], start=1):
+                if idx_u == 4:
+                    for m_cl, r_cl in clause_pairs:
+                        if _CLAUSE_HEAD_KILL_VERB_RE.search(m_cl) and re.search(pat, r_cl):
+                            self.record_security_event("destructive_cmd_blocked", command, reason)
+                            return f"[GUARD DANGEROUS COMMAND BLOCKED]: {reason}"
+                    continue
+                if re.search(pat, masked):
                     self.record_security_event("destructive_cmd_blocked", command, reason)
                     return f"[GUARD DANGEROUS COMMAND BLOCKED]: {reason}"
-                continue
-            if re.search(pat, cleaned):
-                self.record_security_event("destructive_cmd_blocked", command, reason)
-                return f"[GUARD DANGEROUS COMMAND BLOCKED]: {reason}"
+
+        clause_pairs_self = (
+            list(zip(masked_clauses, raw_clauses))
+            if len(masked_clauses) == len(raw_clauses)
+            else [(_mask_shell_quoted_literals(rc), rc) for rc in raw_clauses]
+        )
+        for pat_s, reason_s in MCP_SELF_PROTECT_CMD_PATTERNS:
+            for m_cl, r_cl in clause_pairs_self:
+                if _CLAUSE_HEAD_KILL_VERB_RE.search(m_cl) and re.search(pat_s, r_cl):
+                    self.record_security_event("destructive_cmd_blocked", command, reason_s)
+                    return f"[GUARD DANGEROUS COMMAND BLOCKED]: {reason_s}"
         return None
 
     def check_python_code_safety(self, code: str, cwd: Optional[str] = None) -> Optional[str]:
@@ -2775,7 +3042,7 @@ class WorkspaceGuard:
         pipelock_err = self.check_command_pipelock(code_no_comments, cwd=cwd, is_python_code=True)
         if pipelock_err:
             return pipelock_err
-        if not self.block_destructive_commands:
+        if not self._effective_block_destructive_commands():
             if re.search(
                 r"(?i)\b(?:Stop-Process|taskkill)\b[^\n]*(?:launcher\.py|server\.py|cosmos_mcp|cloudflared|ngrok)",
                 code_no_comments,
@@ -2851,8 +3118,17 @@ class WorkspaceGuard:
         if not text:
             return text
         out = text
-        for regex, repl in SECRET_REDACT_PATTERNS:
+        for regex, repl in MCP_SELF_REDACT_PATTERNS:
             out = regex.sub(repl, out)
+        should_redact_project = (
+            bool(getattr(self.policy, "redact_project_secrets", False))
+            or bool(getattr(self, "redact_project_secrets", False))
+            or self.tier == "L1"
+            or bool(_READONLY_CALL_CTX.get())
+        )
+        if should_redact_project:
+            for regex, repl in PROJECT_SECRET_REDACT_PATTERNS:
+                out = regex.sub(repl, out)
         for sec in self._extra_secret_literals:
             if sec in out:
                 out = out.replace(sec, "[REDACTED_SECRET_BY_GUARD]")

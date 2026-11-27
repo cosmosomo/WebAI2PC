@@ -3513,6 +3513,12 @@ CUA_WINDOW_INPUT_SCHEMA: Dict[str, Any] = {
         "max_elements": {"type": "integer", "default": 60, "description": "Max UIA elements returned (5..200)"},
         "save_path": {"type": "string", "default": "", "description": "Optional workspace path to save screenshot"},
         "force_discard_unsaved": {"type": "boolean", "default": False, "description": "Explicitly confirm closing unsaved window"},
+        "delivery_mode": {
+            "type": "string",
+            "enum": ["background_zero_focus", "foreground_physical"],
+            "default": "background_zero_focus",
+            "description": "Input delivery mode: background_zero_focus (PostMessageW/UIA, zero focus steal) or foreground_physical",
+        },
         "caller": {"type": "string", "default": "", "description": "Optional caller identifier"},
     },
     "required": [],
@@ -3533,6 +3539,7 @@ class CuaWindowPackPlugin:
         state_root: Optional[Union[str, Path]] = None,
         prefix: str = "",
         human_idle_threshold_ms: int = DEFAULT_HUMAN_IDLE_THRESHOLD_MS,
+        delivery_mode: str = "background_zero_focus",
         idle_ms_provider: Optional[Callable[[], int]] = None,
         desktop_name_provider: Optional[Callable[[], str]] = None,
         extra_seed_pids: Iterable[int] = (),
@@ -3544,10 +3551,22 @@ class CuaWindowPackPlugin:
         self._explicit_state_root: Optional[Path] = canonical_realpath(state_root) if state_root else None
         self._explicit_prefix = (prefix or "").strip()
         self.human_idle_threshold_ms = max(0, int(human_idle_threshold_ms))
+        self.delivery_mode = (delivery_mode or "background_zero_focus").strip() or "background_zero_focus"
         self._idle_ms_provider = idle_ms_provider
         self._desktop_name_provider = desktop_name_provider
         self._extra_seed_pids: Set[int] = {int(p) for p in extra_seed_pids if int(p or 0) > 0}
         self.include_self_pid = bool(include_self_pid)
+
+    def _effective_human_idle_threshold_ms(self) -> int:
+        if self.policy is not None:
+            for attr_name in ("human_idle_threshold_ms", "cua_human_idle_threshold_ms"):
+                raw_thr = getattr(self.policy, attr_name, None)
+                if raw_thr is not None:
+                    try:
+                        return max(0, int(raw_thr))
+                    except (TypeError, ValueError):
+                        pass
+        return max(0, int(self.human_idle_threshold_ms))
 
     def register_session_pid(self, pid: int) -> None:
         if int(pid or 0) > 0:
@@ -3652,9 +3671,11 @@ class CuaWindowPackPlugin:
         max_elements: int = 60,
         save_path: str = "",
         force_discard_unsaved: bool = False,
+        delivery_mode: str = "",
         caller: str = "",
     ) -> Any:
         _ = caller
+        eff_delivery_mode = (delivery_mode or self.delivery_mode or "background_zero_focus").strip().lower()
         eff_prefix = self._effective_prefix()
         short_tier, restrict_l3, ws_roots = self._resolve_runtime_scope()
         ws_primary = str(ws_roots[0]) if ws_roots else str(Path.cwd())
@@ -3707,7 +3728,7 @@ class CuaWindowPackPlugin:
             doc["cursor_unchanged"] = bool(cur_before == cur_after)
             doc["clipboard_unchanged"] = bool(clip_before == clip_after)
             doc["delta_clip"] = int(clip_after - clip_before)
-            doc["delivery_mode"] = "background_zero_focus"
+            doc["delivery_mode"] = eff_delivery_mode
             return doc
 
         enforce_l3_fence = bool(short_tier == "L3" or restrict_l3)
@@ -3892,10 +3913,15 @@ class CuaWindowPackPlugin:
                     )
                 )
 
-        # 4. Enforce L4 human-present yield (`GetLastInputInfo < 2500ms`) on mutating actions
-        if short_tier == "L4" and act in CUA_MUTATING_ACTIONS and self.human_idle_threshold_ms > 0:
+        # 4. Enforce human-present yield ONLY on foreground physical input modes (never on `background_zero_focus` PostMessageW)
+        eff_idle_threshold_ms = self._effective_human_idle_threshold_ms()
+        if (
+            eff_delivery_mode != "background_zero_focus"
+            and act in CUA_MUTATING_ACTIONS
+            and eff_idle_threshold_ms > 0
+        ):
             idle_ms = self._query_idle_ms()
-            if idle_ms < self.human_idle_threshold_ms:
+            if idle_ms < eff_idle_threshold_ms:
                 return _attach_zero_focus_proof(
                     {
                         "ok": False,
@@ -3907,10 +3933,10 @@ class CuaWindowPackPlugin:
                         "human_active_yield": True,
                         "error_code": ERR_HUMAN_ACTIVE_YIELD,
                         "idle_ms": idle_ms,
-                        "threshold_ms": self.human_idle_threshold_ms,
+                        "threshold_ms": eff_idle_threshold_ms,
                         "error": (
                             f"[CUA HUMAN ACTIVE YIELD] ({ERR_HUMAN_ACTIVE_YIELD}): Physical keyboard/mouse input was active "
-                            f"{idle_ms}ms ago (< {self.human_idle_threshold_ms}ms threshold); yielding to human in L4."
+                            f"{idle_ms}ms ago (< {eff_idle_threshold_ms}ms threshold); yielding to human during foreground input."
                         ),
                     }
                 )

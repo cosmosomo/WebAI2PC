@@ -232,7 +232,7 @@ def _collect_skill_folder_files(
         with os.scandir(curr_dir) as it:
             for entry in it:
                 full_path = os.path.join(curr_dir, entry.name)
-                is_link = entry.is_symlink() or is_link_or_junction(full_path)
+                is_link = is_link_or_junction(full_path)
                 is_dir = False if is_link else entry.is_dir(follow_symlinks=False)
                 if entry.name in exclude_files or (is_dir and entry.name in exclude_dirs):
                     continue
@@ -1888,11 +1888,26 @@ class SkillPackageManager:
             }
 
         eff_skill_dir = str(orig_skill_dir or src_dir)
+        pre_pkg: Optional[FetchedSkillPackage] = None
+        if orig_skill_dir is not None and self.config.auto_discover_host_roots and self._current_tier_level() >= 3:
+            if any(is_subpath(orig_skill_dir.parent, hp) for _, hp in self._host_skill_roots()):
+                from cosmos_mcp.capabilities.skills.vetter import _collect_local_dir_entries
+
+                entries_ad = _collect_local_dir_entries(src_dir, config=self.config)
+                pre_pkg = FetchedSkillPackage(
+                    source_type="local",
+                    source_id=str(src_dir),
+                    source_url=src_dir.as_uri(),
+                    skill_name=clean_name,
+                    entries=entries_ad,
+                    subpath="",
+                )
         prep = self.prepare_install(
             source_ref=str(src_dir),
             scope="managed",
             force_name=clean_name,
             overwrite=False,
+            pre_fetched_package=pre_pkg,
         )
         if not prep.get("ok"):
             out_prep = dict(prep)

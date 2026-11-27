@@ -3289,7 +3289,7 @@ def _detect_ast_mutation_in_probe(code: str) -> Optional[str]:
     blocked_names = {"__import__", "__builtins__", "builtins"}
     blocked_attrs = {
         "write_text", "write_bytes", "unlink", "rmdir", "removedirs",
-        "rmtree", "remove", "rename", "replace", "mkdir", "makedirs",
+        "rmtree", "rename", "mkdir", "makedirs",
         "system", "popen", "Popen", "startfile",
         "import_module", "dlopen", "dlsym", "WinDLL", "CDLL", "OleDLL", "PyDLL", "LoadLibrary",
         "__builtins__", "__subclasses__", "f_builtins", "f_globals",
