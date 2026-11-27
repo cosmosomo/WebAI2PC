@@ -2142,6 +2142,8 @@ def ensure_initialized(
     annotation_mode: str = "",
     python_path: Optional[str] = None,
     scan_host_global_skills: Optional[bool] = None,
+    redact_project_secrets: Optional[bool] = None,
+    enable_oneclick_token_route: Optional[bool] = None,
     tray_enabled: Optional[bool] = None,
     tunnel_mode: Optional[str] = None,
     public_gateway_base: Optional[str] = None,
@@ -2213,6 +2215,16 @@ def ensure_initialized(
         bool(scan_host_global_skills)
         if scan_host_global_skills is not None
         else parse_bool_flag(saved_cfg.get("scan_host_global_skills"), default=False)
+    )
+    eff_redact_project_secrets = (
+        bool(redact_project_secrets)
+        if redact_project_secrets is not None
+        else parse_bool_flag(saved_cfg.get("redact_project_secrets"), default=False)
+    )
+    eff_enable_oneclick_route = (
+        bool(enable_oneclick_token_route)
+        if enable_oneclick_token_route is not None
+        else parse_bool_flag(saved_cfg.get("enable_oneclick_token_route"), default=False)
     )
     eff_tray_enabled = (
         bool(tray_enabled)
@@ -2320,6 +2332,8 @@ def ensure_initialized(
             "workspace_roots": [str(p) for p in roots_tuple],
             "readonly_workspace_roots": [str(p) for p in ro_roots_tuple],
             "scan_host_global_skills": eff_scan_host_skills,
+            "redact_project_secrets": eff_redact_project_secrets,
+            "enable_oneclick_token_route": eff_enable_oneclick_route,
             "tray_enabled": eff_tray_enabled,
             "enabled_packs": list(eff_packs),
             "keep_awake": eff_awake,
@@ -2471,6 +2485,8 @@ def ensure_initialized(
         "workspace_roots": [str(p) for p in roots_tuple],
         "readonly_workspace_roots": [str(p) for p in ro_roots_tuple],
         "scan_host_global_skills": eff_scan_host_skills,
+        "redact_project_secrets": eff_redact_project_secrets,
+        "enable_oneclick_token_route": eff_enable_oneclick_route,
         "tray_enabled": eff_tray_enabled,
         "tunnel_mode": eff_tunnel_mode,
         "public_gateway_base": eff_pg_base,
@@ -2516,6 +2532,8 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        enable_oneclick_token_route: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -2735,6 +2753,16 @@ class LiveRuntimePolicy:
             bool(scan_host_global_skills)
             if scan_host_global_skills is not None
             else parse_bool_flag(file_cfg.get("scan_host_global_skills"), default=False)
+        )
+        self.redact_project_secrets: bool = (
+            bool(redact_project_secrets)
+            if redact_project_secrets is not None
+            else parse_bool_flag(file_cfg.get("redact_project_secrets"), default=False)
+        )
+        self.enable_oneclick_token_route: bool = (
+            bool(enable_oneclick_token_route)
+            if enable_oneclick_token_route is not None
+            else parse_bool_flag(file_cfg.get("enable_oneclick_token_route"), default=False)
         )
         self.allow_loopback_dev: bool = (
             bool(allow_loopback_dev)
@@ -2961,7 +2989,7 @@ class LiveRuntimePolicy:
             return out
 
     def _sync_secondary_config_projections_locked(self, authoritative_doc: Mapping[str, Any]) -> None:
-        """One-way project authoritative `self.cfg_path` doc onto legacy `state/service.json` & existing `config.json`.
+        """One-way project authoritative `self.cfg_path` doc onto legacy `state/service.json`, `config/service_config.json`, & `config.json`.
 
         MUST ONLY be called inside `with get_file_lock(self.cfg_path):`. Never reads secondary files back into
         authoritative policy state and never swallows disk write errors.
@@ -2969,10 +2997,27 @@ class LiveRuntimePolicy:
         if self.cfg_path is None:
             return
         auth_norm = os.path.normcase(str(self.cfg_path.resolve()))
+        proj_doc: Dict[str, Any] = dict(authoritative_doc)
+        if proj_doc.get("public_base") == "":
+            proj_doc["public_url"] = ""
+            proj_doc["public_base_url"] = ""
+        if "workers_dev_custom_domain" in proj_doc:
+            proj_doc["workers_custom_domain"] = proj_doc["workers_dev_custom_domain"]
+
         svc_name = f"service_{self.eff_prefix}.json" if self.eff_prefix != "pc" else "service.json"
-        state_svc = self.state_root / "state" / svc_name
-        if state_svc.is_file() and os.path.normcase(str(state_svc.resolve())) != auth_norm:
-            atomic_write_json(state_svc, dict(authoritative_doc))
+        legacy_svc_cfg_name = (
+            f"service_config_{self.eff_prefix}.json" if self.eff_prefix != "pc" else "service_config.json"
+        )
+        secondary_full_files: List[Path] = [
+            self.state_root / "state" / svc_name,
+            self.state_root / "config" / legacy_svc_cfg_name,
+        ]
+        if self.eff_prefix == "pc":
+            secondary_full_files.append(self.state_root / "config" / "config.json")
+        for sec_p in secondary_full_files:
+            if sec_p.is_file() and os.path.normcase(str(sec_p.resolve())) != auth_norm:
+                atomic_write_json(sec_p, dict(proj_doc))
+
         root_cfg = self.state_root / "config.json"
         if self.eff_prefix == "pc" and root_cfg.is_file() and os.path.normcase(str(root_cfg.resolve())) != auth_norm:
             root_doc: Dict[str, Any] = {}
@@ -2982,7 +3027,7 @@ class LiveRuntimePolicy:
                     root_doc = dict(loaded_r)
             except Exception:
                 root_doc = {}
-            root_doc.update(dict(authoritative_doc))
+            root_doc.update(proj_doc)
             atomic_write_json(root_cfg, root_doc)
 
     def to_status_dict(
@@ -3010,6 +3055,8 @@ class LiveRuntimePolicy:
                 "workspace_roots": [str(p) for p in self.workspace_roots],
                 "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
                 "scan_host_global_skills": self.scan_host_global_skills,
+                "redact_project_secrets": self.redact_project_secrets,
+                "enable_oneclick_token_route": self.enable_oneclick_token_route,
                 "allow_loopback_dev": self.allow_loopback_dev,
                 "protect_dotenv_files": self.protect_dotenv_files,
                 "protect_host_credentials": self.protect_host_credentials,
@@ -3090,6 +3137,17 @@ class LiveRuntimePolicy:
         if self.guard is not None:
             self.guard.tool_prefix = self.tool_prefix
             try:
+                setattr(self.guard, "redact_project_secrets", bool(self.redact_project_secrets))
+            except Exception:
+                pass
+            try:
+                extra_guard_kw: Dict[str, Any] = {}
+                try:
+                    sig_p = inspect.signature(self.guard.set_workspace_policy).parameters
+                    if "redact_project_secrets" in sig_p:
+                        extra_guard_kw["redact_project_secrets"] = self.redact_project_secrets
+                except Exception:
+                    pass
                 self.guard.set_workspace_policy(
                     self.workspace_roots,
                     restrict_to_workspace=self.restrict_to_workspace,
@@ -3101,6 +3159,7 @@ class LiveRuntimePolicy:
                     block_destructive_commands=self.block_destructive_commands,
                     state_root=self.state_root,
                     product_root=self._product_root,
+                    **extra_guard_kw,
                 )
             except TypeError as exc:
                 msg = str(exc)
@@ -3260,8 +3319,16 @@ class LiveRuntimePolicy:
                     cur_doc["_gateways_mirrored_mode"] = self.tunnel_mode
                     cur_doc["pinned_gateway_urls"] = list(self.pinned_gateway_urls)
                     if gw_id == "workers_dev":
-                        if slot.get("public_url"):
-                            cur_doc["workers_dev_url"] = slot["public_url"]
+                        slot_raw_wd = _clean_public_https_url(slot.get("workers_dev_url"))
+                        slot_pub = _clean_public_https_url(slot.get("public_url"))
+                        existing_wd = _clean_public_https_url(cur_doc.get("workers_dev_url"))
+                        if slot_raw_wd and ".workers.dev" in (urlsplit(slot_raw_wd).hostname or "").lower():
+                            cur_doc["workers_dev_url"] = slot_raw_wd
+                        elif slot_pub and (
+                            ".workers.dev" in (urlsplit(slot_pub).hostname or "").lower()
+                            or not existing_wd
+                        ):
+                            cur_doc["workers_dev_url"] = slot_pub
                         cur_doc["workers_dev_account_id"] = self.workers_dev_account_id
                         cur_doc["workers_dev_script_name"] = self.workers_dev_script_name
                         cur_doc["workers_dev_subdomain"] = self.workers_dev_subdomain
@@ -3414,6 +3481,8 @@ class LiveRuntimePolicy:
             "enabled_packs": self.enabled_packs,
             "keep_awake": self.keep_awake,
             "scan_host_global_skills": self.scan_host_global_skills,
+            "redact_project_secrets": self.redact_project_secrets,
+            "enable_oneclick_token_route": self.enable_oneclick_token_route,
             "allow_loopback_dev": self.allow_loopback_dev,
             "protect_dotenv_files": self.protect_dotenv_files,
             "protect_host_credentials": self.protect_host_credentials,
@@ -3454,6 +3523,8 @@ class LiveRuntimePolicy:
         self.enabled_packs = snap["enabled_packs"]
         self.keep_awake = snap["keep_awake"]
         self.scan_host_global_skills = snap["scan_host_global_skills"]
+        self.redact_project_secrets = snap["redact_project_secrets"]
+        self.enable_oneclick_token_route = snap["enable_oneclick_token_route"]
         self.allow_loopback_dev = snap["allow_loopback_dev"]
         self.protect_dotenv_files = snap["protect_dotenv_files"]
         self.protect_host_credentials = snap["protect_host_credentials"]
@@ -3542,6 +3613,8 @@ class LiveRuntimePolicy:
             "workspace_roots": [str(p) for p in self.workspace_roots],
             "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
             "scan_host_global_skills": self.scan_host_global_skills,
+            "redact_project_secrets": self.redact_project_secrets,
+            "enable_oneclick_token_route": self.enable_oneclick_token_route,
             "allow_loopback_dev": self.allow_loopback_dev,
             "protect_dotenv_files": self.protect_dotenv_files,
             "protect_host_credentials": self.protect_host_credentials,
@@ -3586,6 +3659,8 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        enable_oneclick_token_route: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -3655,6 +3730,10 @@ class LiveRuntimePolicy:
             plan["keep_awake"] = bool(keep_awake)
         if scan_host_global_skills is not None:
             plan["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+        if redact_project_secrets is not None:
+            plan["redact_project_secrets"] = parse_bool_flag(redact_project_secrets, default=False)
+        if enable_oneclick_token_route is not None:
+            plan["enable_oneclick_token_route"] = parse_bool_flag(enable_oneclick_token_route, default=False)
         if allow_loopback_dev is not None:
             plan["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
         if protect_dotenv_files is not None:
@@ -3831,6 +3910,12 @@ class LiveRuntimePolicy:
                 self.enabled_packs = parse_pack_spec(merged_doc.get("enabled_packs"), strict=False)
             if "scan_host_global_skills" in merged_doc and "scan_host_global_skills" not in plan:
                 self.scan_host_global_skills = parse_bool_flag(merged_doc.get("scan_host_global_skills"), default=False)
+            if "redact_project_secrets" in merged_doc and "redact_project_secrets" not in plan:
+                self.redact_project_secrets = parse_bool_flag(merged_doc.get("redact_project_secrets"), default=False)
+            if "enable_oneclick_token_route" in merged_doc and "enable_oneclick_token_route" not in plan:
+                self.enable_oneclick_token_route = parse_bool_flag(
+                    merged_doc.get("enable_oneclick_token_route"), default=False
+                )
             if "allow_loopback_dev" in merged_doc and "allow_loopback_dev" not in plan:
                 self.allow_loopback_dev = parse_bool_flag(merged_doc.get("allow_loopback_dev"), default=True)
             if "protect_dotenv_files" in merged_doc and "protect_dotenv_files" not in plan:
@@ -3941,6 +4026,10 @@ class LiveRuntimePolicy:
                 keep_awake_changed_to = new_ka
         if "scan_host_global_skills" in plan:
             self.scan_host_global_skills = plan["scan_host_global_skills"]
+        if "redact_project_secrets" in plan:
+            self.redact_project_secrets = plan["redact_project_secrets"]
+        if "enable_oneclick_token_route" in plan:
+            self.enable_oneclick_token_route = plan["enable_oneclick_token_route"]
         if "allow_loopback_dev" in plan:
             self.allow_loopback_dev = plan["allow_loopback_dev"]
         if "protect_dotenv_files" in plan:
@@ -4036,6 +4125,8 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        enable_oneclick_token_route: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -4071,6 +4162,8 @@ class LiveRuntimePolicy:
                 enabled_packs=enabled_packs,
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
+                redact_project_secrets=redact_project_secrets,
+                enable_oneclick_token_route=enable_oneclick_token_route,
                 allow_loopback_dev=allow_loopback_dev,
                 protect_dotenv_files=protect_dotenv_files,
                 protect_host_credentials=protect_host_credentials,
@@ -4130,6 +4223,8 @@ class LiveRuntimePolicy:
         enabled_packs: Any = None,
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
+        redact_project_secrets: Optional[bool] = None,
+        enable_oneclick_token_route: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -4165,6 +4260,8 @@ class LiveRuntimePolicy:
                 enabled_packs=enabled_packs,
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
+                redact_project_secrets=redact_project_secrets,
+                enable_oneclick_token_route=enable_oneclick_token_route,
                 allow_loopback_dev=allow_loopback_dev,
                 protect_dotenv_files=protect_dotenv_files,
                 protect_host_credentials=protect_host_credentials,
@@ -4200,6 +4297,12 @@ class LiveRuntimePolicy:
                     enabled_packs=enabled_packs,
                     keep_awake=keep_awake,
                     scan_host_global_skills=scan_host_global_skills,
+                    redact_project_secrets=redact_project_secrets,
+                    enable_oneclick_token_route=enable_oneclick_token_route,
+                    allow_loopback_dev=allow_loopback_dev,
+                    protect_dotenv_files=protect_dotenv_files,
+                    protect_host_credentials=protect_host_credentials,
+                    block_destructive_commands=block_destructive_commands,
                     tray_enabled=tray_enabled,
                     tunnel_mode=tunnel_mode,
                     gateways=gateways,
@@ -4306,6 +4409,10 @@ class LiveRuntimePolicy:
                     merged_doc["keep_awake"] = plan["keep_awake"]
                 if "scan_host_global_skills" in plan:
                     merged_doc["scan_host_global_skills"] = plan["scan_host_global_skills"]
+                if "redact_project_secrets" in plan:
+                    merged_doc["redact_project_secrets"] = plan["redact_project_secrets"]
+                if "enable_oneclick_token_route" in plan:
+                    merged_doc["enable_oneclick_token_route"] = plan["enable_oneclick_token_route"]
                 if "allow_loopback_dev" in plan:
                     merged_doc["allow_loopback_dev"] = plan["allow_loopback_dev"]
                 if "protect_dotenv_files" in plan:
@@ -4469,6 +4576,16 @@ class LiveRuntimePolicy:
             if "scan_host_global_skills" in merged and merged["scan_host_global_skills"] is not None
             else None
         )
+        redact_sec_val = (
+            parse_bool_flag(merged["redact_project_secrets"], default=False)
+            if "redact_project_secrets" in merged and merged["redact_project_secrets"] is not None
+            else None
+        )
+        en_oc_val = (
+            parse_bool_flag(merged["enable_oneclick_token_route"], default=False)
+            if "enable_oneclick_token_route" in merged and merged["enable_oneclick_token_route"] is not None
+            else None
+        )
         allow_lb_val = (
             parse_bool_flag(merged["allow_loopback_dev"], default=True)
             if "allow_loopback_dev" in merged and merged["allow_loopback_dev"] is not None
@@ -4555,6 +4672,8 @@ class LiveRuntimePolicy:
             enabled_packs=en_packs,
             keep_awake=ka_val,
             scan_host_global_skills=scan_sk_val,
+            redact_project_secrets=redact_sec_val,
+            enable_oneclick_token_route=en_oc_val,
             allow_loopback_dev=allow_lb_val,
             protect_dotenv_files=prot_env_val,
             protect_host_credentials=prot_cred_val,
@@ -4648,6 +4767,12 @@ class LiveRuntimePolicy:
                             self.enabled_packs = parse_pack_spec(raw_cfg.get("enabled_packs"), strict=False)
                         if "scan_host_global_skills" in raw_cfg:
                             self.scan_host_global_skills = parse_bool_flag(raw_cfg.get("scan_host_global_skills"), default=False)
+                        if "redact_project_secrets" in raw_cfg:
+                            self.redact_project_secrets = parse_bool_flag(raw_cfg.get("redact_project_secrets"), default=False)
+                        if "enable_oneclick_token_route" in raw_cfg:
+                            self.enable_oneclick_token_route = parse_bool_flag(
+                                raw_cfg.get("enable_oneclick_token_route"), default=False
+                            )
                         if "allow_loopback_dev" in raw_cfg:
                             self.allow_loopback_dev = parse_bool_flag(raw_cfg.get("allow_loopback_dev"), default=True)
                         if "protect_dotenv_files" in raw_cfg:

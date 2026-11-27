@@ -1160,8 +1160,11 @@ def _service_cfg_candidate_paths(state_root: Path, prefix: str = "pc") -> Tuple[
 
 
 def _read_merged_service_config(state_root: Path, prefix: str = "pc") -> Dict[str, Any]:
+    candidates = _service_cfg_candidate_paths(state_root, prefix)
+    svc_canonical = candidates[0]
+    fallback_paths = candidates[1:]
     merged: Dict[str, Any] = {}
-    for cand in reversed(_service_cfg_candidate_paths(state_root, prefix)):
+    for cand in reversed(fallback_paths):
         if not cand.is_file():
             continue
         with contextlib.suppress(Exception):
@@ -1172,6 +1175,37 @@ def _read_merged_service_config(state_root: Path, prefix: str = "pc") -> Dict[st
                         merged[k] = v
                     elif k not in merged:
                         merged[k] = v
+    if svc_canonical.is_file():
+        with contextlib.suppress(Exception):
+            auth_doc = json.loads(svc_canonical.read_text(encoding="utf-8-sig"))
+            if isinstance(auth_doc, dict):
+                for k, v in auth_doc.items():
+                    if v is not None:
+                        merged[k] = v
+                # Authoritative cleared URL/custom-domain fields in config/service.json must never
+                # be revived by legacy service_config.json or root config.json aliases.
+                has_cleared_pub = any(
+                    uk in auth_doc and auth_doc.get(uk) == ""
+                    for uk in ("public_url", "public_base", "public_base_url")
+                )
+                has_nonempty_pub = any(
+                    bool(str(auth_doc.get(uk) or "").strip())
+                    for uk in ("public_url", "public_base", "public_base_url")
+                )
+                if has_cleared_pub and not has_nonempty_pub:
+                    for uk in ("public_url", "public_base", "public_base_url"):
+                        merged[uk] = ""
+                has_cleared_dom = any(
+                    dk in auth_doc and auth_doc.get(dk) == ""
+                    for dk in ("workers_custom_domain", "workers_dev_custom_domain")
+                )
+                has_nonempty_dom = any(
+                    bool(str(auth_doc.get(dk) or "").strip())
+                    for dk in ("workers_custom_domain", "workers_dev_custom_domain")
+                )
+                if has_cleared_dom and not has_nonempty_dom:
+                    merged["workers_custom_domain"] = ""
+                    merged["workers_dev_custom_domain"] = ""
     return merged
 
 
@@ -1191,6 +1225,8 @@ def _merge_write_service_configs(state_root: Path, prefix: str, updates: Dict[st
         targets.append(state_svc)
     if eff == "pc" and (st_root / "config.json").is_file():
         targets.append(st_root / "config.json")
+    if eff == "pc" and (st_root / "config" / "config.json").is_file():
+        targets.append(st_root / "config" / "config.json")
 
     now_ts = round(time.time(), 6)
     for cfg_p in targets:
@@ -1201,7 +1237,7 @@ def _merge_write_service_configs(state_root: Path, prefix: str, updates: Dict[st
                 if isinstance(loaded, dict):
                     existing = dict(loaded)
         for k, v in updates.items():
-            if v is not None and v != "":
+            if v is not None:
                 existing[k] = v
         existing["policy_updated_at"] = max(now_ts, float(existing.get("policy_updated_at") or 0.0) + 0.000001)
         raw_json = (json.dumps(existing, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -1649,6 +1685,9 @@ def import_identity_recovery_png(
         )
         cfg_updates["public_url"] = eff_pub
         cfg_updates["public_base_url"] = eff_pub
+    elif restored_tunnel_mode in ("vps_hub", "vps", "self_hosted") and cfg_updates.get("vps_hub_url"):
+        cfg_updates["public_url"] = cfg_updates["vps_hub_url"]
+        cfg_updates["public_base_url"] = cfg_updates["vps_hub_url"]
 
     if cfg_updates:
         _merge_write_service_configs(st_root, eff_prefix, cfg_updates)
@@ -1657,6 +1696,9 @@ def import_identity_recovery_png(
     restored["recovery_version"] = ver
     restored["workers_dev_url"] = restored_workers_url
     restored["workers_custom_domain"] = restored_custom_domain
+    restored["vps_hub_url"] = str(cfg_updates.get("vps_hub_url") or "").strip()
+    restored["selected_gateway"] = str(cfg_updates.get("selected_gateway") or "").strip()
+    restored["gateways"] = cfg_updates.get("gateways") if isinstance(cfg_updates.get("gateways"), dict) else {}
     restored["has_srvus_key"] = has_srvus_key
     restored["has_endpoint_secret"] = has_endpoint_secret
     restored["restored_tunnel_mode"] = restored_tunnel_mode
@@ -2268,7 +2310,8 @@ def save_workers_custom_domain_local(
     wd_base = str(existing_cfg.get("workers_dev_url") or "").strip().rstrip("/")
     subd = str(existing_cfg.get("workers_subdomain") or existing_cfg.get("workers_dev_subdomain") or "").strip()
     sc_name = str(existing_cfg.get("workers_script_name") or existing_cfg.get("workers_dev_script_name") or "").strip()
-    if (not wd_base or not wd_base.endswith(".workers.dev")) and subd and sc_name:
+    wd_host = (urlsplit(wd_base).hostname or "").strip().lower()
+    if (not wd_base or not wd_host.endswith(".workers.dev")) and subd and sc_name:
         wd_base = f"https://{sc_name}.{subd}.workers.dev"
     if not sec_p.is_file() or not wd_base:
         return {
@@ -2277,28 +2320,40 @@ def save_workers_custom_domain_local(
             "message": "尚未检测到已部署的 Cloudflare Worker 密钥，请先填入一次性 API Token 完成首次部署。",
         }
 
+    from cosmos_mcp.core.config import (
+        apply_endpoint_secret_to_url,
+        collect_pinned_gateway_urls,
+        load_endpoint_secret,
+        normalize_gateways_config,
+        strip_endpoint_secret_from_url,
+    )
+
+    clean_wd_origin = strip_endpoint_secret_from_url(wd_base)
+    active_ep_sec = load_endpoint_secret(st_root, prefix=eff_prefix)
+    wd_with_ep = apply_endpoint_secret_to_url(clean_wd_origin, active_ep_sec) if active_ep_sec else clean_wd_origin
+
     clean_custom = (custom_domain or "").strip().lower()
     if "://" in clean_custom:
         clean_custom = (urlsplit(clean_custom).hostname or clean_custom).strip().lower()
     clean_custom = clean_custom.strip("/")
 
-    active_pub = f"https://{clean_custom}" if clean_custom else wd_base
-    from cosmos_mcp.core.config import collect_pinned_gateway_urls, normalize_gateways_config
+    base_pub = f"https://{clean_custom}" if clean_custom else clean_wd_origin
+    active_pub = apply_endpoint_secret_to_url(base_pub, active_ep_sec) if active_ep_sec else base_pub
 
     gws_cur, sel_cur = normalize_gateways_config(existing_cfg)
     slot_w = dict(gws_cur.get("workers_dev") or {})
     slot_w["enabled"] = True
     slot_w["submode"] = "workers_dev"
     slot_w["public_url"] = active_pub
-    slot_w["workers_dev_url"] = wd_base
+    slot_w["workers_dev_url"] = wd_with_ep
     if clean_custom:
-        slot_w["custom_domain"] = active_pub
+        slot_w["custom_domain"] = f"https://{clean_custom}"
     else:
         slot_w.pop("custom_domain", None)
     gws_cur["workers_dev"] = slot_w
 
     updates: Dict[str, Any] = {
-        "workers_dev_url": wd_base,
+        "workers_dev_url": wd_with_ep,
         "workers_custom_domain": clean_custom,
         "workers_dev_custom_domain": clean_custom,
         "gateways": gws_cur,
@@ -2313,7 +2368,7 @@ def save_workers_custom_domain_local(
     return {
         "ok": True,
         "public_url": active_pub,
-        "workers_dev_url": wd_base,
+        "workers_dev_url": wd_with_ep,
         "custom_domain": clean_custom,
         "tokenless_local_update": True,
     }

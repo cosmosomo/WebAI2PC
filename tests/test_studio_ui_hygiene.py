@@ -264,6 +264,8 @@ def test_studio_and_consent_contrast_across_all_style_packs_and_themes(tmp_path:
                     ratios = driver.evaluate(
                         f"""() => {{
                             {_CONTRAST_HELPER_JS}
+                            const wb = document.getElementById('first-wake-banner');
+                            if (wb) wb.style.display = 'block';
                             const out = {{}};
                             for (const [k, sel] of [
                                 ['wake_btn', '#copy-wake-prompt-btn'],

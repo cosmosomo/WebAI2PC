@@ -62,6 +62,7 @@ from cosmos_mcp.core.config import (
     normalize_prefix,
     parse_bool_flag,
     parse_pack_spec,
+    parse_strict_annotation_mode,
     parse_strict_tier,
     parse_strict_toolset_profile,
     resolve_service_cfg_path,
@@ -90,12 +91,14 @@ from cosmos_mcp.core.fs_tx import (
 from cosmos_mcp.core.proc import verify_pid_alive
 import cosmos_mcp.core.config as _core_cfg
 from cosmos_mcp.launcher import cf_workers_gateway as cfgw
+from cosmos_mcp.launcher import updater as _updater_mod
 from cosmos_mcp.launcher.autostart import disable_autostart, enable_autostart, get_autostart_status
 from cosmos_mcp.launcher.bootstrap import find_suitable_python
 from cosmos_mcp.launcher.daemon import (
     daemon_stop_flag_path,
     request_worker_hot_reload,
     spawn_detached_daemon,
+    sync_repo_src_to_app_src,
 )
 from cosmos_mcp.launcher.doctor import run_connectivity_check
 from cosmos_mcp.launcher.folder_picker import pick_directory_native
@@ -128,6 +131,7 @@ ensure_master_seed_identity = cfgw.ensure_master_seed_identity
 export_identity_recovery_png = cfgw.export_identity_recovery_png
 import_identity_recovery_png = cfgw.import_identity_recovery_png
 deploy_cloudflare_workers_gateway = cfgw.deploy_cloudflare_workers_gateway
+save_workers_custom_domain_local = cfgw.save_workers_custom_domain_local
 probe_public_gateway_online = getattr(cfgw, "probe_public_gateway_online", None)
 
 try:
@@ -760,7 +764,10 @@ def _update_studio_gateway_slot(
                 if extra_slot_fields.get("subdomain"):
                     persist_kw["workers_dev_subdomain"] = str(extra_slot_fields["subdomain"]).strip()
                 if extra_slot_fields.get("custom_domain") is not None:
-                    persist_kw["workers_dev_custom_domain"] = str(extra_slot_fields["custom_domain"]).strip()
+                    raw_cd_field = str(extra_slot_fields["custom_domain"]).strip().lower()
+                    if "://" in raw_cd_field:
+                        raw_cd_field = (urlsplit(raw_cd_field).hostname or raw_cd_field).strip().lower()
+                    persist_kw["workers_dev_custom_domain"] = raw_cd_field.strip("/")
         target["updated_at"] = round(time.time(), 3)
 
     enabled_ids = [gid for gid in STUDIO_GATEWAY_IDS if slots[gid]["enabled"]]
@@ -813,8 +820,18 @@ def _update_studio_gateway_slot(
         gw_extra_patch["prefer_quick_tunnel"] = True
     elif gateway_id == "instant" and submode == "public_gateway":
         gw_extra_patch["prefer_quick_tunnel"] = False
-    if gateway_id == "workers_dev" and slots["workers_dev"].get("public_url"):
-        gw_extra_patch["workers_dev_url"] = slots["workers_dev"]["public_url"]
+    if gateway_id == "workers_dev":
+        wd_slot_cur = slots["workers_dev"]
+        raw_wd_in_slot = _clean_https_candidate(wd_slot_cur.get("workers_dev_url"))
+        pub_wd_in_slot = _clean_https_candidate(wd_slot_cur.get("public_url"))
+        existing_wd_cfg = _clean_https_candidate(extra_cfg.get("workers_dev_url"))
+        if raw_wd_in_slot and ".workers.dev" in (urlsplit(raw_wd_in_slot).hostname or "").lower():
+            gw_extra_patch["workers_dev_url"] = raw_wd_in_slot
+        elif pub_wd_in_slot and (
+            ".workers.dev" in (urlsplit(pub_wd_in_slot).hostname or "").lower()
+            or not existing_wd_cfg
+        ):
+            gw_extra_patch["workers_dev_url"] = pub_wd_in_slot
     elif gateway_id == "self_hosted":
         sh_slot = slots["self_hosted"]
         if sh_slot.get("submode") in ("vps_hub", "vps") and sh_slot.get("public_url"):
@@ -1715,6 +1732,8 @@ def _persist_extra_studio_config(
     subchannel_reconnect_requested_at: Optional[Dict[str, float]] = None,
     readonly_workspace_roots: Optional[Sequence[Any]] = None,
     scan_host_global_skills: Optional[bool] = None,
+    redact_project_secrets: Optional[bool] = None,
+    enable_oneclick_token_route: Optional[bool] = None,
     allow_loopback_dev: Optional[bool] = None,
     protect_dotenv_files: Optional[bool] = None,
     protect_host_credentials: Optional[bool] = None,
@@ -1746,13 +1765,12 @@ def _persist_extra_studio_config(
         clean_py_to_env = str(python_path).strip()
         persist_kwargs["python_path"] = clean_py_to_env
 
-    clean_ann_alias: str = ""
     if annotation_mode is not None:
-        clean_ann = str(annotation_mode).strip().lower() or ("honest" if policy.approval_popups else "compat")
-        persist_kwargs["annotation_mode"] = clean_ann
-        if clean_ann in ("honest", "compat"):
-            clean_ann_alias = clean_ann
-            extra_patch["annotation_mode"] = clean_ann
+        clean_ann = str(annotation_mode).strip().lower() or ("strict" if policy.approval_popups else "seamless")
+        canon_ann = parse_strict_annotation_mode(clean_ann)
+        persist_kwargs["annotation_mode"] = canon_ann
+        eff_ann_str = clean_ann if clean_ann in ("seamless", "compat", "strict", "honest") else canon_ann
+        extra_patch["annotation_mode"] = eff_ann_str
 
     if tunnel_mode is not None and str(tunnel_mode).strip():
         persist_kwargs["tunnel_mode"] = str(tunnel_mode).strip().lower()
@@ -1761,6 +1779,10 @@ def _persist_extra_studio_config(
         persist_kwargs["readonly_workspace_roots"] = list(readonly_workspace_roots)
     if scan_host_global_skills is not None:
         persist_kwargs["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
+    if redact_project_secrets is not None:
+        persist_kwargs["redact_project_secrets"] = parse_bool_flag(redact_project_secrets, default=False)
+    if enable_oneclick_token_route is not None:
+        persist_kwargs["enable_oneclick_token_route"] = parse_bool_flag(enable_oneclick_token_route, default=False)
     if allow_loopback_dev is not None:
         persist_kwargs["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
     if protect_dotenv_files is not None:
@@ -1850,11 +1872,6 @@ def _persist_extra_studio_config(
         else:
             os.environ.pop("COSMOS_PYTHON_PATH", None)
             os.environ.pop("LOCALPC_PYTHON_PATH", None)
-    if clean_ann_alias:
-        try:
-            setattr(policy, "annotation_mode", clean_ann_alias)
-        except Exception:
-            pass
 
 
 _AUTHORITATIVE_POLICY_ONLY_KEYS: frozenset[str] = frozenset(
@@ -2241,13 +2258,17 @@ def _compute_studio_state_revision(
             if isinstance(slot, Mapping):
                 gw_slots_sig[str(gid)] = {
                     "enabled": bool(slot.get("enabled")),
-                    "ready": bool(slot.get("ready")),
-                    "status_kind": str(slot.get("status_kind") or ""),
+                    "public_https_ready": bool(slot.get("public_https_ready")),
+                    "status": str(slot.get("status") or ""),
                     "submode": str(slot.get("submode") or ""),
+                    "effective_mode": str(slot.get("effective_mode") or ""),
                     "public_url": str(slot.get("public_url") or ""),
                     "configured_url": str(slot.get("configured_url") or ""),
                     "mcp_url": str(slot.get("mcp_url") or ""),
-                    "error": str(slot.get("error") or ""),
+                    "last_error": str(slot.get("last_error") or ""),
+                    "instant_policy": str(slot.get("instant_policy") or ""),
+                    "trycloudflare_backup": bool(slot.get("trycloudflare_backup")),
+                    "subchannels": dict(slot.get("subchannels")) if isinstance(slot.get("subchannels"), Mapping) else {},
                 }
 
     sess_sig = [
@@ -2280,6 +2301,8 @@ def _compute_studio_state_revision(
         "tool_prefix": str(getattr(policy, "tool_prefix", policy.eff_prefix) or policy.eff_prefix),
         "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
         "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
+        "redact_project_secrets": bool(getattr(policy, "redact_project_secrets", False)),
+        "enable_oneclick_token_route": bool(getattr(policy, "enable_oneclick_token_route", False)),
         "allow_loopback_dev": bool(getattr(policy, "allow_loopback_dev", True)),
         "protect_dotenv_files": bool(getattr(policy, "protect_dotenv_files", False)),
         "protect_host_credentials": bool(getattr(policy, "protect_host_credentials", True)),
@@ -3207,18 +3230,20 @@ def _build_studio_state_payload(
     has_browser = "browser" in policy.enabled_packs
     has_desktop = ("cua" in policy.enabled_packs) or ("desktop" in policy.enabled_packs)
     ann_mode = str(
-        getattr(policy, "annotation_mode", "")
-        or extra_cfg.get("annotation_mode")
-        or ("honest" if policy.approval_popups else "compat")
+        extra_cfg.get("annotation_mode")
+        or getattr(policy, "annotation_mode", "")
+        or ("strict" if policy.approval_popups else "seamless")
     ).strip().lower()
-    confirm_popups = bool(policy.approval_popups or ann_mode in ("honest", "confirm", "prompt"))
+    confirm_popups = bool(policy.approval_popups or ann_mode in ("strict", "honest", "confirm", "prompt"))
+    web_compat_mode = not confirm_popups
     eff_confirm_popups = bool(confirm_popups and allow_edit)
     eff_pack_browser = bool(has_browser and allow_exec)
     eff_pack_desktop = bool(has_desktop and allow_exec)
 
     pw_plain = _extract_saved_connection_password(policy.state_root, policy.eff_prefix)
     has_saved_pw = bool(pw_plain)
-    eff_conn_pw = pw_plain if is_loopback else ""
+    pw_masked = "••••••••••••••••••••" if has_saved_pw else ""
+    eff_conn_pw = ""
     ep_sec_cur = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
     ep_sec_masked = (ep_sec_cur[:4] + "••••" + ep_sec_cur[-4:]) if len(ep_sec_cur) >= 10 else ""
     pw_wiped_flag = is_plaintext_connection_password_wiped(policy.state_root, prefix=policy.eff_prefix)
@@ -3245,6 +3270,8 @@ def _build_studio_state_payload(
     instance_id_val = str(getattr(policy, "instance_id", policy.eff_prefix) or policy.eff_prefix).strip()
     ro_ws_roots = [str(p) for p in getattr(policy, "readonly_workspace_roots", ())]
     scan_host_global = bool(getattr(policy, "scan_host_global_skills", False))
+    redact_proj_secrets_val = bool(getattr(policy, "redact_project_secrets", False))
+    enable_oneclick_route_val = bool(getattr(policy, "enable_oneclick_token_route", False))
     allow_loopback_val = bool(getattr(policy, "allow_loopback_dev", True))
     protect_dotenv_val = bool(getattr(policy, "protect_dotenv_files", False))
     protect_cred_val = bool(getattr(policy, "protect_host_credentials", True))
@@ -3325,6 +3352,15 @@ def _build_studio_state_payload(
     sh_slot_cfg = gw_view["gateways"]["self_hosted"]
     eff_wd_url = str(extra_cfg.get("workers_dev_url") or wd_slot_cfg.get("configured_url") or "").strip()
     eff_vps_hub_url = str(extra_cfg.get("vps_hub_url") or (sh_slot_cfg.get("configured_url") if sh_slot_cfg.get("submode") == "vps_hub" else "") or "").strip()
+    wd_secret_file = cfgw.workers_tunnel_secret_path(policy.state_root, prefix=policy.eff_prefix)
+    workers_deployed = bool(wd_secret_file.is_file() and (eff_wd_url or extra_cfg.get("workers_subdomain") or extra_cfg.get("workers_dev_subdomain")))
+    last_upd_status: Dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        upd_p = _updater_mod.last_update_status_path(policy.state_root, prefix=policy.eff_prefix)
+        if upd_p.is_file():
+            loaded_u = json.loads(upd_p.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded_u, dict):
+                last_upd_status = loaded_u
 
     return {
         "ok": True,
@@ -3358,6 +3394,10 @@ def _build_studio_state_payload(
         "tunnel_error": tunnel_err,
         "readonly_workspace_roots": ro_ws_roots,
         "scan_host_global_skills": scan_host_global,
+        "redact_project_secrets": redact_proj_secrets_val,
+        "enable_oneclick_token_route": enable_oneclick_route_val,
+        "web_compat_mode": web_compat_mode,
+        "last_update_status": last_upd_status,
         "allow_loopback_dev": allow_loopback_val,
         "protect_dotenv_files": protect_dotenv_val,
         "protect_host_credentials": protect_cred_val,
@@ -3393,6 +3433,7 @@ def _build_studio_state_payload(
             "public_url": gw_view["public_url"],
             "public_base": saved_pub_base or gw_view["public_url"],
             "workers_dev_url": eff_wd_url,
+            "workers_deployed": workers_deployed,
             "workers_dev_custom_domain": workers_custom_dom,
             "workers_dev_subdomain": str(
                 getattr(policy, "workers_dev_subdomain", "") or extra_cfg.get("workers_dev_subdomain") or ""
@@ -3416,9 +3457,11 @@ def _build_studio_state_payload(
             "tunnel_error": tunnel_err,
             "reboot_notice": gw_view["reboot_notice"],
             "connection_password": eff_conn_pw,
+            "connection_password_masked": pw_masked,
             "has_saved_password": has_saved_pw,
             "endpoint_secret_enabled": bool(ep_sec_cur),
             "endpoint_secret_masked": ep_sec_masked,
+            "enable_oneclick_token_route": enable_oneclick_route_val,
             "plaintext_password_wiped": bool(pw_wiped_flag),
             "pair_code": pair_code,
             "consent_pair_code": pair_code,
@@ -3483,7 +3526,9 @@ def _build_studio_state_payload(
             "pack_browser": eff_pack_browser,
             "pack_desktop": eff_pack_desktop,
             "confirm_popups": eff_confirm_popups,
+            "web_compat_mode": web_compat_mode,
             "scan_host_global_skills": scan_host_global,
+            "redact_project_secrets": redact_proj_secrets_val,
             "allow_loopback_dev": allow_loopback_val,
             "protect_dotenv_files": protect_dotenv_val,
             "protect_host_credentials": protect_cred_val,
@@ -3563,6 +3608,7 @@ def render_admin_status_html(
 
     replacements = {
         "__STUDIO_BOOT_JSON__": safe_boot_json,
+        "__STUDIO_CSRF__": html.escape(str(boot.get("csrf_token") or local_admin_csrf)),
         "__STATUS_KIND__": html.escape(status_kind),
         "__STATUS_TEXT__": html.escape(status_text),
         "__DEVICE_LABEL__": html.escape(dev_lbl),
@@ -3929,11 +3975,13 @@ async def handle_local_admin_permissions(
         elif action == "set_approval_popups":
             if "annotation_mode" in data and "approval_popups" not in data:
                 ann_in = str(data.get("annotation_mode") or "").strip().lower()
-                ap = ann_in in ("honest", "confirm", "prompt", "true", "1")
+                canon_ann = parse_strict_annotation_mode(ann_in)
+                ap = canon_ann == "strict"
+                ann_mode = ann_in if ann_in in ("seamless", "compat", "strict", "honest") else canon_ann
             else:
                 ap = parse_bool_flag(data.get("approval_popups"), default=False)
-            ann_mode = "honest" if ap else "compat"
-            policy.persist_changes(approval_popups=ap)
+                ann_mode = "strict" if ap else "seamless"
+            policy.persist_changes(approval_popups=ap, annotation_mode=parse_strict_annotation_mode(ann_mode))
             _persist_extra_studio_config(policy, annotation_mode=ann_mode)
             notice = f"写/执行宿主确认弹窗已{'开启' if ap else '关闭'}。"
         elif action == "set_options":
@@ -4726,16 +4774,40 @@ def mount_standalone_status_ui(
                     pk_labels.append("桌面窗口操控包")
                 messages.append(f"扩展能力包已更新（{'、'.join(pk_labels) if pk_labels else '已全部关闭'}）")
 
-            if "confirm_popups" in data or "annotation_mode" in data:
-                if "confirm_popups" in data:
-                    ap = parse_bool_flag(data.get("confirm_popups"), default=False)
-                else:
+            if "web_compat_mode" in data or "confirm_popups" in data or "annotation_mode" in data:
+                if "web_compat_mode" in data and "annotation_mode" not in data:
+                    compat_on = parse_bool_flag(data.get("web_compat_mode"), default=True)
+                    ap = not compat_on
+                    ann_mode = "seamless" if compat_on else "strict"
+                elif "annotation_mode" in data and "confirm_popups" not in data:
                     ann_raw = str(data.get("annotation_mode") or "").strip().lower()
-                    ap = ann_raw in ("honest", "confirm", "prompt", "true", "1")
-                ann_mode = "honest" if ap else "compat"
-                policy.persist_changes(approval_popups=ap)
+                    canon_ann = parse_strict_annotation_mode(ann_raw)
+                    ap = canon_ann == "strict"
+                    ann_mode = ann_raw if ann_raw in ("seamless", "compat", "strict", "honest") else canon_ann
+                else:
+                    ap = parse_bool_flag(data.get("confirm_popups"), default=False)
+                    ann_mode = "honest" if ap else "compat"
+                policy.persist_changes(approval_popups=ap, annotation_mode=parse_strict_annotation_mode(ann_mode))
                 _persist_extra_studio_config(policy, annotation_mode=ann_mode)
-                messages.append(f"写/执行确认弹窗已{'开启' if ap else '关闭'}")
+                messages.append(
+                    "网页端免逐步弹窗兼容模式已开启"
+                    if not ap
+                    else "写/执行前逐步弹窗确认模式已开启"
+                )
+
+            if "redact_project_secrets" in data:
+                want_redact = parse_bool_flag(data.get("redact_project_secrets"), default=False)
+                _persist_extra_studio_config(policy, redact_project_secrets=want_redact)
+                messages.append(
+                    f"项目通用密钥字面量脱敏已{'开启' if want_redact else '关闭（仅脱敏本服务自身凭据）'}"
+                )
+
+            if "enable_oneclick_token_route" in data:
+                want_oc_ts = parse_bool_flag(data.get("enable_oneclick_token_route"), default=False)
+                _persist_extra_studio_config(policy, enable_oneclick_token_route=want_oc_ts)
+                messages.append(
+                    f"免 OAuth 直通路径已{'开启' if want_oc_ts else '关闭（返回 404）'}"
+                )
 
             if "scan_host_global_skills" in data:
                 want_scan = parse_bool_flag(data.get("scan_host_global_skills"), default=False)
@@ -4821,11 +4893,14 @@ def mount_standalone_status_ui(
                 supervised_alive = False
 
         spawn_res: Optional[Dict[str, Any]] = None
+        synced_app_src: Optional[Path] = None
         if act == "stop":
             atomic_write_text(stop_flag, f"STOP:{now_ts}\n")
             ctrl_msg = "已发出停止服务信号：在途任务与扩展包已清理，守护进程即将安全停止。"
         else:
             atomic_write_text(stop_flag, f"CLEAR:{now_ts}\n")
+            with contextlib.suppress(Exception):
+                synced_app_src = sync_repo_src_to_app_src(policy.state_root, explicit_restart=True)
             policy.refresh(force=True)
             if supervised_alive:
                 with contextlib.suppress(Exception):
@@ -4871,11 +4946,31 @@ def mount_standalone_status_ui(
             "action": act,
             "stop_flag_path": str(stop_flag),
             "supervised": supervised_alive,
+            "synced_app_src": str(synced_app_src) if synced_app_src is not None else "",
             "message": ctrl_msg,
         }
         if spawn_res is not None:
             out_doc["spawn_result"] = spawn_res
         return out_doc
+
+    def _sync_provider_endpoint_state() -> None:
+        st_obj = getattr(app, "state", None)
+        sync_box = getattr(st_obj, "gateway_sync_hook_box", None) if st_obj is not None else None
+        if isinstance(sync_box, list) and sync_box and callable(sync_box[0]):
+            try:
+                sync_box[0](True)
+            except Exception:
+                pass
+        if provider is not None:
+            try:
+                provider.get_effective_trusted_gateways()
+            except Exception:
+                pass
+            for cb in list(getattr(provider, "_gateway_sync_listeners", ())):
+                try:
+                    cb()
+                except Exception:
+                    pass
 
     async def studio_connection_ep(request: Request) -> Response:
         data, _ = await _parse_request_data(request)
@@ -4887,25 +4982,6 @@ def mount_standalone_status_ui(
 
         sub_act = str(data.get("action") or "save_tunnel").strip().lower()
         msg = "连接设置已保存。"
-
-        def _sync_provider_endpoint_state() -> None:
-            st_obj = getattr(app, "state", None)
-            sync_box = getattr(st_obj, "gateway_sync_hook_box", None) if st_obj is not None else None
-            if isinstance(sync_box, list) and sync_box and callable(sync_box[0]):
-                try:
-                    sync_box[0](True)
-                except Exception:
-                    pass
-            if provider is not None:
-                try:
-                    provider.get_effective_trusted_gateways()
-                except Exception:
-                    pass
-                for cb in list(getattr(provider, "_gateway_sync_listeners", ())):
-                    try:
-                        cb()
-                    except Exception:
-                        pass
 
         try:
             if sub_act == "rotate_pair_code":
@@ -4981,6 +5057,8 @@ def mount_standalone_status_ui(
                     annotation_mode=policy.annotation_mode,
                     python_path=policy.python_path,
                     scan_host_global_skills=getattr(policy, "scan_host_global_skills", False),
+                    redact_project_secrets=getattr(policy, "redact_project_secrets", False),
+                    enable_oneclick_token_route=getattr(policy, "enable_oneclick_token_route", False),
                     tray_enabled=getattr(policy, "tray_enabled", True),
                 )
                 if provider is not None:
@@ -5014,6 +5092,16 @@ def mount_standalone_status_ui(
                     if want_rev_pw
                     else "已生成全新高熵连接口令（旧口令已失效）。"
                 )
+                snap_rot = _state_snapshot(request)
+                new_rot_pw = str(
+                    rot_creds.get("connection_password")
+                    or _extract_saved_connection_password(policy.state_root, policy.eff_prefix)
+                    or ""
+                )
+                if is_lb_rot and new_rot_pw:
+                    snap_rot["connection_password"] = new_rot_pw
+                snap_rot["message"] = msg
+                return _json_with_optional_cookie(snap_rot, request, minted)
             elif sub_act == "wipe_plaintext_password":
                 wipe_res = wipe_plaintext_connection_password(policy.state_root, prefix=policy.eff_prefix)
                 if not wipe_res.get("ok"):
@@ -5022,6 +5110,68 @@ def mount_standalone_status_ui(
                 snap["wiped_files"] = wipe_res.get("wiped_files", [])
                 snap["message"] = "已擦除本地文本文件中的明文口令（口令已受本机加密保险箱保护）。"
                 return _json_with_optional_cookie(snap, request, minted)
+            elif sub_act in ("set_oneclick_token_route", "toggle_oneclick_token_route"):
+                want_oc = parse_bool_flag(
+                    data.get("enabled") if "enabled" in data else data.get("enable_oneclick_token_route"),
+                    default=False,
+                )
+                _persist_extra_studio_config(policy, enable_oneclick_token_route=want_oc)
+                policy.refresh(force=True)
+                msg = (
+                    "已开启免 OAuth 直通路径（/c/<token>/mcp）；请勿将直通链接外发。"
+                    if want_oc
+                    else "已关闭免 OAuth 直通路径（/c/<token>/mcp 已恢复返回 404）。"
+                )
+            elif sub_act in ("save_workers_custom_domain", "clear_workers_custom_domain"):
+                raw_dom_in = "" if sub_act == "clear_workers_custom_domain" else str(data.get("custom_domain") or "").strip()
+                dom_res = save_workers_custom_domain_local(
+                    policy.state_root,
+                    raw_dom_in,
+                    prefix=policy.eff_prefix,
+                )
+                if not dom_res.get("ok"):
+                    return JSONResponse(dom_res, status_code=400, headers={"Cache-Control": "no-store"})
+                policy.refresh(force=True)
+                eff_new_pub = str(dom_res.get("public_url") or "").strip()
+                eff_raw_wd = str(dom_res.get("workers_dev_url") or "").strip()
+                eff_clean_dom = str(dom_res.get("custom_domain") or "").strip()
+                cur_slots_dom, _, _ = _normalize_studio_gateways_cfg(policy, _read_saved_extra_cfg(policy))
+                other_en_dom = sum(1 for g in STUDIO_GATEWAY_IDS if g != "workers_dev" and cur_slots_dom[g]["enabled"])
+                if eff_new_pub.startswith("https://"):
+                    _safe_hot_refresh_gateway_url(
+                        policy.state_root,
+                        eff_new_pub,
+                        port=port,
+                        prefix=policy.eff_prefix,
+                        tunnel_mode="workers_dev",
+                        gateway_id="workers_dev",
+                        other_enabled_count=other_en_dom,
+                    )
+                _persist_extra_studio_config(
+                    policy,
+                    workers_dev_url=eff_raw_wd,
+                    workers_dev_custom_domain=eff_clean_dom,
+                )
+                _update_studio_gateway_slot(
+                    policy,
+                    "workers_dev",
+                    enabled=True,
+                    submode="workers_dev",
+                    public_url=eff_new_pub,
+                    extra_slot_fields={
+                        "workers_dev_url": eff_raw_wd,
+                        "custom_domain": f"https://{eff_clean_dom}" if eff_clean_dom else "",
+                    },
+                    port=port,
+                    set_public_url=set_public_url,
+                )
+                policy.refresh(force=True)
+                _sync_provider_endpoint_state()
+                msg = (
+                    f"已保存 Cloudflare 自定义域名：{eff_new_pub}（无需重填 API 令牌）"
+                    if eff_clean_dom
+                    else f"已清空自定义域名并恢复默认网关地址：{eff_new_pub}"
+                )
             elif sub_act == "rotate_endpoint_secret":
                 prev_sec = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
                 new_sec = save_endpoint_secret(
@@ -5031,18 +5181,42 @@ def mount_standalone_status_ui(
                 )
                 saved_extra_rot = _read_saved_extra_cfg(policy)
                 cur_slots_rot, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_rot)
-                raw_wd_rot = str(
-                    cur_slots_rot["workers_dev"].get("public_url")
-                    or saved_extra_rot.get("workers_dev_url")
+                raw_wd_slot_pub = str(cur_slots_rot["workers_dev"].get("public_url") or "").strip()
+                raw_wd_orig = str(
+                    saved_extra_rot.get("workers_dev_url")
+                    or cur_slots_rot["workers_dev"].get("workers_dev_url")
                     or ""
                 ).strip()
-                if raw_wd_rot:
-                    next_wd_rot = apply_endpoint_secret_to_url(raw_wd_rot, new_sec, previous_secret=prev_sec)
-                    _persist_extra_studio_config(policy, workers_dev_url=next_wd_rot)
+                if not raw_wd_slot_pub and raw_wd_orig:
+                    raw_wd_slot_pub = raw_wd_orig
+                next_wd_orig = raw_wd_orig
+                if raw_wd_orig and ".workers.dev" in (urlsplit(raw_wd_orig).hostname or "").lower():
+                    next_wd_orig = apply_endpoint_secret_to_url(raw_wd_orig, new_sec, previous_secret=prev_sec)
+                    _persist_extra_studio_config(policy, workers_dev_url=next_wd_orig)
+                if raw_wd_slot_pub:
+                    next_wd_rot = apply_endpoint_secret_to_url(raw_wd_slot_pub, new_sec, previous_secret=prev_sec)
+                    extra_wd_fields = {"workers_dev_url": next_wd_orig} if next_wd_orig else None
                     _update_studio_gateway_slot(
                         policy,
                         "workers_dev",
                         public_url=next_wd_rot,
+                        extra_slot_fields=extra_wd_fields,
+                        port=port,
+                        set_public_url=set_public_url,
+                    )
+                raw_sh_rot = str(
+                    cur_slots_rot["self_hosted"].get("public_url")
+                    or saved_extra_rot.get("vps_hub_url")
+                    or ""
+                ).strip()
+                if raw_sh_rot:
+                    next_sh_rot = apply_endpoint_secret_to_url(raw_sh_rot, new_sec, previous_secret=prev_sec)
+                    if saved_extra_rot.get("vps_hub_url") or cur_slots_rot["self_hosted"].get("submode") in ("vps_hub", "vps"):
+                        _persist_extra_studio_config(policy, vps_hub_url=next_sh_rot)
+                    _update_studio_gateway_slot(
+                        policy,
+                        "self_hosted",
+                        public_url=next_sh_rot,
                         port=port,
                         set_public_url=set_public_url,
                     )
@@ -5088,24 +5262,56 @@ def mount_standalone_status_ui(
                 if prev_sec_dis:
                     saved_extra_dis = _read_saved_extra_cfg(policy)
                     cur_slots_dis, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_dis)
-                    raw_wd_dis = str(
-                        cur_slots_dis["workers_dev"].get("public_url")
-                        or saved_extra_dis.get("workers_dev_url")
+                    raw_wd_slot_dis = str(cur_slots_dis["workers_dev"].get("public_url") or "").strip()
+                    raw_wd_orig_dis = str(
+                        saved_extra_dis.get("workers_dev_url")
+                        or cur_slots_dis["workers_dev"].get("workers_dev_url")
                         or ""
                     ).strip()
-                    if raw_wd_dis and f"/u/{prev_sec_dis}" in raw_wd_dis.lower():
-                        clean_wd_dis = strip_endpoint_secret_from_url(raw_wd_dis, old_secret=prev_sec_dis)
-                        _persist_extra_studio_config(policy, workers_dev_url=clean_wd_dis)
+                    if not raw_wd_slot_dis and raw_wd_orig_dis:
+                        raw_wd_slot_dis = raw_wd_orig_dis
+                    clean_wd_orig_dis = raw_wd_orig_dis
+                    if (
+                        raw_wd_orig_dis
+                        and f"/u/{prev_sec_dis}" in raw_wd_orig_dis.lower()
+                        and ".workers.dev" in (urlsplit(raw_wd_orig_dis).hostname or "").lower()
+                    ):
+                        clean_wd_orig_dis = strip_endpoint_secret_from_url(raw_wd_orig_dis, old_secret=prev_sec_dis)
+                        _persist_extra_studio_config(policy, workers_dev_url=clean_wd_orig_dis)
+                    if raw_wd_slot_dis and f"/u/{prev_sec_dis}" in raw_wd_slot_dis.lower():
+                        clean_wd_dis = strip_endpoint_secret_from_url(raw_wd_slot_dis, old_secret=prev_sec_dis)
+                        extra_wd_dis = {"workers_dev_url": clean_wd_orig_dis} if clean_wd_orig_dis else None
                         _update_studio_gateway_slot(
                             policy,
                             "workers_dev",
                             public_url=clean_wd_dis,
+                            extra_slot_fields=extra_wd_dis,
+                            port=port,
+                            set_public_url=set_public_url,
+                        )
+                    raw_sh_dis = str(
+                        cur_slots_dis["self_hosted"].get("public_url")
+                        or saved_extra_dis.get("vps_hub_url")
+                        or ""
+                    ).strip()
+                    if raw_sh_dis and f"/u/{prev_sec_dis}" in raw_sh_dis.lower():
+                        clean_sh_dis = strip_endpoint_secret_from_url(raw_sh_dis, old_secret=prev_sec_dis)
+                        if saved_extra_dis.get("vps_hub_url") or cur_slots_dis["self_hosted"].get("submode") in ("vps_hub", "vps"):
+                            _persist_extra_studio_config(policy, vps_hub_url=clean_sh_dis)
+                        _update_studio_gateway_slot(
+                            policy,
+                            "self_hosted",
+                            public_url=clean_sh_dis,
                             port=port,
                             set_public_url=set_public_url,
                         )
                     if provider is not None and hasattr(provider, "allowed_resources"):
                         stale_dis = {r for r in list(provider.allowed_resources) if f"/u/{prev_sec_dis}" in r.lower()}
                         provider.allowed_resources.difference_update(stale_dis)
+                        st_obj_d = getattr(app, "state", None)
+                        bb_obj_d = getattr(st_obj_d, "bearer_backend", None) if st_obj_d is not None else None
+                        if bb_obj_d is not None and hasattr(bb_obj_d, "allowed_resources"):
+                            bb_obj_d.allowed_resources.difference_update(stale_dis)
                 policy.refresh(force=True)
                 _sync_provider_endpoint_state()
                 msg = "已关闭私密连接路径并恢复默认短路径 /mcp。"
@@ -7057,26 +7263,33 @@ def mount_standalone_status_ui(
         chosen_mcp_url = ""
         chosen_is_temp = False
 
-        # Priority: ready permanent gateway (`workers_dev` / `self_hosted` / `srv.us`) > temporary `trycloudflare`
-        for gid_cand in ("workers_dev", "self_hosted"):
-            cand_u = _extract_ready_url(gws_snap.get(gid_cand))
+        conn_snap_oc = snap.get("connection") if isinstance(snap.get("connection"), dict) else {}
+        preferred_gids: List[str] = []
+        for raw_pref_gid in (
+            data.get("gateway_id"),
+            conn_snap_oc.get("user_selected_gateway"),
+            "workers_dev",
+            "self_hosted",
+            "instant",
+        ):
+            g_str = str(raw_pref_gid or "").strip().lower()
+            if g_str in STUDIO_GATEWAY_IDS and g_str not in preferred_gids:
+                preferred_gids.append(g_str)
+
+        for gid_cand in preferred_gids:
+            gw_obj = gws_snap.get(gid_cand)
+            cand_u = _extract_ready_url(gw_obj)
             if cand_u:
                 chosen_gid = gid_cand
                 chosen_mcp_url = cand_u
-                chosen_is_temp = False
+                if gid_cand == "instant":
+                    chosen_is_temp = bool(
+                        (isinstance(gw_obj, dict) and gw_obj.get("instant_fallback_active"))
+                        or ".trycloudflare.com" in cand_u.lower()
+                    )
+                else:
+                    chosen_is_temp = False
                 break
-
-        if not chosen_mcp_url:
-            inst_item = gws_snap.get("instant")
-            cand_inst = _extract_ready_url(inst_item)
-            if cand_inst:
-                inst_is_temp = bool(
-                    (isinstance(inst_item, dict) and inst_item.get("instant_fallback_active"))
-                    or ".trycloudflare.com" in cand_inst.lower()
-                )
-                chosen_gid = "instant"
-                chosen_mcp_url = cand_inst
-                chosen_is_temp = inst_is_temp
 
         if not chosen_mcp_url:
             fallback_top = str(snap.get("readonly_mcp_url") if is_ro else snap.get("mcp_url") or "").strip()
@@ -7251,17 +7464,36 @@ def mount_standalone_status_ui(
         restored_tm = str(restored.get("restored_tunnel_mode") or "").strip().lower()
         restored_dom = str(restored.get("workers_custom_domain") or "").strip()
         restored_wurl = str(restored.get("workers_dev_url") or "").strip().rstrip("/")
+        restored_vurl = str(restored.get("vps_hub_url") or "").strip().rstrip("/")
+        restored_sel = str(restored.get("selected_gateway") or "").strip().lower()
+        restored_gws = restored.get("gateways") if isinstance(restored.get("gateways"), dict) else {}
         if policy.cfg_path is None:
             cand_cfg_p = resolve_service_cfg_path(policy.state_root, policy.eff_prefix)
             if cand_cfg_p.is_file():
                 policy.cfg_path = cand_cfg_p
         policy.refresh(force=True)
-        if restored_tm == "workers_dev" and (restored_dom or restored_wurl):
+        extra_after_imp = _read_saved_extra_cfg(policy)
+        if not restored_vurl:
+            restored_vurl = str(extra_after_imp.get("vps_hub_url") or "").strip().rstrip("/")
+        active_ep_imp = load_endpoint_secret(policy.state_root, prefix=policy.eff_prefix)
+
+        wd_restored_slot = restored_gws.get("workers_dev") if isinstance(restored_gws.get("workers_dev"), dict) else {}
+        sh_restored_slot = restored_gws.get("self_hosted") if isinstance(restored_gws.get("self_hosted"), dict) else {}
+
+        if (restored_dom or restored_wurl) and (
+            restored_tm == "workers_dev"
+            or restored_sel == "workers_dev"
+            or bool(wd_restored_slot.get("enabled"))
+        ):
             eff_restored_pub = (
                 f"https://{restored_dom}"
                 if restored_dom and "://" not in restored_dom
                 else (restored_dom or restored_wurl)
             ).strip().rstrip("/")
+            if active_ep_imp:
+                eff_restored_pub = apply_endpoint_secret_to_url(eff_restored_pub, active_ep_imp)
+                if restored_wurl:
+                    restored_wurl = apply_endpoint_secret_to_url(restored_wurl, active_ep_imp)
             cur_slots_imp, _, _ = _normalize_studio_gateways_cfg(policy, _read_saved_extra_cfg(policy))
             other_en_imp = sum(1 for g in STUDIO_GATEWAY_IDS if g != "workers_dev" and cur_slots_imp[g]["enabled"])
             if eff_restored_pub.startswith("https://"):
@@ -7285,12 +7517,59 @@ def mount_standalone_status_ui(
                 enabled=True,
                 submode="workers_dev",
                 public_url=eff_restored_pub,
-                select=True,
-                extra_slot_fields={"custom_domain": restored_dom},
+                select=(restored_tm == "workers_dev" or restored_sel == "workers_dev"),
+                extra_slot_fields={"custom_domain": restored_dom, "workers_dev_url": restored_wurl or eff_restored_pub},
                 port=port,
                 set_public_url=set_public_url,
             )
-        elif restored.get("has_srvus_key") and getattr(policy, "tunnel_mode", "") == "public_gateway":
+
+        sh_cand_url = _clean_https_candidate(sh_restored_slot.get("public_url") or restored_vurl)
+        sh_should_enable = bool(
+            sh_cand_url
+            or sh_restored_slot.get("enabled")
+            or restored_tm in ("vps_hub", "vps", "cloudflare_token", "custom", "reverse_proxy", "self_hosted")
+            or restored_sel == "self_hosted"
+        )
+        if sh_should_enable and sh_cand_url:
+            if active_ep_imp:
+                sh_cand_url = apply_endpoint_secret_to_url(sh_cand_url, active_ep_imp)
+            sh_sub_imp = str(
+                sh_restored_slot.get("submode")
+                or (
+                    "custom"
+                    if restored_tm == "reverse_proxy"
+                    else (restored_tm if restored_tm in ("vps_hub", "vps", "cloudflare_token", "custom") else "vps_hub")
+                )
+            )
+            cur_slots_sh, _, _ = _normalize_studio_gateways_cfg(policy, _read_saved_extra_cfg(policy))
+            other_en_sh = sum(1 for g in STUDIO_GATEWAY_IDS if g != "self_hosted" and cur_slots_sh[g]["enabled"])
+            if sh_cand_url.startswith("https://"):
+                _safe_hot_refresh_gateway_url(
+                    policy.state_root,
+                    sh_cand_url,
+                    port=port,
+                    prefix=policy.eff_prefix,
+                    tunnel_mode=sh_sub_imp,
+                    gateway_id="self_hosted",
+                    other_enabled_count=other_en_sh,
+                )
+            if sh_sub_imp in ("vps_hub", "vps") or restored_vurl:
+                _persist_extra_studio_config(policy, vps_hub_url=sh_cand_url)
+            _update_studio_gateway_slot(
+                policy,
+                "self_hosted",
+                enabled=True,
+                submode=sh_sub_imp,
+                public_url=sh_cand_url,
+                select=(
+                    restored_tm in ("vps_hub", "vps", "cloudflare_token", "custom", "reverse_proxy", "self_hosted")
+                    or restored_sel == "self_hosted"
+                ),
+                port=port,
+                set_public_url=set_public_url,
+            )
+
+        if restored.get("has_srvus_key") and getattr(policy, "tunnel_mode", "") == "public_gateway":
             _persist_extra_studio_config(policy, public_url="", prefer_quick_tunnel=False)
             _update_studio_gateway_slot(
                 policy,
@@ -7303,6 +7582,7 @@ def mount_standalone_status_ui(
             )
         policy.refresh(force=True)
         policy.persist_changes(public_gateway_node_id=restored_node_id)
+        _sync_provider_endpoint_state()
         snap = _state_snapshot(request)
         snap["restored_identity"] = {
             "node_id": restored_node_id,
@@ -7427,6 +7707,62 @@ def mount_standalone_status_ui(
             session_mgr=session_mgr,
         )
 
+    async def studio_update_ep(request: Request) -> Response:
+        if request.method == "GET":
+            cookie_ok = session_mgr.verify_token(request.cookies.get(STUDIO_SESSION_COOKIE, ""), provider)
+            if not is_strict_direct_loopback(request, port) and not cookie_ok:
+                return JSONResponse({"ok": False, "error": "需要先解锁管理会话。"}, status_code=403)
+            last_st: Dict[str, Any] = {}
+            with contextlib.suppress(Exception):
+                up_p = _updater_mod.last_update_status_path(policy.state_root, prefix=policy.eff_prefix)
+                if up_p.is_file():
+                    raw_u = json.loads(up_p.read_text(encoding="utf-8-sig"))
+                    if isinstance(raw_u, dict):
+                        last_st = raw_u
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "current_version": PRODUCT_VERSION,
+                    "last_update_status": last_st,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+
+        data, _ = await _parse_request_data(request)
+        if data is None:
+            return JSONResponse({"ok": False, "error": "请求格式无效。"}, status_code=400)
+        err_resp, minted = _check_studio_auth(request, data)
+        if err_resp is not None:
+            return err_resp
+
+        upd_act = str(data.get("action") or "check").strip().lower()
+        upd_channel = str(data.get("channel") or "release").strip().lower() or "release"
+        if upd_act in ("check", "check_update", "status"):
+            res = await asyncio.to_thread(
+                _updater_mod.check_for_updates,
+                policy.state_root,
+                prefix=policy.eff_prefix,
+                channel=upd_channel,
+            )
+            return _json_with_optional_cookie(res, request, minted)
+        if upd_act in ("apply", "upgrade", "self_update", "stage_and_apply"):
+            allow_tr = parse_bool_flag(data.get("allow_tunnel_restart"), default=False)
+            force_tasks = parse_bool_flag(data.get("force_active_tasks"), default=False)
+            res = await asyncio.to_thread(
+                _updater_mod.stage_and_apply_update,
+                policy.state_root,
+                prefix=policy.eff_prefix,
+                channel=upd_channel,
+                allow_tunnel_restart=allow_tr,
+                force_active_tasks=force_tasks,
+            )
+            return _json_with_optional_cookie(res, request, minted)
+        return JSONResponse(
+            {"ok": False, "error": f"不支持的更新操作：{upd_act}"},
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
+
     rebuilt_routes: List[Any] = [
         Route("/favicon.ico", endpoint=favicon_ep, methods=["GET"]),
         Route("/static/brand/{brand_file}", endpoint=static_brand_asset_ep, methods=["GET"]),
@@ -7459,6 +7795,7 @@ def mount_standalone_status_ui(
         Route("/api/studio/recovery", endpoint=studio_recovery_ep, methods=["GET", "POST"]),
         Route("/api/studio/recovery/diff", endpoint=studio_recovery_diff_ep, methods=["GET"]),
         Route("/api/studio/service-control", endpoint=studio_service_control_ep, methods=["POST"]),
+        Route("/api/studio/update", endpoint=studio_update_ep, methods=["GET", "POST"]),
         Route("/api/studio/uninstall", endpoint=studio_uninstall_ep, methods=["POST"]),
         Route("/api/studio/skills/{subpath:path}", endpoint=studio_skills_ep, methods=["GET", "POST"]),
     ]

@@ -503,11 +503,31 @@ def test_c_token_mcp_path_disabled_by_default_stealth_404(tmp_path: Path) -> Non
         public_url=public_base,
         port=18947,
     )
-    client = TestClient(proto_app, base_url=public_base)
-    resp_full = client.post(
-        f"/c/{tok}/mcp",
-        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-        headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
-    )
-    assert resp_full.status_code == 404
-    assert resp_full.text.strip() == "404 Not Found"
+    with TestClient(proto_app, base_url=public_base) as client:
+        resp_full = client.post(
+            f"/c/{tok}/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
+        )
+        assert resp_full.status_code == 404
+        assert resp_full.text.strip() == "404 Not Found"
+
+        # Explicitly opting in via `enable_oneclick_token_route=True` activates the capability route
+        policy.persist_changes(enable_oneclick_token_route=True)
+        resp_enabled = client.post(
+            f"/c/{tok}/mcp",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
+        )
+        assert resp_enabled.status_code == 200
+        assert "tools" in resp_enabled.json().get("result", {})
+
+        policy.persist_changes(enable_oneclick_token_route=False)
+        assert (
+            client.post(
+                f"/c/{tok}/mcp",
+                json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+                headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
+            ).status_code
+            == 404
+        )

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="studio-csrf" content="__STUDIO_CSRF__">
   <title>WebAI2PC · 本地控制台</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/studio.css">
@@ -439,7 +440,7 @@
                 <div class="ob-col-card">
                   <div class="ob-field-label">2. 复制第一句测试指令发给网页端 AI</div>
                   <div class="ob-wake-box">
-                    <code id="ob-wake-preview-code">@Cosmos 帮我看看当前工作目录里有哪些文件</code>
+                    <code id="ob-wake-preview-code">@连接器名称 帮我看看当前工作目录里有哪些文件</code>
                   </div>
                   <div class="ws-actions" style="margin-top:10px;">
                     <button type="button" class="btn btn-primary btn-sm" id="ob-copy-wake-btn">复制首句测试词</button>
@@ -629,7 +630,7 @@
               </summary>
               <div class="wb-fold-body" id="gemini-https-guide">
                 <ol class="wb-guide-ol">
-                  <li><strong>Gemini：</strong><strong>勿在浏览器地址栏直接打开 <code>/mcp</code></strong>，请打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>），点右上角 <code>+ Custom</code>，把上方 <code>https://.../mcp</code> 粘贴到 <code>MCP Server URL</code> 配置栏点 <code>Next</code>，确认页点「本机一键允许连接」并把 <code>App actions</code> 设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
+                  <li><strong>Gemini：</strong><strong>勿在浏览器地址栏直接打开 <code>/mcp</code></strong>，请打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>），点右上角 <code>+ Custom</code>，把上方 <code>https://.../mcp</code> 粘贴到 <code>MCP Server URL</code> 配置栏点 <code>Next</code>，确认页点「本机一键允许连接」并把 <code>App actions</code> 设为 <code>Always allow</code>；首句输入 <code>@连接器名称</code> 唤醒。</li>
                   <li><strong>ChatGPT（一键配置 · 装好后日常用 Chat 省额度）：</strong>网关就绪后点上方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），直接粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动创建 <code>WebAI2PC</code> 插件并按标准 OAuth 流程完成授权验证。装好后同账号互通：日常改代码跑脚本切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>pc_get_status</code> 验证。</li>
                 </ol>
                 <div class="ws-actions" style="margin-top:10px;">
@@ -989,6 +990,14 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                          <label for="instant-policy-select" style="font-size:12.5px;font-weight:600;">第 1 类通道优选策略</label>
+                          <select id="instant-policy-select" aria-label="第 1 类通道优选策略" style="max-width:100%;">
+                            <option value="auto" selected>自动优选固定地址（受阻自动切换临时通道）</option>
+                            <option value="srv_us_only">锁定 srv.us 固定地址（不降级临时通道）</option>
+                            <option value="quick_only">仅使用 trycloudflare 临时通道</option>
+                          </select>
+                        </div>
                         <div class="instant-subchannels-list" id="instant-subchannels-list" style="display:flex;flex-direction:column;gap:10px;">
                           <!-- Subchannel 1: srv.us primary fixed -->
                           <div class="instant-sub-row" id="instant-sub-srvus" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2, rgba(127,127,127,0.05));">
@@ -1141,6 +1150,10 @@
                           <div>
                             <span class="field-label">选填：自定义域名（Active Zone，国内免切代理）</span>
                             <input type="text" id="cf-custom-domain-input" placeholder="例如 mcp.yourdomain.dpdns.org" style="width:100%;">
+                            <div id="cf-tokenless-domain-bar" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                              <button type="button" class="btn btn-tonal btn-sm" id="save-cf-custom-domain-btn">免令牌保存自定义域名</button>
+                              <button type="button" class="btn btn-sm" id="clear-cf-custom-domain-btn">清空自定义域名</button>
+                            </div>
                           </div>
                         </div>
                         <div id="cf-account-select-wrap" style="display:none;">
@@ -1386,6 +1399,7 @@
                       <button type="button" class="btn btn-sm" id="auth-toggle-backup-btn">显示 / 隐藏</button>
                       <button type="button" class="btn btn-tonal btn-sm" id="auth-copy-backup-btn">复制备用口令</button>
                       <button type="button" class="btn btn-sm" id="auth-rotate-backup-btn">重置备用口令</button>
+                      <button type="button" class="btn btn-sm" id="auth-wipe-plaintext-pw-btn">擦除本地 txt 明文口令文件</button>
                     </div>
                   </div>
                   <div id="auth-rotate-backup-confirm-bar" class="callout callout-warn" style="display:none;margin-top:8px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;">
@@ -1449,11 +1463,12 @@
                     </div>
                   </div>
                   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border);">
-                    <div>
+                    <div style="flex:1 1 240px;min-width:0;">
                       <strong>免 OAuth 长效直通路径（<code>/c/&lt;token&gt;/mcp</code>）</strong>
-                      <span class="tag tag-muted" style="margin-left:6px;">已默认禁用（返回 404）</span>
-                      <div style="font-size:12px;color:var(--muted);margin-top:3px;">为防止提示词外泄直接免密控机，已默认关闭免 OAuth 直通；所有网页 AI 统一走标准 OAuth 授权。</div>
+                      <span class="tag tag-muted" id="auth-oneclick-route-pill" style="margin-left:6px;">已默认关闭（返回 404）</span>
+                      <div style="font-size:12px;color:var(--muted);margin-top:3px;">开启后持有直通链接即可免 OAuth 确认调用工具（链接一旦外泄将带来免密控机风险）；建议保持默认关闭，统一走标准 OAuth 授权。</div>
                     </div>
+                    <input type="checkbox" class="apple-switch" id="chk-enable-oneclick-route" aria-label="开关免 OAuth 长效直通路径">
                   </div>
                 </div>
               </div>
@@ -1514,6 +1529,21 @@
                 </div>
               </div>
 
+              <div class="settings-group">
+                <div class="settings-group-title">版本检查与一键升级</div>
+                <div class="setting-row" style="flex-wrap:wrap;gap:10px;">
+                  <div class="setting-row-text" style="flex:1 1 220px;">
+                    <div class="setting-row-title">检查新版本与在线热升级</div>
+                    <div class="setting-row-sub" id="studio-update-sub">当前版本 v__VERSION__ · 支持保留公网隧道平滑升级</div>
+                  </div>
+                  <div class="ws-actions">
+                    <button type="button" class="btn btn-tonal btn-sm" id="check-update-btn">检查更新</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="apply-update-btn" style="display:none;">一键升级</button>
+                  </div>
+                </div>
+                <div id="studio-update-status-box" class="callout callout-info" style="display:none;margin-top:8px;font-size:12.5px;"></div>
+              </div>
+
               <div class="settings-group settings-danger-group">
                 <div class="settings-group-title">服务控制</div>
                 <div id="service-control-confirm-bar" class="callout callout-warn service-confirm-bar" style="display:none;margin-bottom:10px;">
@@ -1549,6 +1579,13 @@
               <div class="settings-group">
                 <div class="settings-group-title">安全确认与扩展包</div>
                 <div class="settings-rows-list">
+                  <label class="setting-row" id="web-compat-mode-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">网页端免逐步弹窗兼容模式（默认开启） <span class="tag tag-muted ro-auto-hint" id="web-compat-ro-hint" style="display:none;">只读模式自动开启</span></div>
+                      <div class="setting-row-sub">开启时支持网页端授权后顺畅连续读写与运行；关闭后切换为每次写文件或运行命令前请求逐步弹窗确认</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-web-compat-mode" checked>
+                  </label>
                   <label class="setting-row" id="confirm-popups-box">
                     <div class="setting-row-text">
                       <div class="setting-row-title">写文件与运行命令前向宿主请求确认 <span class="tag tag-muted ro-auto-hint" id="confirm-popups-ro-hint" style="display:none;">只读模式自动关闭</span></div>
@@ -1611,6 +1648,13 @@
                     </div>
                     <input type="checkbox" class="apple-switch" id="chk-block-destructive" checked>
                   </label>
+                  <label class="setting-row" id="redact-project-secrets-box">
+                    <div class="setting-row-text">
+                      <div class="setting-row-title">脱敏项目文本中的通用密钥字面量（如 sk-*）</div>
+                      <div class="setting-row-sub">默认关闭以保留项目源码与日志原文（本服务自身连接口令与隧道密钥始终脱敏）；开启后额外自动掩码通用 API 密钥格式</div>
+                    </div>
+                    <input type="checkbox" class="apple-switch" id="chk-redact-project-secrets">
+                  </label>
                 </div>
               </div>
 
@@ -1666,6 +1710,16 @@
               </div>
 
               <div class="callout callout-info wb-compact-callout" id="skills-summary-banner" style="margin-bottom:10px;">正在读取本机技能库状态…</div>
+
+              <div class="settings-group" style="margin-bottom:10px;padding:10px 12px;">
+                <label class="setting-row" id="skills-pane-scan-host-box" style="padding:2px 0;">
+                  <div class="setting-row-text">
+                    <div class="setting-row-title">扫描本机其他工具全局技能库</div>
+                    <div class="setting-row-sub">与「工具与扩展」页实时同步；开启后只读发现本机 .claude / .codex 等全局技能目录</div>
+                  </div>
+                  <input type="checkbox" class="apple-switch" id="chk-skills-scan-host">
+                </label>
+              </div>
 
               <div class="skills-subtabs" role="tablist" aria-label="技能中心子视图">
                 <button type="button" class="skills-subtab-btn active" role="tab" aria-selected="true" data-skill-subtab="local">本机技能与详情</button>

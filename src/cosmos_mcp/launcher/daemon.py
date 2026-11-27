@@ -48,8 +48,12 @@ from cosmos_mcp.launcher.bootstrap import (
     atomic_write_text,
     compute_source_tree_hash,
     find_repo_src_dir,
+    parse_semver_tuple,
+    read_app_src_update_meta,
+    read_package_init_version,
     resolve_persisted_src_dir,
     resolve_windowless_python,
+    sync_portable_app_src,
 )
 from cosmos_mcp.launcher.tray import WindowsSystemTrayController
 import cosmos_mcp.launcher.tunnels as _tunnels_mod
@@ -597,6 +601,68 @@ def daemon_status_path(state_root: Path, prefix: str = "pc") -> Path:
 def daemon_stop_flag_path(state_root: Path, prefix: str = "pc") -> Path:
     eff = _norm_prefix(prefix)
     return Path(state_root) / "state" / (f"daemon_stop_{eff}.flag" if eff != "pc" else "daemon_stop.flag")
+
+
+def repo_source_record_path(state_root: Path) -> Path:
+    return Path(state_root) / "state" / "repo_source.json"
+
+
+def resolve_upstream_repo_src(state_root: Path) -> Optional[Path]:
+    """Locate upstream repository `src` directory (distinct from `<state_root>/app_src`) if present."""
+    st_root = Path(state_root).expanduser().resolve()
+    app_src_norm = os.path.normcase(str((st_root / "app_src").resolve()))
+    candidates: List[Path] = []
+    env_src = (os.environ.get("COSMOS_REPO_SRC") or "").strip()
+    if env_src:
+        candidates.append(Path(env_src))
+    found_here = find_repo_src_dir()
+    if found_here is not None:
+        candidates.append(found_here)
+    rec_p = repo_source_record_path(st_root)
+    if rec_p.is_file():
+        with contextlib.suppress(Exception):
+            rec_doc = json.loads(rec_p.read_text(encoding="utf-8-sig"))
+            if isinstance(rec_doc, dict) and rec_doc.get("repo_src"):
+                candidates.append(Path(str(rec_doc["repo_src"])))
+    meta_doc = read_app_src_update_meta(st_root / "app_src")
+    if isinstance(meta_doc, dict) and meta_doc.get("synced_from_source"):
+        candidates.append(Path(str(meta_doc["synced_from_source"])))
+
+    for raw_c in candidates:
+        with contextlib.suppress(Exception):
+            resolved_c = raw_c.expanduser().resolve()
+            if os.path.normcase(str(resolved_c)) == app_src_norm:
+                continue
+            if (resolved_c / "cosmos_mcp" / "__init__.py").is_file():
+                return resolved_c
+    return None
+
+
+def sync_repo_src_to_app_src(state_root: Path, *, explicit_restart: bool = False) -> Optional[Path]:
+    """Sync valid upstream repository `src` into `<state_root>/app_src` while honoring OTA anti-downgrade."""
+    st_root = Path(state_root).expanduser().resolve()
+    repo_src = resolve_upstream_repo_src(st_root)
+    if repo_src is None:
+        return None
+    rec_p = repo_source_record_path(st_root)
+    with contextlib.suppress(Exception):
+        rec_p.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(rec_p, {"repo_src": str(repo_src), "updated_at": round(time.time(), 3)})
+
+    force_sync = False
+    if explicit_restart:
+        is_git_wt = any((cand_g / ".git").exists() for cand_g in (repo_src.parent, repo_src))
+        app_init = st_root / "app_src" / "cosmos_mcp" / "__init__.py"
+        if not app_init.is_file():
+            force_sync = True
+        elif is_git_wt:
+            src_ver = parse_semver_tuple(read_package_init_version(repo_src / "cosmos_mcp" / "__init__.py"))
+            meta_doc = read_app_src_update_meta(st_root / "app_src")
+            dst_ver_str = str((meta_doc or {}).get("version") or "").strip() or read_package_init_version(app_init)
+            dst_ver = parse_semver_tuple(dst_ver_str)
+            if src_ver >= dst_ver:
+                force_sync = True
+    return sync_portable_app_src(st_root, source_src_dir=repo_src, force_overwrite=force_sync)
 
 
 def worker_reload_flag_path(state_root: Path, prefix: str = "pc") -> Path:
@@ -1163,6 +1229,10 @@ def spawn_detached_daemon(
     env["LOCALPC_MCP_STATE_DIR"] = str(st_root)
     if no_tray:
         env["COSMOS_NO_TRAY"] = "1"
+    upstream_repo_src = resolve_upstream_repo_src(st_root)
+    if upstream_repo_src is not None:
+        env["COSMOS_REPO_SRC"] = str(upstream_repo_src)
+        sync_repo_src_to_app_src(st_root, explicit_restart=clear_user_stop)
     persisted_src = resolve_persisted_src_dir(st_root)
     if persisted_src is not None:
         existing_pp = env.get("PYTHONPATH", "")
@@ -4146,6 +4216,10 @@ class StandaloneSupervisorLoop:
         env["PYTHONUTF8"] = "1"
         env["COSMOS_MCP_STATE_DIR"] = str(self.state_root)
         env["LOCALPC_MCP_STATE_DIR"] = str(self.state_root)
+        upstream_repo_src = resolve_upstream_repo_src(self.state_root)
+        if upstream_repo_src is not None:
+            env["COSMOS_REPO_SRC"] = str(upstream_repo_src)
+            sync_portable_app_src(self.state_root, source_src_dir=upstream_repo_src)
         persisted_src = resolve_persisted_src_dir(self.state_root)
         if persisted_src is not None:
             existing_pp = env.get("PYTHONPATH", "")

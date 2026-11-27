@@ -569,10 +569,12 @@ def test_studio_zero_html_password_remote_redaction_actions_and_uninstall_gate(
             assert boot_doc["connection"]["connection_password"] == ""
             assert boot_doc["connection"]["has_saved_password"] is True
 
-        # 2) Loopback `GET /api/studio/state` & `reveal_password` return password for local convenience & compat
+        # 2) Loopback `GET /api/studio/state` never leaks plaintext password; `reveal_password` returns it on demand
         st_lb = lb_client.get("/api/studio/state").json()
         csrf = st_lb["csrf_token"]
-        assert st_lb["connection"]["connection_password"] == owner_pw
+        assert st_lb["connection"]["connection_password"] == ""
+        assert st_lb["connection"]["has_saved_password"] is True
+        assert owner_pw not in json.dumps(st_lb)
 
         r_rev_lb = lb_client.post(
             "/api/studio/connection",
@@ -639,7 +641,9 @@ def test_studio_zero_html_password_remote_redaction_actions_and_uninstall_gate(
             headers={"Origin": f"http://127.0.0.1:{port}"},
         )
         assert r_rot_pw.status_code == 200
-        new_pw = r_rot_pw.json()["connection"]["connection_password"]
+        rot_pw_doc = r_rot_pw.json()
+        assert rot_pw_doc["connection"]["connection_password"] == ""
+        new_pw = rot_pw_doc["connection_password"]
         assert new_pw and new_pw != owner_pw
         assert app.state.provider.authenticate_owner(owner_pw) is False
         assert app.state.provider.authenticate_owner(new_pw) is True
@@ -923,6 +927,26 @@ def test_chatgpt_oneclick_capability_path_e2e_accept_origin_stealth_and_revocati
         assert rem_client.get(f"/c/{full_tok}/studio").status_code == 404
         assert rem_client.get(f"/c/{full_tok}/api/studio/state").status_code == 404
         assert rem_client.get(f"/c/{full_tok}/oauth/authorize").status_code == 404
+
+        # 3b) Explicitly enabling `enable_oneclick_token_route` unlocks `/c/<tok>/mcp` & `/c/<ro_tok>/mcp/readonly`,
+        #     while turning it back off immediately restores Stealth 404
+        r_en_oc = lb_client.post(
+            "/api/studio/connection",
+            json={"action": "set_oneclick_token_route", "enabled": True, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_en_oc.status_code == 200
+        assert rem_client.post(f"/c/{full_tok}/mcp", json=list_req, headers=mcp_hdrs).status_code == 200
+        assert rem_client.post(f"/c/{ro_tok}/mcp/readonly", json=list_req, headers=mcp_hdrs).status_code == 200
+        assert rem_client.post("/c/oc_forged_invalid_token_123456789012345/mcp", json=list_req, headers=mcp_hdrs).status_code == 404
+
+        r_dis_oc = lb_client.post(
+            "/api/studio/connection",
+            json={"action": "set_oneclick_token_route", "enabled": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_dis_oc.status_code == 200
+        assert rem_client.post(f"/c/{full_tok}/mcp", json=list_req, headers=mcp_hdrs).status_code == 404
 
         # Unauthenticated standard `/mcp` requires OAuth 2.1 (`401`)
         assert rem_client.post("/mcp", json=list_req, headers=mcp_hdrs).status_code == 401
