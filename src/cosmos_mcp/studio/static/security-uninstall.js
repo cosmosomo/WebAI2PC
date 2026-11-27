@@ -23,7 +23,7 @@
     if (
       s.indexOf("插件名称：WebAI2PC") >= 0 &&
       s.indexOf("MCP 地址：https://") >= 0 &&
-      s.indexOf("安全提醒：以上内容含您本机的专属连接地址") < 0
+      s.indexOf("安全提醒：") < 0
     ) {
       return s + ANTI_SHARE_PROMPT_TAIL;
     }

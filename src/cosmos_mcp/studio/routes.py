@@ -4349,6 +4349,8 @@ def mount_standalone_status_ui(
                         set_public_url=set_public_url,
                     )
                 want_rev_ep = parse_bool_flag(data.get("revoke_sessions"), default=False)
+                if hasattr(store, "revoke_oneclick_tokens"):
+                    store.revoke_oneclick_tokens()
                 if want_rev_ep:
                     store.revoke_all_tokens(delete_clients=False)
                     if provider is not None and hasattr(provider, "allowed_resources"):
@@ -6134,6 +6136,88 @@ def mount_standalone_status_ui(
         )
         return JSONResponse(snap, status_code=200, headers={"Cache-Control": "no-store"})
 
+    async def studio_chatgpt_oneclick_ep(request: Request) -> Response:
+        if not is_strict_direct_loopback(request, port):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "forbidden_non_loopback",
+                    "message": "ChatGPT 一键连接专属地址仅允许在本机 127.0.0.1 控制台生成，禁止远程请求。",
+                },
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        data, _ = await _parse_request_data(request)
+        if data is None:
+            return JSONResponse(
+                {"ok": False, "error": "请求格式无效。"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        csrf_err = _verify_same_origin_and_csrf(
+            request,
+            data,
+            local_admin_csrf,
+            strict_loopback_only=True,
+            port=port,
+            local_api_token=local_api_token,
+        )
+        if csrf_err is not None:
+            return csrf_err
+
+        kind = str(data.get("kind") or "mcp").strip().lower()
+        if kind not in ("mcp", "readonly"):
+            return JSONResponse(
+                {"ok": False, "error": "invalid_kind", "message": "kind 仅支持 mcp 或 readonly。"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        rotate_flag = parse_bool_flag(data.get("rotate"), default=False)
+        snap = _state_snapshot(request)
+        if not snap.get("public_https_ready"):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "gateway_not_ready",
+                    "message": "公网 HTTPS 通道尚未就绪，请等待连接就绪后再生成一键配置地址。",
+                },
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        raw_mcp_url = str(snap.get("mcp_url") or "").strip()
+        parsed_u = urlsplit(raw_mcp_url)
+        host_only = (parsed_u.hostname or "").strip().lower()
+        if parsed_u.scheme.lower() != "https" or not parsed_u.netloc or host_only in ("127.0.0.1", "localhost", "::1"):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "gateway_not_ready",
+                    "message": "当前未检测到可用的公网 HTTPS 网关地址。",
+                },
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        is_ro = kind == "readonly"
+        if hasattr(provider, "get_or_mint_oneclick_capability_token"):
+            minted_oc = provider.get_or_mint_oneclick_capability_token(readonly=is_ro, rotate=rotate_flag)
+        else:
+            minted_oc = store.get_or_mint_oneclick_capability_token(readonly=is_ro, rotate=rotate_flag)
+        ep_suffix = "/mcp/readonly" if is_ro else "/mcp"
+        oneclick_url = f"https://{parsed_u.netloc}/c/{minted_oc['token']}{ep_suffix}"
+        return JSONResponse(
+            {
+                "ok": True,
+                "oneclick_url": oneclick_url,
+                "client_id": str(minted_oc["client_id"]),
+                "client_name": str(minted_oc["client_name"]),
+                "readonly": is_ro,
+                "reused": bool(minted_oc.get("reused", False)),
+                "expires_at": int(minted_oc.get("expires_at") or 0),
+            },
+            status_code=200,
+            headers={"Cache-Control": "no-store"},
+        )
+
     async def studio_identity_export_png_ep(request: Request) -> Response:
         data, _ = await _parse_request_data(request)
         if data is None:
@@ -6442,6 +6526,7 @@ def mount_standalone_status_ui(
         Route("/api/studio/identity/export_png", endpoint=studio_identity_export_png_ep, methods=["POST"]),
         Route("/api/studio/identity/import_png", endpoint=studio_identity_import_png_ep, methods=["POST"]),
         Route("/api/studio/tokens/mint", endpoint=studio_tokens_mint_ep, methods=["POST"]),
+        Route("/api/studio/chatgpt-oneclick", endpoint=studio_chatgpt_oneclick_ep, methods=["POST"]),
         Route("/api/studio/tools-safety", endpoint=studio_tools_safety_ep, methods=["POST"]),
         Route("/api/studio/connection", endpoint=studio_connection_ep, methods=["POST"]),
         Route("/api/studio/connectivity-check", endpoint=studio_connectivity_check_ep, methods=["POST"]),

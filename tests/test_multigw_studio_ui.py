@@ -1040,8 +1040,9 @@ def test_workers_dev_synchronous_gemini_open_and_proxy_alert_ui(tmp_path: Path) 
 
 
 def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_path: Path) -> None:
-    """Verify ChatGPT primary open-plugins & secondary diagnostic copy buttons, showcase host-prefix copy, and /tutorials sync."""
+    """Verify ChatGPT one-click @Plugin Creator prompt copy with /c/ pre-authorized URL, UI subtraction, and /tutorials sync."""
     at_sym = chr(64)
+    plugin_creator_tag = "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e)"
     state_dir = tmp_path / "state_cgpt_assist"
     ws_dir = tmp_path / "ws_cgpt_secret_path_check"
     ws_dir.mkdir(parents=True)
@@ -1057,7 +1058,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
     )
 
     with LiveStudioServer(state_dir, ws_dir, tunnel_mode="public_gateway", thread_prefix="cgpt-assist") as srv:
-        # Phase 1: Gateway is starting (NOT ready yet) -> both primary & secondary buttons MUST stay disabled
+        # Phase 1: Gateway is starting (NOT ready yet) -> primary one-click buttons MUST stay disabled
         atomic_write_json(
             state_dir / "state" / "daemon_status.json",
             {
@@ -1085,29 +1086,40 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
 
             btn_meta_initial = driver.wait_until(
                 """() => {
-                    const ofull = document.getElementById('open-chatgpt-plugins-full-btn');
-                    const oro = document.getElementById('open-chatgpt-plugins-ro-btn');
                     const afull = document.getElementById('copy-chatgpt-assist-full-btn');
                     const aro = document.getElementById('copy-chatgpt-assist-ro-btn');
-                    if (!ofull || !oro || !afull || !aro) return false;
-                    if (ofull.disabled !== true || oro.disabled !== true || afull.disabled !== true || aro.disabled !== true) {
+                    const pairSummary = document.querySelector('#pairing-sessions-details > summary');
+                    if (!afull || !aro || !pairSummary) return false;
+                    if (afull.disabled !== true || aro.disabled !== true) {
                         return false;
                     }
                     return {
-                        openFullText: ofull.textContent.trim(),
-                        openRoText: oro.textContent.trim(),
+                        openFullRemoved: document.getElementById('open-chatgpt-plugins-full-btn') === null,
+                        openRoRemoved: document.getElementById('open-chatgpt-plugins-ro-btn') === null,
+                        patShortcutRemoved: document.getElementById('open-pat-fallback-btn') === null,
                         assistFullText: afull.textContent.trim(),
                         assistRoText: aro.textContent.trim(),
+                        assistFullPrimary: afull.classList.contains('btn-primary'),
+                        assistRoPrimary: aro.classList.contains('btn-primary'),
+                        pairSummaryText: pairSummary.textContent.trim(),
+                        hasManualPairFold: Boolean(document.getElementById('manual-pair-codes-details')),
                     };
                 }""",
-                description="ChatGPT primary & assist buttons disabled while gateway not ready",
+                description="ChatGPT one-click buttons disabled while gateway not ready and UI subtracted",
             )
-            assert btn_meta_initial["openFullText"] == "复制地址并打开 ChatGPT 插件页"
-            assert btn_meta_initial["openRoText"] == "复制地址并打开 ChatGPT 插件页"
-            assert btn_meta_initial["assistFullText"] == "复制给 ChatGPT 接入 / 排障"
-            assert btn_meta_initial["assistRoText"] == "复制给 ChatGPT 接入 / 排障"
+            assert btn_meta_initial["openFullRemoved"] is True
+            assert btn_meta_initial["openRoRemoved"] is True
+            assert btn_meta_initial["patShortcutRemoved"] is True
+            assert btn_meta_initial["assistFullText"] == "复制一键配置提示词（发给 Work）"
+            assert btn_meta_initial["assistRoText"] == "复制只读配置提示词（发给 Work）"
+            assert btn_meta_initial["assistFullPrimary"] is True
+            assert btn_meta_initial["assistRoPrimary"] is True
+            assert "6位码" not in btn_meta_initial["pairSummaryText"]
+            assert "核对" not in btn_meta_initial["pairSummaryText"]
+            assert "已连会话" in btn_meta_initial["pairSummaryText"]
+            assert btn_meta_initial["hasManualPairFold"] is True
 
-            # Phase 2: Gateway becomes ready -> buttons unlock, stub window.open, verify pure URL copy & diagnostic copy
+            # Phase 2: Gateway becomes ready -> buttons unlock, verify /c/ pre-authorized @Plugin Creator prompt
             atomic_write_json(
                 state_dir / "state" / "daemon_status.json",
                 {
@@ -1129,17 +1141,11 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             driver.trigger_poll()
             driver.wait_until(
                 """() => {
-                    const ofull = document.getElementById('open-chatgpt-plugins-full-btn');
-                    const oro = document.getElementById('open-chatgpt-plugins-ro-btn');
                     const afull = document.getElementById('copy-chatgpt-assist-full-btn');
                     const aro = document.getElementById('copy-chatgpt-assist-ro-btn');
-                    return Boolean(
-                        ofull && oro && afull && aro &&
-                        ofull.disabled === false && oro.disabled === false &&
-                        afull.disabled === false && aro.disabled === false
-                    );
+                    return Boolean(afull && aro && afull.disabled === false && aro.disabled === false);
                 }""",
-                description="ChatGPT primary & assist buttons enabled once gateway ready",
+                description="ChatGPT one-click buttons enabled once gateway ready",
             )
 
             secret_meta = driver.evaluate(
@@ -1150,69 +1156,44 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                 })"""
             )
 
-            # 2a) Primary buttons: stub window.open synchronously & verify pure URL copy without launching external browser
-            open_calls = driver.evaluate(
-                """() => {
-                    window.__copiedHistory = [];
-                    const calls = [];
-                    const origOpen = window.open;
-                    window.open = (...args) => { calls.push(args); return null; };
-                    try {
-                        document.getElementById('open-chatgpt-plugins-full-btn').click();
-                        document.getElementById('open-chatgpt-plugins-ro-btn').click();
-                    } finally {
-                        window.open = origOpen;
-                    }
-                    return calls;
-                }"""
-            )
-            assert len(open_calls) == 2
-            assert open_calls[0][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
-            assert open_calls[1][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
-
-            copied_urls = driver.wait_until(
-                "() => (window.__copiedHistory && window.__copiedHistory.length >= 2) ? window.__copiedHistory.slice() : false",
-                description="Both pure ChatGPT URLs copied by primary buttons",
-            )
-            assert copied_urls[0] == "https://cgpt-ready.srv.us/mcp"
-            assert copied_urls[1] == "https://cgpt-ready.srv.us/mcp/readonly"
-
-            # 2b) Secondary diagnostic buttons: zero-secret diagnostic prompt
+            # 2a) Primary one-click buttons: fetch /api/studio/chatgpt-oneclick and copy @Plugin Creator prompt
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
                     document.getElementById('copy-chatgpt-assist-full-btn').click();
+                }"""
+            )
+            full_prompt = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Full ChatGPT one-click prompt copied",
+            )
+            driver.evaluate(
+                """() => {
+                    window.__copiedHistory = [];
                     document.getElementById('copy-chatgpt-assist-ro-btn').click();
                 }"""
             )
-            copied_list = driver.wait_until(
-                "() => (window.__copiedHistory && window.__copiedHistory.length >= 2) ? window.__copiedHistory.slice() : false",
-                description="Both ChatGPT diagnostic prompts copied",
+            ro_prompt = driver.wait_until(
+                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
+                description="Readonly ChatGPT one-click prompt copied",
             )
-            full_prompt, ro_prompt = copied_list[0], copied_list[1]
 
             for p in (full_prompt, ro_prompt):
-                assert p.splitlines()[0] == "请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。"
-                assert "认证方式：OAuth" in p
-                assert "不要默认打开云浏览器，也不要新建中转服务" in p
-                assert "https://chatgpt.com/plugins" in p
-                assert "Create plugins with MCPs" in p
-                assert "找到 pc_get_status 或 get_status，用实际参数调用一次" in p
-                assert "能分别在 Chat 和 Work 验证就分别验证" in p
+                assert p.startswith(plugin_creator_tag)
+                assert "插件名称：WebAI2PC" in p
+                assert "该专属地址已预授权，支持标准 Streamable HTTP（无状态 JSON-RPC 2.0 POST，无需额外配置 OAuth 令牌或密钥）" in p
+                assert "Create plugins with MCPs" not in p
+                assert "不要默认打开云浏览器" not in p
+                assert p.count("安全提醒：") == 1
                 assert f"{at_sym}WebAI2PC" in p
 
-            assert "MCP 地址：https://cgpt-ready.srv.us/mcp\n" in full_prompt
-            assert "ChatGPT Team / Business / Enterprise / Edu 工作区，授权后可在 Chat 和 Work 中通过" in full_prompt
+            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in full_prompt
+            assert "/mcp\n" in full_prompt
+            assert "读写我本地授权目录的文件并执行本地开发工具" in full_prompt
 
-            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in ro_prompt
-            assert f"ChatGPT Plus / Pro，授权后可在 Chat 和 Work 中通过 {at_sym}WebAI2PC 使用该服务提供的只读工具。" in ro_prompt
-
-            for p in (full_prompt, ro_prompt):
-                assert p.splitlines()[-1] == "【安全提醒：上方包含本机专属连接地址，仅限粘贴给本人登录的账号使用，请勿发往微信群、论坛、公开 Issue 或转给他人。】"
-
-            toast_text = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
-            assert "仅限填入本人账号，请勿外发给他人或群聊" in toast_text
-            assert toast_text == "已复制 ChatGPT 接入与排障指令（仅限填入本人账号，请勿外发给他人或群聊；不含配对码与本机路径）"
+            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in ro_prompt
+            assert "/mcp/readonly\n" in ro_prompt
+            assert "只读查看我本地授权目录的文件与状态" in ro_prompt
 
             # Strict zero-secret / zero-local-path leak checks
             for secret_val in (secret_meta["pair4"], secret_meta["pair6"], secret_meta["pw"], str(ws_dir)):
@@ -1220,8 +1201,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     assert secret_val not in full_prompt
                     assert secret_val not in ro_prompt
 
-            # 2c) Onboarding Step 4 showcase copies pure task prompt (no hardcoded connector name), shows @ toast, and expands on click
-            # Also verify duplicate bottom showcase strip and misclick-prone top-bar quick-readonly-btn are removed
+            # 2b) Onboarding Step 4 showcase copies pure task prompt (no hardcoded connector name), shows @ toast, and expands on click
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
@@ -1260,47 +1240,24 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             assert preview_states["hiddenAfter"] is False
             assert "blackhole_studio.html" in preview_states["textAfter"]
 
-            # 3) Verify `/tutorials` Module 2 primary & secondary buttons unlock on live sync and stub window.open cleanly
+            # 3) Verify `/tutorials` Module 2 primary one-click button unlocks on live sync and copies same prompt
             driver.goto(f"{srv.base_url}/tutorials", wait_studio_ready=False)
             tut_meta = driver.wait_until(
                 """() => {
-                    const openBtn = document.querySelector('[data-open-chatgpt-plugins="readonly"]');
                     const assistBtn = document.querySelector('[data-copy-chatgpt-assist="readonly"]');
-                    if (!openBtn || !assistBtn || openBtn.disabled !== false || assistBtn.disabled !== false) {
+                    if (!assistBtn || assistBtn.disabled !== false) {
                         return false;
                     }
                     return {
-                        openText: openBtn.textContent.trim(),
+                        openRemoved: document.querySelector('[data-open-chatgpt-plugins]') === null,
                         assistText: assistBtn.textContent.trim(),
                     };
                 }""",
                 timeout_sec=8.0,
-                description="Tutorials ChatGPT primary & assist buttons unlocked on live sync",
+                description="Tutorials ChatGPT one-click button unlocked on live sync",
             )
-            assert tut_meta["openText"] == "复制地址并打开 ChatGPT 插件页"
-            assert tut_meta["assistText"] == "复制给 ChatGPT 接入 / 排障"
-
-            tut_open_calls = driver.evaluate(
-                """() => {
-                    window.__copiedHistory = [];
-                    const calls = [];
-                    const origOpen = window.open;
-                    window.open = (...args) => { calls.push(args); return null; };
-                    try {
-                        document.querySelector('[data-open-chatgpt-plugins="readonly"]').click();
-                    } finally {
-                        window.open = origOpen;
-                    }
-                    return calls;
-                }"""
-            )
-            assert len(tut_open_calls) == 1
-            assert tut_open_calls[0][:3] == ["https://chatgpt.com/plugins", "_blank", "noopener"]
-            tut_copied_url = driver.wait_until(
-                "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
-                description="Tutorials primary button copied readonly URL",
-            )
-            assert tut_copied_url == "https://cgpt-ready.srv.us/mcp/readonly"
+            assert tut_meta["openRemoved"] is True
+            assert tut_meta["assistText"] == "复制只读配置提示词（发给 Work）"
 
             driver.evaluate(
                 """() => {
@@ -1310,14 +1267,13 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             )
             tut_copied_assist = driver.wait_until(
                 "() => (window.__copiedHistory && window.__copiedHistory.length >= 1) ? window.__copiedHistory[0] : false",
-                description="Tutorials ChatGPT diagnostic prompt copied",
+                description="Tutorials ChatGPT one-click prompt copied",
             )
-            assert tut_copied_assist.splitlines()[0] == "请帮我把 WebAI2PC 接入我当前选中的 ChatGPT 工作区/账号，并完成首次真实调用。"
-            assert "不要默认打开云浏览器，也不要新建中转服务" in tut_copied_assist
-            assert "https://chatgpt.com/plugins" in tut_copied_assist
-            assert "Create plugins with MCPs" in tut_copied_assist
-            assert "找到 pc_get_status 或 get_status，用实际参数调用一次" in tut_copied_assist
-            assert "MCP 地址：https://cgpt-ready.srv.us/mcp/readonly\n" in tut_copied_assist
+            assert tut_copied_assist.startswith(plugin_creator_tag)
+            assert "Create plugins with MCPs" not in tut_copied_assist
+            assert "不要默认打开云浏览器" not in tut_copied_assist
+            assert tut_copied_assist.count("安全提醒：") == 1
+            assert "MCP 地址：https://cgpt-ready.srv.us/c/" in tut_copied_assist
             assert tut_copied_assist == ro_prompt
             assert driver.get_runtime_diagnostics()["jsErrors"] == []
 
@@ -1369,11 +1325,13 @@ def test_gateway_dependency_annotations_and_pat_anti_leak_ui_invariants() -> Non
         assert pat_kw in index_txt, f"Missing PAT UI element/warning: {pat_kw}"
 
     assert "/api/studio/tokens/mint" in js_txt
+    assert "/api/studio/chatgpt-oneclick" in js_txt
     assert "PAT_ANTI_LEAK_TOAST" in js_txt
     assert "严禁将此专用密钥发进与 AI 的聊天对话框、微信群、论坛或公开 Issue" in js_txt
 
-    # Docs 02 covers ChatGPT Sites Secrets fallback without sharing token in chat
+    # Docs 02 covers one-click @Plugin Creator + /c/<token>/mcp + ChatGPT Sites fallback
     assert "ChatGPT Sites" in doc02_txt
-    assert "Secrets" in doc02_txt
-    assert "严禁将 `cmcp_...` 专用密钥发进与 AI 的聊天对话框" in doc02_txt
+    assert "@Plugin Creator" in doc02_txt
+    assert "/c/<token>/mcp" in doc02_txt
+    assert "Create plugins with MCPs" not in doc02_txt
 

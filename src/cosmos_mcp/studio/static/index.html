@@ -601,8 +601,7 @@
                 <span class="field-label" id="chatgpt-full-url-label">Team / Business / Enterprise / Edu 工作区（全功能读写 · 装好后日常用 Chat 省额度，长任务用 Work）</span>
                 <div class="copy-row">
                   <div class="mono-value" id="chatgpt-full-url-box" title="点击直接复制全权限地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-primary btn-sm" id="open-chatgpt-plugins-full-btn" data-open-chatgpt-plugins="mcp" title="网关就绪后复制完整读写地址，并在当前已登录浏览器打开 ChatGPT 插件页直接粘贴绑定" disabled>复制地址并打开 ChatGPT 插件页</button>
-                  <button type="button" class="btn btn-tonal btn-sm" id="copy-chatgpt-assist-full-btn" data-copy-chatgpt-assist="mcp" title="复制 4 步接入与排障指令发给 ChatGPT 直接探测连接（不含配对码与本机路径）" disabled>复制给 ChatGPT 接入 / 排障</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-full-btn" data-copy-chatgpt-assist="mcp" title="复制一键配置提示词（含预授权专属地址）发给 ChatGPT Work 一键创建并验证" disabled>复制一键配置提示词（发给 Work）</button>
                   <button type="button" class="btn btn-sm" id="copy-chatgpt-full-btn" data-copy-url-kind="mcp" disabled>仅复制地址</button>
                 </div>
               </div>
@@ -610,15 +609,10 @@
                 <span class="field-label" id="ro-url-label">个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用，装好后日常用 Chat 省额度）</span>
                 <div class="copy-row">
                   <div class="mono-value" id="ro-url-box" title="点击直接复制只读地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-primary btn-sm" id="open-chatgpt-plugins-ro-btn" data-open-chatgpt-plugins="readonly" title="网关就绪后复制只读地址，并在当前已登录浏览器打开 ChatGPT 插件页直接粘贴绑定" disabled>复制地址并打开 ChatGPT 插件页</button>
-                  <button type="button" class="btn btn-tonal btn-sm" id="copy-chatgpt-assist-ro-btn" data-copy-chatgpt-assist="readonly" title="复制 4 步只读接入与排障指令发给 ChatGPT 直接探测连接（不含配对码与本机路径）" disabled>复制给 ChatGPT 接入 / 排障</button>
-                  <button type="button" class="btn btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly" disabled>仅复制只读</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-ro-btn" data-copy-chatgpt-assist="readonly" title="复制只读一键配置提示词（含只读预授权专属地址）发给 ChatGPT Work 一键创建并验证" disabled>复制只读配置提示词（发给 Work）</button>
+                  <button type="button" class="btn btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly" disabled>仅复制地址</button>
                 </div>
               </div>
-            </div>
-            <div class="chatgpt-pat-shortcut-row">
-              <span class="item-meta">工作区直连报 <code>403</code> 且暂时拿不到管理员 <code>Create plugins with MCPs</code> 权限？</span>
-              <button type="button" class="btn-link-subtle" id="open-pat-fallback-btn">展开 Sites 环境变量 / CLI 专用密钥兜底 ▾</button>
             </div>
           </div>
 
@@ -636,7 +630,7 @@
               <div class="wb-fold-body" id="gemini-https-guide">
                 <ol class="wb-guide-ol">
                   <li><strong>Gemini：</strong><strong>勿在浏览器地址栏直接打开 <code>/mcp</code></strong>，请打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>），点右上角 <code>+ Custom</code>，把上方 <code>https://.../mcp</code> 粘贴到 <code>MCP Server URL</code> 配置栏点 <code>Next</code>，确认页点「本机一键允许连接」并把 <code>App actions</code> 设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
-                  <li><strong>ChatGPT（已登录浏览器直绑最快 · 日常干活用 Chat 省额度）：</strong>网关就绪后点上方「复制地址并打开 ChatGPT 插件页」，在当前已登录浏览器打开 <code>chatgpt.com/plugins</code> 点 <code>＋ -&gt; 添加自定义 MCP 服务器</code>（<code>Add custom MCP server</code>），名称填 <code>WebAI2PC</code>、认证选 <code>OAuth</code>、粘贴地址创建并点 <code>Install</code>，跳转授权页直接点「本机一键允许连接」（无需搭 <code>ChatGPT Sites</code> 中转，也勿用 ZIP 上传外部 MCP 私有插件以免报 <code>403</code>；若网页端无添加入口或报权限限制，请联系工作区管理员开启 <code>Create plugins with MCPs</code> 权限）。遇到连接问题可点「复制给 ChatGPT 接入 / 排障」（若需 AI 操作受控浏览器代填须切换到顶部 <code>Work</code> 模式并输 <code>6</code> 位动态配对码，<code>Chat</code> 模式无受控浏览器）。装好后同账号互通：日常改代码跑脚本切回 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>pc_get_status</code> 验证。</li>
+                  <li><strong>ChatGPT（一键配置 · 装好后日常用 Chat 省额度）：</strong>网关就绪后点上方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），直接粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动创建并验证 <code>WebAI2PC</code> 插件（若工作区限制外部域名 MCP 也会自动通过私有 <code>ChatGPT Sites</code> 转发接入）。装好后同账号互通：日常改代码跑脚本切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>pc_get_status</code> 验证。</li>
                 </ol>
                 <div class="ws-actions" style="margin-top:10px;">
                   <button type="button" class="btn btn-sm" id="copy-gemini-guide-wake-btn">复制唤醒词</button>
@@ -652,41 +646,48 @@
               <summary class="wb-fold-summary">
                 <span class="wb-fold-summary-left">
                   <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
-                  <span>配对与已连会话</span>
-                  <span class="wb-inline-metric">6位码 <strong id="dynamic-pair-code-box" class="clickable-code" title="点击复制 6 位动态配对码">------</strong></span>
-                  <span class="wb-inline-metric">核对 <strong id="pair-code-box" class="clickable-code" title="点击复制 4 位核对码">----</strong></span>
+                  <span>已连会话</span>
                   <span class="wb-inline-metric">已连 <strong id="sessions-count">0</strong></span>
                 </span>
               </summary>
               <div class="wb-fold-body">
-                <div class="ws-actions" style="margin-bottom:10px;">
-                  <button type="button" class="btn btn-sm" id="copy-dynamic-code-btn">复制 6 位码</button>
-                  <button type="button" class="btn btn-sm" id="copy-pair-code-btn">复制核对码</button>
+                <div class="pair-mini-box" style="margin-bottom:10px;">
+                  <div class="field-head-between" style="margin-bottom:6px;">
+                    <span class="field-label" style="margin:0;">已连接网页会话列表</span>
+                    <button type="button" class="btn btn-danger btn-sm" id="revoke-sessions-btn" disabled>全部断开</button>
+                  </div>
+                  <ul class="item-list compact-session-list" id="authorized-sessions-list" style="margin:0;max-height:150px;overflow-y:auto;"></ul>
                 </div>
-                <div class="pair-grid-compact wb-pair-expanded">
-                  <div class="pair-mini-box">
-                    <div class="field-head-between" style="margin-bottom:6px;">
-                      <span class="field-label" style="margin:0;">20 位固定备用口令（仅回环被拦截时使用）</span>
-                      <div class="ws-actions">
-                        <button type="button" class="btn btn-sm" id="toggle-pw-btn">显示口令</button>
-                        <button type="button" class="btn btn-sm" id="copy-pw-btn">复制备用口令</button>
+
+                <details id="manual-pair-codes-details" class="pat-mint-details" style="margin-bottom:8px;">
+                  <summary class="pat-mint-summary">
+                    <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
+                    <span>异地 / 手机手动配对码（同机一键授权无需使用）</span>
+                  </summary>
+                  <div class="pat-mint-body">
+                    <div class="ws-actions" style="margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+                      <span class="wb-inline-metric">6位码 <strong id="dynamic-pair-code-box" class="clickable-code" title="点击复制 6 位动态配对码">------</strong></span>
+                      <button type="button" class="btn btn-sm" id="copy-dynamic-code-btn">复制 6 位码</button>
+                      <span class="wb-inline-metric">核对 <strong id="pair-code-box" class="clickable-code" title="点击复制 4 位核对码">----</strong></span>
+                      <button type="button" class="btn btn-sm" id="copy-pair-code-btn">复制核对码</button>
+                    </div>
+                    <div class="pair-mini-box">
+                      <div class="field-head-between" style="margin-bottom:6px;">
+                        <span class="field-label" style="margin:0;">20 位固定备用口令（仅回环被拦截时使用）</span>
+                        <div class="ws-actions">
+                          <button type="button" class="btn btn-sm" id="toggle-pw-btn">显示口令</button>
+                          <button type="button" class="btn btn-sm" id="copy-pw-btn">复制备用口令</button>
+                        </div>
                       </div>
+                      <div class="mono-value" id="conn-pw-box" data-secret="" data-shown="0" style="padding:7px 12px;font-size:13px;">••••••••••••••••••••</div>
                     </div>
-                    <div class="mono-value" id="conn-pw-box" data-secret="" data-shown="0" style="padding:7px 12px;font-size:13px;">••••••••••••••••••••</div>
                   </div>
-                  <div class="pair-mini-box">
-                    <div class="field-head-between" style="margin-bottom:6px;">
-                      <span class="field-label" style="margin:0;">已连接网页会话列表</span>
-                      <button type="button" class="btn btn-danger btn-sm" id="revoke-sessions-btn" disabled>全部断开</button>
-                    </div>
-                    <ul class="item-list compact-session-list" id="authorized-sessions-list" style="margin:0;max-height:130px;overflow-y:auto;"></ul>
-                  </div>
-                </div>
+                </details>
 
                 <details id="pat-mint-details" class="pat-mint-details">
                   <summary class="pat-mint-summary">
                     <svg class="summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 4 10 8 6 12"></polyline></svg>
-                    <span>受限工作区 403 免管理员兜底：Sites / CLI 专用密钥</span>
+                    <span>高级：本地 CLI 专用密钥</span>
                     <span class="tag tag-muted">仅本机 127.0.0.1 可签发 · 随时一键断开</span>
                   </summary>
                   <div class="pat-mint-body">

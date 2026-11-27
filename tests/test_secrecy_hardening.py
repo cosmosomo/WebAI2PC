@@ -839,3 +839,157 @@ def test_stealth_404_allows_issued_pat_bearer_on_bare_mcp_and_enforces_readonly_
             == 404
         )
 
+
+def test_chatgpt_oneclick_capability_path_e2e_accept_origin_stealth_and_revocation(tmp_path: Path) -> None:
+    """Verify `/c/<token>/mcp` & `/c/<token>/mcp/readonly`, missing Accept auto-fill, Sites Origin, Stealth 404, and instant revocation."""
+    st_root = tmp_path / "state_oc"
+    ws_dir = tmp_path / "ws_oc"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    port = 18829
+    public_base = "https://oc-demo.srv.us"
+    _setup_public_gateway_state(st_root, ws_dir, port=port, public_base=public_base)
+
+    app = create_standalone_app(state_dir=str(st_root), port=port, workspace=str(ws_dir))
+    init_req = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "chatgpt-sites-relay", "version": "1.0"},
+        },
+    }
+    list_req = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+    status_req = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "pc_get_status", "arguments": {}}}
+    mcp_hdrs = {"Accept": "application/json, text/event-stream"}
+
+    with TestClient(app, raise_server_exceptions=False) as _lifespan_holder:
+        _ = _lifespan_holder
+        lb_client = TestClient(
+            app,
+            base_url=f"http://127.0.0.1:{port}",
+            client=("127.0.0.1", 52200),
+            raise_server_exceptions=False,
+        )
+        rem_client = TestClient(
+            app,
+            base_url=public_base,
+            client=("198.51.100.91", 52201),
+            raise_server_exceptions=False,
+        )
+
+        st_doc = lb_client.get("/api/studio/state").json()
+        csrf = st_doc["csrf_token"]
+
+        # 1) Non-loopback caller MUST be rejected with 403 on `/api/studio/chatgpt-oneclick`
+        r_rem_oc = rem_client.post(
+            "/api/studio/chatgpt-oneclick",
+            json={"kind": "mcp", "rotate": False, "csrf": csrf},
+            headers={"Origin": public_base},
+        )
+        assert r_rem_oc.status_code == 403
+
+        # 2) Loopback minting works and reuses the same active token across repeated clicks
+        r_full1 = lb_client.post(
+            "/api/studio/chatgpt-oneclick",
+            json={"kind": "mcp", "rotate": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_full1.status_code == 200, r_full1.text
+        d_full1 = r_full1.json()
+        assert d_full1["ok"] is True
+        assert d_full1["readonly"] is False
+        assert d_full1["oneclick_url"].startswith(f"{public_base}/c/oc_")
+        assert d_full1["oneclick_url"].endswith("/mcp")
+
+        r_full2 = lb_client.post(
+            "/api/studio/chatgpt-oneclick",
+            json={"kind": "mcp", "rotate": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_full2.status_code == 200
+        d_full2 = r_full2.json()
+        assert d_full2["oneclick_url"] == d_full1["oneclick_url"]
+        assert d_full2["reused"] is True
+
+        r_ro = lb_client.post(
+            "/api/studio/chatgpt-oneclick",
+            json={"kind": "readonly", "rotate": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_ro.status_code == 200, r_ro.text
+        d_ro = r_ro.json()
+        assert d_ro["readonly"] is True
+        assert d_ro["oneclick_url"].endswith("/mcp/readonly")
+
+        full_path = d_full1["oneclick_url"][len(public_base):]
+        ro_path = d_ro["oneclick_url"][len(public_base):]
+        ro_tok = ro_path.split("/")[2]
+        full_tok = full_path.split("/")[2]
+        assert len(full_tok) >= 32 and len(ro_tok) >= 32
+
+        # 3) Full `/c/<tok>/mcp` & readonly `/c/<ro_tok>/mcp/readonly` pass initialize + tools/list + pc_get_status
+        for ep_p in (full_path, ro_path):
+            assert rem_client.post(ep_p, json=init_req, headers=mcp_hdrs).status_code == 200
+            r_ls = rem_client.post(ep_p, json=list_req, headers=mcp_hdrs)
+            assert r_ls.status_code == 200
+            assert "pc_get_status" in r_ls.text
+            r_st = rem_client.post(ep_p, json=status_req, headers=mcp_hdrs)
+            assert r_st.status_code == 200
+            assert "hostname" in r_st.text
+
+        # 4) Missing `Accept` header (and cookie-free ChatGPT Sites forwarded Origin) still returns 200 (zero 406 / false 403)
+        r_no_accept_init = rem_client.post(
+            full_path,
+            json=init_req,
+            headers={"Accept": "*/*", "Origin": "https://demo-relay.chatgpt.site"},
+        )
+        assert r_no_accept_init.status_code == 200, r_no_accept_init.text
+        r_no_accept_status = rem_client.post(
+            full_path,
+            json=status_req,
+            headers={"Origin": "https://demo-relay.chatgpt.site"},
+        )
+        assert r_no_accept_status.status_code == 200, r_no_accept_status.text
+        assert "hostname" in r_no_accept_status.text
+
+        # 5) Readonly token attempting `/c/<ro_tok>/mcp` MUST return 403 forbidden_cross_resource
+        r_esc = rem_client.post(f"/c/{ro_tok}/mcp", json=list_req, headers=mcp_hdrs)
+        assert r_esc.status_code == 403
+        assert "forbidden_cross_resource" in r_esc.text
+
+        # 6) Forged tokens and non-MCP management paths under `/c/<tok>/...` MUST return stealth 404
+        r_forged = rem_client.post("/c/oc_forged_invalid_token_123456789012345/mcp", json=list_req, headers=mcp_hdrs)
+        assert r_forged.status_code == 404
+        assert "text/plain" in r_forged.headers.get("content-type", "")
+        assert rem_client.get(f"/c/{full_tok}/studio").status_code == 404
+        assert rem_client.get(f"/c/{full_tok}/api/studio/state").status_code == 404
+        assert rem_client.get(f"/c/{full_tok}/oauth/authorize").status_code == 404
+
+        # 7) Rotating endpoint secret enables `/u/<ep_sec>` stealth 404 AND immediately revokes old `/c/` tokens
+        r_rot = lb_client.post(
+            "/api/studio/connection",
+            json={"action": "rotate_endpoint_secret", "revoke_sessions": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_rot.status_code == 200, r_rot.text
+        assert rem_client.post(full_path, json=list_req, headers=mcp_hdrs).status_code == 404
+        assert rem_client.post(ro_path, json=list_req, headers=mcp_hdrs).status_code == 404
+
+        # 8) Newly minted `/c/<new_tok>/mcp` works smoothly even while `/u/<ep_sec>` stealth mode is active,
+        #    and revoking its client_id immediately restores 404
+        r_new = lb_client.post(
+            "/api/studio/chatgpt-oneclick",
+            json={"kind": "mcp", "rotate": False, "csrf": csrf},
+            headers={"Origin": f"http://127.0.0.1:{port}"},
+        )
+        assert r_new.status_code == 200, r_new.text
+        d_new = r_new.json()
+        new_path = d_new["oneclick_url"][len(public_base):]
+        assert new_path != full_path
+        assert rem_client.post(new_path, json=status_req, headers=mcp_hdrs).status_code == 200
+
+        app.state.provider.store.revoke_client(d_new["client_id"], delete_client=True)
+        assert rem_client.post(new_path, json=status_req, headers=mcp_hdrs).status_code == 404
+

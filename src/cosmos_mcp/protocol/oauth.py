@@ -1604,6 +1604,244 @@ class OAuthSQLiteStore:
             "expires_at": expires_at,
         }
 
+    def _oneclick_vault_path(self) -> Path:
+        return self.path.parent / "chatgpt_oneclick_vault.json"
+
+    def _load_oneclick_vault(self) -> Dict[str, Any]:
+        cache = getattr(self, "_oneclick_mem_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._oneclick_mem_cache = cache
+        vp = self._oneclick_vault_path()
+        if not vp.is_file():
+            return dict(cache)
+        try:
+            raw = json.loads(vp.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return dict(cache)
+            from cosmos_mcp.core.config import (
+                _dpapi_unprotect_bytes,
+                _load_or_create_local_vault_key,
+                _stdlib_vault_decrypt,
+            )
+            alg = str(raw.get("alg") or "")
+            if alg == "win32-dpapi" and raw.get("ct"):
+                ct_b = base64.b64decode(str(raw["ct"]))
+                pt = _dpapi_unprotect_bytes(ct_b, b"cosmos-mcp:chatgpt-oneclick:v1").decode("utf-8")
+                doc = json.loads(pt)
+                if isinstance(doc, dict):
+                    cache.update(doc)
+                    return dict(cache)
+            elif alg and raw.get("ct"):
+                key_b = _load_or_create_local_vault_key(self.path.parent)
+                pt = _stdlib_vault_decrypt(raw, key_b, "cosmos-oneclick-vault-v1")
+                doc = json.loads(pt)
+                if isinstance(doc, dict):
+                    cache.update(doc)
+                    return dict(cache)
+        except Exception:
+            pass
+        return dict(cache)
+
+    def _save_oneclick_vault(self, doc: Mapping[str, Any]) -> None:
+        clean_doc = dict(doc)
+        self._oneclick_mem_cache = dict(clean_doc)
+        vp = self._oneclick_vault_path()
+        try:
+            import sys as _sys
+            from cosmos_mcp.core.config import (
+                _dpapi_protect_bytes,
+                _load_or_create_local_vault_key,
+                _stdlib_vault_encrypt,
+                apply_current_user_only_acl,
+                atomic_write_json,
+            )
+            vp.parent.mkdir(parents=True, exist_ok=True)
+            plain_json = json.dumps(clean_doc, ensure_ascii=False)
+            if _sys.platform == "win32":
+                try:
+                    ct_b = _dpapi_protect_bytes(plain_json.encode("utf-8"), b"cosmos-mcp:chatgpt-oneclick:v1")
+                    env_doc = {
+                        "v": 1,
+                        "alg": "win32-dpapi",
+                        "ct": base64.b64encode(ct_b).decode("ascii"),
+                    }
+                    atomic_write_json(vp, env_doc, mode_override=0o600)
+                    apply_current_user_only_acl(vp)
+                    return
+                except Exception:
+                    pass
+            key_b = _load_or_create_local_vault_key(self.path.parent)
+            enc_doc = _stdlib_vault_encrypt(plain_json, key_b, "cosmos-oneclick-vault-v1")
+            atomic_write_json(vp, enc_doc, mode_override=0o600)
+            apply_current_user_only_acl(vp)
+        except Exception:
+            pass
+
+    def revoke_oneclick_tokens(self, *, readonly: Optional[bool] = None) -> Dict[str, Any]:
+        """Revoke all `token_kind='chatgpt_oneclick'` tokens (optionally filtered by readonly/full)."""
+        revoked_ids: List[str] = []
+        deleted_total = 0
+        if self.path.is_file():
+            conn = self.connect(readonly=True)
+            try:
+                rows = conn.execute(
+                    "SELECT key, value FROM records WHERE kind='client' AND json_extract(value,'$.token_kind')='chatgpt_oneclick'"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            finally:
+                conn.close()
+            for cid, raw_val in rows:
+                try:
+                    cdoc = json.loads(raw_val) if raw_val else {}
+                except Exception:
+                    cdoc = {}
+                if not isinstance(cdoc, dict):
+                    cdoc = {}
+                if readonly is not None:
+                    c_ro = bool(cdoc.get("readonly", False))
+                    if c_ro != bool(readonly):
+                        continue
+                res = self.revoke_client(str(cid), delete_client=True)
+                if res.get("ok"):
+                    revoked_ids.append(str(cid))
+                    deleted_total += int(res.get("deleted_tokens") or 0)
+        vault = self._load_oneclick_vault()
+        changed = False
+        if readonly is None:
+            if vault:
+                vault.clear()
+                changed = True
+        else:
+            bkey = "readonly" if bool(readonly) else "full"
+            if bkey in vault:
+                vault.pop(bkey, None)
+                changed = True
+        if changed:
+            self._save_oneclick_vault(vault)
+        return {
+            "ok": True,
+            "revoked_client_ids": revoked_ids,
+            "deleted_tokens": deleted_total,
+        }
+
+    def get_or_mint_oneclick_capability_token(
+        self,
+        *,
+        readonly: bool = False,
+        rotate: bool = False,
+        ttl_days: int = 90,
+    ) -> Dict[str, Any]:
+        """Return an active reusable or freshly minted high-entropy ChatGPT one-click capability token (`oc_*`)."""
+        if isinstance(ttl_days, bool):
+            raise ValueError("有效天数需为整数（1 至 365 天）。")
+        try:
+            eff_ttl_days = int(ttl_days)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("有效天数需为整数（1 至 365 天）。") from exc
+        if eff_ttl_days < 1 or eff_ttl_days > 365:
+            raise ValueError("有效天数需在 1 至 365 天之间。")
+
+        is_ro = bool(readonly)
+        bucket = "readonly" if is_ro else "full"
+        eff_scopes = list(READONLY_SCOPES) if is_ro else list(SCOPES)
+        eff_resource = PAT_READONLY_RESOURCE if is_ro else PAT_FULL_RESOURCE
+        client_name = "ChatGPT 一键连接（只读）" if is_ro else "ChatGPT 一键连接"
+
+        try:
+            self.prune_expired()
+        except Exception:
+            pass
+
+        vault = self._load_oneclick_vault()
+        if not rotate:
+            entry = vault.get(bucket)
+            if isinstance(entry, dict):
+                cached_tok = str(entry.get("token") or "").strip()
+                if cached_tok:
+                    acc_rec = self.get("access", cached_tok)
+                    if isinstance(acc_rec, dict):
+                        rec_cid = str(acc_rec.get("client_id") or "").strip()
+                        rec_res = str(acc_rec.get("resource") or "").strip().rstrip("/")
+                        rec_exp = int(acc_rec.get("expires_at") or 0)
+                        c_doc = self.get("client", rec_cid) if rec_cid else None
+                        if (
+                            isinstance(c_doc, dict)
+                            and c_doc.get("token_kind") == "chatgpt_oneclick"
+                            and rec_res == eff_resource
+                            and rec_exp > int(time.time()) + 300
+                        ):
+                            return {
+                                "ok": True,
+                                "token": cached_tok,
+                                "client_id": rec_cid,
+                                "client_name": str(c_doc.get("client_name") or client_name),
+                                "platform": "OpenAI ChatGPT",
+                                "readonly": is_ro,
+                                "scopes": list(acc_rec.get("scopes") or eff_scopes),
+                                "resource": eff_resource,
+                                "ttl_days": eff_ttl_days,
+                                "expires_at": rec_exp,
+                                "reused": True,
+                            }
+        else:
+            self.revoke_oneclick_tokens(readonly=is_ro)
+            vault = self._load_oneclick_vault()
+
+        now = int(time.time())
+        expires_at = now + eff_ttl_days * 86400
+        raw_token = "oc_" + secrets.token_urlsafe(24)
+        client_id = "cgpt_oc_" + secrets.token_hex(6)
+
+        client_doc: Dict[str, Any] = {
+            "client_id": client_id,
+            "client_name": client_name,
+            "redirect_uris": [],
+            "grant_types": [],
+            "token_endpoint_auth_method": "none",
+            "scope": " ".join(eff_scopes),
+            "token_kind": "chatgpt_oneclick",
+            "readonly": is_ro,
+            "created_at": now,
+        }
+        access = AccessToken(
+            token=raw_token,
+            client_id=client_id,
+            scopes=eff_scopes,
+            expires_at=expires_at,
+            resource=eff_resource,
+            subject="owner",
+        )
+        access_doc: Dict[str, Any] = {
+            **access.model_dump(mode="json"),
+            "token_kind": "chatgpt_oneclick",
+            "temporary_session": False,
+            "max_expires_at": expires_at,
+        }
+        self.put("client", client_id, client_doc, float(expires_at + 7 * 86400))
+        self.put("access", raw_token, access_doc, float(expires_at))
+        vault[bucket] = {
+            "token": raw_token,
+            "client_id": client_id,
+            "expires_at": expires_at,
+            "readonly": is_ro,
+        }
+        self._save_oneclick_vault(vault)
+        return {
+            "ok": True,
+            "token": raw_token,
+            "client_id": client_id,
+            "client_name": client_name,
+            "platform": "OpenAI ChatGPT",
+            "readonly": is_ro,
+            "scopes": eff_scopes,
+            "resource": eff_resource,
+            "ttl_days": eff_ttl_days,
+            "expires_at": expires_at,
+            "reused": False,
+        }
+
     def revoke_client(self, client_id: str, delete_client: bool = False) -> Dict[str, Any]:
         """Independent per-client revocation preserving sibling clients' replay caches."""
         cid = (client_id or "").strip()
@@ -3956,6 +4194,24 @@ class OAuthProvider:
             readonly=readonly,
             ttl_days=ttl_days,
         )
+
+    def get_or_mint_oneclick_capability_token(
+        self,
+        *,
+        readonly: bool = False,
+        rotate: bool = False,
+        ttl_days: int = 90,
+    ) -> Dict[str, Any]:
+        """Get or mint a revocable high-entropy ChatGPT one-click capability token backed by `OAuthSQLiteStore`."""
+        return self.store.get_or_mint_oneclick_capability_token(
+            readonly=readonly,
+            rotate=rotate,
+            ttl_days=ttl_days,
+        )
+
+    def revoke_oneclick_tokens(self, *, readonly: Optional[bool] = None) -> Dict[str, Any]:
+        """Revoke all ChatGPT one-click capability tokens backed by `OAuthSQLiteStore`."""
+        return self.store.revoke_oneclick_tokens(readonly=readonly)
 
     def is_token_resource_valid_for_current_request(self, tok_res: Optional[str]) -> bool:
         if not tok_res:

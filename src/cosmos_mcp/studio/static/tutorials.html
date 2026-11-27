@@ -527,8 +527,8 @@
           <div class="tut-mod-header">
             <div>
               <div class="tut-mod-kicker">教程 2 · 网页版 ChatGPT（已登录浏览器直绑最快 · 装好后日常用 Chat 模式省额度）</div>
-              <h2 class="card-title">网页版 ChatGPT 接入（插件页直绑与排障 · Chat 与 Work 日常分工）</h2>
-              <p class="card-desc" style="margin-bottom:0;">最快方式是点击下方「复制地址并打开 ChatGPT 插件页」，直接在你已登录 ChatGPT 的本机浏览器点 <code>＋ -&gt; 添加自定义 MCP 服务器</code>（<code>Add custom MCP server</code>），名称填 <code>WebAI2PC</code>、认证选 <code>OAuth</code>、粘贴地址后在授权页点「本机一键允许连接」（无需搭 <code>ChatGPT Sites</code> 中转，也避开云端隔离浏览器重登 Google 及 ZIP 上传外部 MCP 私有插件报 <code>403</code>；遇阻点「复制给 ChatGPT 接入 / 排障」）。安装后同账号共享：日常改代码、修 Office 与跑测试用普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（不扣减 <code>Work / Codex</code> 额度）；跨应用长程交付与 <code>Scheduled Tasks</code> 定时任务用 <code>Work</code> 模式。</p>
+              <h2 class="card-title">网页版 ChatGPT 接入（一键配置 · Chat 与 Work 日常分工）</h2>
+              <p class="card-desc" style="margin-bottom:0;">最快方式是点击下方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动接入并验证 <code>WebAI2PC</code>（如遇工作区限制外部域名 MCP 也会自动通过私有 <code>ChatGPT Sites</code> 转发接入）。安装后同账号共享：日常改代码、修 Office 与跑测试切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（不扣减 <code>Work / Codex</code> 额度）；跨应用长程交付与 <code>Scheduled Tasks</code> 定时任务用 <code>Work</code> 模式。</p>
             </div>
             <div class="tut-sub-seg tut-sub-seg-light" role="tablist" aria-label="ChatGPT 账号类型选择">
               <button type="button" class="tut-sub-btn active" id="cgpt-tab-workspace" data-cgpt-mode="workspace">工作区账号 (/mcp)</button>
@@ -545,8 +545,7 @@
               <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">绑定主端点 <code>/mcp</code>，开放全部 16 项代码读写、Word/Excel 原样修订与无窗口命令执行；装好后日常切回 <code>Chat</code> 模式调用 <code>@WebAI2PC</code> 不扣减 <code>Work / Codex</code> 智能体额度，跨应用长程交付与定时任务用 <code>Work</code> 模式。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="mcp" data-copy-live="mcp">https://xxxxx.srv.us/mcp</div>
-                <button type="button" class="btn btn-primary btn-sm" data-open-chatgpt-plugins="mcp" disabled title="本地网关就绪后复制完整地址并在已登录浏览器打开 ChatGPT 插件页">复制地址并打开 ChatGPT 插件页</button>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-chatgpt-assist="mcp" disabled title="复制 4 步接入与排障指令发给 ChatGPT 直接探测连接（不含配对码与本机路径）">复制给 ChatGPT 接入 / 排障</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="mcp" disabled title="复制一键配置提示词（含预授权专属地址）发给 ChatGPT Work 一键创建并验证">复制一键配置提示词（发给 Work）</button>
                 <button type="button" class="btn btn-sm" data-copy-live="mcp">仅复制地址</button>
               </div>
             </div>
@@ -559,9 +558,8 @@
               <p style="margin:0;font-size:12.5px;color:var(--text-secondary);">当个人订阅受平台策略限制仅放行自定义 MCP 的 <code>read/fetch</code> 工具时，绑定 <code>/mcp/readonly</code> 开放 12 项只读分析工具（越权写调用返回 <code>403</code> 拦截）；装好后在 <code>Chat</code> 模式（省 <code>Work / Codex</code> 额度）与 <code>Work</code> 模式均可输入 <code>@WebAI2PC</code> 调用。</p>
               <div class="live-url-row">
                 <div class="tut-mono-box" data-live-url="readonly" data-copy-live="readonly">https://xxxxx.srv.us/mcp/readonly</div>
-                <button type="button" class="btn btn-primary btn-sm" data-open-chatgpt-plugins="readonly" disabled title="本地网关就绪后复制只读地址并在已登录浏览器打开 ChatGPT 插件页">复制地址并打开 ChatGPT 插件页</button>
-                <button type="button" class="btn btn-tonal btn-sm" data-copy-chatgpt-assist="readonly" disabled title="复制 4 步只读接入与排障指令发给 ChatGPT 直接探测连接（不含配对码与本机路径）">复制给 ChatGPT 接入 / 排障</button>
-                <button type="button" class="btn btn-sm" data-copy-live="readonly">仅复制只读</button>
+                <button type="button" class="btn btn-primary btn-sm" data-copy-chatgpt-assist="readonly" disabled title="复制只读一键配置提示词（含只读预授权专属地址）发给 ChatGPT Work 一键创建并验证">复制只读配置提示词（发给 Work）</button>
+                <button type="button" class="btn btn-sm" data-copy-live="readonly">仅复制地址</button>
               </div>
             </div>
           </div>
@@ -569,17 +567,17 @@
           <div class="tut-workbench-grid">
             <ul class="tut-step-list">
               <li class="tut-step-item" data-step-wrap="c1">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制给 Work 模式或复制地址">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c1" aria-label="等待网关就绪并复制一键配置提示词发给 Work">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 1 步：网关就绪后点「复制地址并打开 ChatGPT 插件页」</div>
-                  <p class="tut-step-desc">按钮自动复制当前可用的 <code>/mcp</code> 或 <code>/mcp/readonly</code> 地址，并在你已登录 ChatGPT 的本机浏览器打开 <code>https://chatgpt.com/plugins</code>。若遇到权限或连通问题，点旁边的「复制给 ChatGPT 接入 / 排障」（不含配对码、口令、令牌或本机路径）。</p>
+                  <div class="tut-step-title">第 1 步：网关就绪后点「复制一键配置提示词（发给 Work）」</div>
+                  <p class="tut-step-desc">按钮自动向本机控制台申请高熵预授权专属地址（<code>/c/&lt;token&gt;/mcp</code> 或 <code>/c/&lt;token&gt;/mcp/readonly</code>）并生成完整 <code>@Plugin Creator</code> 指令；该地址可随时在控制台「已连会话」一键断开或「更换私密地址」立即作废。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c2">
-                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="在 Plugins 添加自定义 MCP 插件 WebAI2PC 并安装">
+                <input type="checkbox" class="tut-step-chk" data-step-id="c2" aria-label="粘贴发给 ChatGPT Work 自动创建并安装 WebAI2PC">
                 <div class="tut-step-body">
-                  <div class="tut-step-title">第 2 步：在插件页点 <code>＋ -&gt; 添加自定义 MCP 服务器</code>，本机一键允许并 <code>Install</code></div>
-                  <p class="tut-step-desc">名称填 <code>WebAI2PC</code>，认证选 <code>OAuth</code>，粘贴地址创建插件；本机浏览器跳转 <code>/consent</code> 命中 <code>127.0.0.1</code> 回环直接点「本机一键允许连接」，最后点 <code>Install</code> 安装（无需搭 <code>ChatGPT Sites</code> 中转，也不要用 ZIP 上传外部 MCP 私有插件以免触发工作区 <code>403</code> 拒绝；若网页入口缺失或报 <code>403</code>，请工作区管理员核查 <code>Create plugins with MCPs</code> 权限；若在 <code>Work</code> 模式云端隔离浏览器 <code>Take over</code> 授权则需输 <code>6</code> 位动态配对码）。</p>
+                  <div class="tut-step-title">第 2 步：在 ChatGPT <code>Work</code> 模式粘贴发送，自动接入并验证</div>
+                  <p class="tut-step-desc">直接发给 ChatGPT <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动接入并安装 <code>WebAI2PC</code>；若当前工作区限制直接绑定外部域名 MCP（如返回 <code>403</code>），会自动通过私有 <code>ChatGPT Sites</code> 部署轻量 MCP 转发并完成安装，无需手动配 OAuth 密钥。</p>
                 </div>
               </li>
               <li class="tut-step-item" data-step-wrap="c3">
