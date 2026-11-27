@@ -72,7 +72,7 @@ If the user wants a free, serverless, permanently fixed HTTPS URL (or wants to b
 In the left column "Open Workspace Directories" card on the local console home page, users can adjust open folders and permission tiers live (takes effect immediately, no restart required):
 
 1. **4 Security Tiers**:
-   - **`Read-Only` (`L1`)**: Allows reading files, searching code, and inspecting built-in skills only; blocks all file writes and command execution. The top-right bar also provides a `One-Click Read-Only` emergency button.
+   - **`Read-Only` (`L1`)**: Allows reading files, searching code, and inspecting built-in skills only; blocks all file writes and command execution. Switch to Read-Only anytime from the console's Current Permissions bar or the system tray menu.
    - **`Edit-Only` (`L2`)**: Allows reading and editing code plus `.docx`/`.xlsx` files inside writable workspaces; blocks terminal commands, Python scripts, and peripheral packs.
    - **`Workspace Dev` (`L3`, Recommended Default)**: Allows reading/writing files, moving files to recoverable trash, and running windowless commands/Python inside open writable workspaces; read-only reference directories remain strictly read-only.
    - **`Full-Disk Dev` (`L4`)**: Allows reading, writing, and running commands across any path on the machine while keeping sensitive credential directories isolated and preserving pre-edit snapshots and recoverable trash.

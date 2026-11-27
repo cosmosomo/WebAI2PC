@@ -3929,15 +3929,17 @@
       });
     });
 
-    $("quick-readonly-btn").addEventListener("click", function () {
-      var reqSeq = ++toolsSafetyReqSeq;
-      apiFetch("/api/studio/tools-safety", { method: "POST", body: { safety_mode: "readonly" } }).then(function (d) {
-        if (reqSeq !== toolsSafetyReqSeq) return;
-        if (!d.ok) return showToast(d.error || "切换失败", true);
-        renderAll(d);
-        showToast(d.message || "已切为只读浏览模式", false);
+    if ($("quick-readonly-btn")) {
+      $("quick-readonly-btn").addEventListener("click", function () {
+        var reqSeq = ++toolsSafetyReqSeq;
+        apiFetch("/api/studio/tools-safety", { method: "POST", body: { safety_mode: "readonly" } }).then(function (d) {
+          if (reqSeq !== toolsSafetyReqSeq) return;
+          if (!d.ok) return showToast(d.error || "切换失败", true);
+          renderAll(d);
+          showToast(d.message || "已切为只读浏览模式", false);
+        });
       });
-    });
+    }
 
     if ($("quick-restore-dev-btn")) {
       $("quick-restore-dev-btn").addEventListener("click", function () {

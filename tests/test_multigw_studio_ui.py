@@ -1220,11 +1220,18 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
                     assert secret_val not in full_prompt
                     assert secret_val not in ro_prompt
 
-            # 2c) Directly-visible showcase strip copies pure task prompt (no hardcoded connector name), shows @ toast, and expands on click
+            # 2c) Onboarding Step 4 showcase copies pure task prompt (no hardcoded connector name), shows @ toast, and expands on click
+            # Also verify duplicate bottom showcase strip and misclick-prone top-bar quick-readonly-btn are removed
             driver.evaluate(
                 """() => {
                     window.__copiedHistory = [];
-                    document.getElementById('copy-showcase-blackhole-btn').click();
+                    if (document.getElementById('wb-try-showcase-strip')) {
+                        throw new Error('Duplicate showcase strip should be removed');
+                    }
+                    if (document.getElementById('quick-readonly-btn')) {
+                        throw new Error('Top-bar quick-readonly-btn should be removed to prevent misclicks');
+                    }
+                    document.getElementById('ob-copy-showcase-blackhole-btn').click();
                 }"""
             )
             pure_showcase = driver.wait_until(
@@ -1240,8 +1247,8 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             # Preview is hidden by default and expands only when clicking 查看全文
             preview_states = driver.evaluate(
                 """() => {
-                    const pre = document.querySelector('[data-showcase-preview="blackhole"]');
-                    const btn = document.querySelector('[data-toggle-showcase-prompt="blackhole"]');
+                    const pre = document.querySelector('[data-ob-showcase-preview="blackhole"]');
+                    const btn = document.querySelector('[data-ob-toggle-showcase="blackhole"]');
                     const hiddenBefore = pre ? pre.hasAttribute('hidden') : null;
                     if (btn) btn.click();
                     const hiddenAfter = pre ? pre.hasAttribute('hidden') : null;
