@@ -90,12 +90,27 @@
     }, 3400);
   }
 
+  function getLatestCsrf() {
+    if (typeof document !== "undefined") {
+      var metaEl = document.querySelector('meta[name="studio-csrf"]');
+      if (metaEl) {
+        var mc = String(metaEl.getAttribute("content") || "").trim();
+        if (mc && mc !== "__STUDIO_CSRF__") {
+          cachedCsrf = mc;
+          return mc;
+        }
+      }
+    }
+    return cachedCsrf;
+  }
+
   function readBootMeta() {
+    getLatestCsrf();
     var bootEl = $("studio-boot-data");
     if (!bootEl || !bootEl.textContent) return;
     try {
       var doc = JSON.parse(bootEl.textContent);
-      if (doc && doc.csrf_token) cachedCsrf = String(doc.csrf_token);
+      if (doc && doc.csrf_token && !cachedCsrf) cachedCsrf = String(doc.csrf_token);
       var conn = (doc && doc.connection) || {};
       endpointSecretEnabled = Boolean(conn.endpoint_secret_enabled);
       endpointSecretMasked = String(conn.endpoint_secret_masked || "");
@@ -104,13 +119,14 @@
   }
 
   function studioPost(path, payload) {
+    var csrfNow = getLatestCsrf();
     var headers = { "Content-Type": "application/json" };
-    if (cachedCsrf) headers["X-Studio-Csrf"] = cachedCsrf;
+    if (csrfNow) headers["X-Studio-Csrf"] = csrfNow;
     return fetch(path, {
       method: "POST",
       credentials: "same-origin",
       headers: headers,
-      body: JSON.stringify(Object.assign({}, payload, cachedCsrf ? { csrf_token: cachedCsrf } : {}))
+      body: JSON.stringify(Object.assign({}, payload, csrfNow ? { csrf_token: csrfNow, csrf: csrfNow } : {}))
     }).then(function (r) {
       return r.json().catch(function () {
         return { ok: false, error: "请求响应解析失败" };
@@ -119,18 +135,19 @@
   }
 
   function syncLatestStudioMeta() {
-    if (!$("workbench-view")) return Promise.resolve(null);
+    if (!$("workbench-view") && !$("studio-main-content")) return Promise.resolve(null);
     return fetch("/api/studio/state", { method: "GET", credentials: "same-origin", cache: "no-store" })
       .then(function (r) {
         return r.ok ? r.json() : null;
       })
       .then(function (doc) {
         if (!doc || !doc.ok) return null;
-        if (doc.csrf_token) cachedCsrf = String(doc.csrf_token);
-        var conn = doc.connection || {};
-        if (conn.connection_password) {
-          cachedPasswordPlain = String(conn.connection_password);
+        if (doc.csrf_token) {
+          cachedCsrf = String(doc.csrf_token);
+          var metaEl = document.querySelector('meta[name="studio-csrf"]');
+          if (metaEl) metaEl.setAttribute("content", cachedCsrf);
         }
+        var conn = doc.connection || {};
         endpointSecretEnabled = Boolean(conn.endpoint_secret_enabled);
         endpointSecretMasked = String(conn.endpoint_secret_masked || "");
         plaintextPasswordWiped = Boolean(conn.plaintext_password_wiped);
@@ -173,6 +190,11 @@
       wipeBtn.textContent = plaintextPasswordWiped ? "已擦除磁盘明文口令" : "擦除磁盘明文口令";
       wipeBtn.disabled = plaintextPasswordWiped;
     }
+    var authWipeBtn = $("auth-wipe-plaintext-pw-btn");
+    if (authWipeBtn) {
+      authWipeBtn.textContent = plaintextPasswordWiped ? "已擦除本地 txt 明文口令" : "擦除本地 txt 明文口令文件";
+      authWipeBtn.disabled = plaintextPasswordWiped;
+    }
   }
 
   function mountAntiShareAndUrlSecrecyStrip() {
@@ -185,89 +207,6 @@
       tutStrip.textContent =
         "保密提示：点击复制的连接地址、快速配置文本与 6 位配对码仅限粘贴到您本人的 Gemini / ChatGPT 账号，请勿发往微信群、公开论坛、GitHub Issue 或截图外传；如不慎外发，可回控制台点击「更换私密地址」立即作废旧链接。";
       tutMain.insertBefore(tutStrip, tutMain.firstChild);
-    }
-
-    var drawer = $("wb-conn-drawer");
-    if (!drawer || $("cosmos-anti-share-strip")) return;
-
-    var strip = document.createElement("div");
-    strip.id = "cosmos-anti-share-strip";
-    strip.style.cssText =
-      "display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:7px 11px;margin-top:8px;border-radius:8px;border:1px solid var(--border-subtle,rgba(148,163,184,0.28));background:var(--surface-2,rgba(148,163,184,0.08));font-size:12px;";
-
-    var leftTxt = document.createElement("span");
-    leftTxt.style.cssText = "color:var(--text-secondary,#475569);line-height:1.45;";
-    leftTxt.textContent =
-      "保密提醒：复制出的连接地址、快速配置指令与配对码仅限填入本人账号，请勿发往群聊、论坛或截图求助。";
-
-    var rightWrap = document.createElement("div");
-    rightWrap.className = "ws-actions";
-    rightWrap.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;";
-
-    var badge = document.createElement("span");
-    badge.id = "cosmos-ep-secret-badge";
-    badge.className = "tag tag-muted";
-    badge.style.fontSize = "11.5px";
-
-    var rotBtn = document.createElement("button");
-    rotBtn.type = "button";
-    rotBtn.id = "cosmos-rotate-ep-secret-btn";
-    rotBtn.className = "btn btn-sm";
-    rotBtn.title = "为连接地址追加或更换 24 位随机防扫描路径；更换后旧地址返回 404，已连接客户端需同步更新为新地址";
-    rotBtn.addEventListener("click", function () {
-      var confirmMsg = endpointSecretEnabled
-        ? "更换 24 位静态防扫描路径后，旧连接地址将返回 404，已绑定的网页端连接器需要重新粘贴新地址。确定继续更换吗？"
-        : "开启 24 位静态防扫描路径后，默认裸 /mcp 路径将对外部请求返回 404，已绑定的网页端连接器需更新为带 /u/<路径> 的新地址。确定开启吗？";
-      if (!window.confirm(confirmMsg)) return;
-      rotBtn.disabled = true;
-      studioPost("/api/studio/connection", { action: "rotate_endpoint_secret", revoke_sessions: false })
-        .then(function (d) {
-          rotBtn.disabled = false;
-          if (!d || !d.ok) return showStudioToast((d && d.error) || "更换私密地址失败", true);
-          var conn = d.connection || {};
-          endpointSecretEnabled = Boolean(conn.endpoint_secret_enabled);
-          endpointSecretMasked = String(conn.endpoint_secret_masked || "");
-          updateSecrecyStripState();
-          showStudioToast("已生成全新 24 位防扫描连接地址，请重新复制最新地址并更新客户端连接器", false);
-          setTimeout(function () {
-            window.location.reload();
-          }, 700);
-        });
-    });
-
-    var disBtn = document.createElement("button");
-    disBtn.type = "button";
-    disBtn.id = "cosmos-disable-ep-secret-btn";
-    disBtn.className = "btn btn-ghost btn-sm";
-    disBtn.textContent = "恢复短路径";
-    disBtn.style.display = "none";
-    disBtn.addEventListener("click", function () {
-      if (!window.confirm("恢复默认 /mcp 短路径后，原 /u/<路径> 地址将不再需要随机前缀。确定恢复短路径吗？")) return;
-      disBtn.disabled = true;
-      studioPost("/api/studio/connection", { action: "disable_endpoint_secret" }).then(function (d) {
-        disBtn.disabled = false;
-        if (!d || !d.ok) return showStudioToast((d && d.error) || "恢复短路径失败", true);
-        endpointSecretEnabled = false;
-        endpointSecretMasked = "";
-        updateSecrecyStripState();
-        showStudioToast("已恢复默认 /mcp 短路径", false);
-        setTimeout(function () {
-          window.location.reload();
-        }, 600);
-      });
-    });
-
-    rightWrap.appendChild(badge);
-    rightWrap.appendChild(rotBtn);
-    rightWrap.appendChild(disBtn);
-    strip.appendChild(leftTxt);
-    strip.appendChild(rightWrap);
-
-    var folds = drawer.querySelector(".wb-fold-strips");
-    if (folds) {
-      drawer.insertBefore(strip, folds);
-    } else {
-      drawer.appendChild(strip);
     }
     updateSecrecyStripState();
   }

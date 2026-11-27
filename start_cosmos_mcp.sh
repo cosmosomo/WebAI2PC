@@ -10,6 +10,7 @@ if [[ ! -f "${SCRIPT_DIR}/src/cosmos_mcp/__init__.py" ]]; then
     exit 1
 fi
 
+export COSMOS_REPO_SRC="${SCRIPT_DIR}/src"
 export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH:-}"
 STATE_ROOT="${COSMOS_MCP_STATE_DIR:-${LOCALPC_MCP_STATE_DIR:-${HOME}/.cosmos-mcp}}"
 
@@ -58,7 +59,7 @@ fi
 FIRST_ARG="${1:-}"
 case "${FIRST_ARG}" in
     start|stop|restart|status|doctor|permissions|agent-setup|reset-password|uninstall|setup|daemon|stdio|bind-desktop|vps-caddy-snippet|update|--help|-h|--version)
-        exec "${PY_BIN}" -B -m cosmos_mcp.launcher.cli "$@"
+        exec "${PY_BIN}" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" "$@"
         ;;
 esac
 
@@ -67,4 +68,4 @@ if [[ "$(uname -s)" == "Darwin" || ( -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" && -z
 else
     BROWSER_FLAG="--no-browser"
 fi
-exec "${PY_BIN}" -B -m cosmos_mcp.launcher.cli start "${BROWSER_FLAG}" "$@"
+exec "${PY_BIN}" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" start "${BROWSER_FLAG}" "$@"

@@ -1846,6 +1846,7 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
         for pat in (
             "oauth*.sqlite3*",
             "oauth*",
+            "chatgpt_oneclick_vault*.json",
             "latest_consent_pair_code*",
             "latest_dynamic_pair_code*",
             "connection*.dpapi",
@@ -1867,6 +1868,7 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
             _wipe_one(dotenv_f)
         for root_sec_pat in (
             "*CONNECTION_INFO*.txt",
+            "chatgpt_oneclick_vault*.json",
             "connection*.dpapi",
             "connection*.enc",
             "endpoint_secret*.txt",
@@ -1885,6 +1887,7 @@ def _shred_sensitive_state_files(st_root: Path, *, prefix_filter: str = "") -> L
                     if (
                         "auth.json" in low_n
                         or "oauth" in low_n
+                        or "chatgpt_oneclick_vault" in low_n
                         or "connection" in low_n
                         or "tunnel_" in low_n
                         or "cloudflare_api_token" in low_n
@@ -2252,6 +2255,7 @@ def run_uninstall(
         "bin",
         ".venv",
         "app_src",
+        "app_src_prev",
         "browser_profile",
         "locks",
         "skills_store",

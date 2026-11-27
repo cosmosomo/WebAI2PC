@@ -36,10 +36,12 @@ if exist "%~dp0python-embed\python.exe" (
 
 REM 2) 其次检查已初始化好的独立环境 .venv\Scripts\python.exe
 if exist "%COSMOS_STATE_ROOT%\.venv\Scripts\python.exe" (
+    set "COSMOS_REPO_SRC=%~dp0src"
+    set "PYTHONPATH=%~dp0src;%PYTHONPATH%"
     if defined _COSMOS_PASSTHROUGH (
-        "%COSMOS_STATE_ROOT%\.venv\Scripts\python.exe" -B -m cosmos_mcp.launcher.cli %*
+        "%COSMOS_STATE_ROOT%\.venv\Scripts\python.exe" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" %*
     ) else (
-        "%COSMOS_STATE_ROOT%\.venv\Scripts\python.exe" -B -m cosmos_mcp.launcher.cli start --open-browser %*
+        "%COSMOS_STATE_ROOT%\.venv\Scripts\python.exe" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" start --open-browser %*
     )
     goto :after_run
 )
@@ -63,9 +65,9 @@ for /f "delims=" %%L in ('where py 2^>nul') do (
 )
 if defined COSMOS_PY_LAUNCHER (
     if defined _COSMOS_PASSTHROUGH (
-        "%COSMOS_PY_LAUNCHER%" -3 -B -m cosmos_mcp.launcher.cli %*
+        "%COSMOS_PY_LAUNCHER%" -3 -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" %*
     ) else (
-        "%COSMOS_PY_LAUNCHER%" -3 -B -m cosmos_mcp.launcher.cli start --open-browser %*
+        "%COSMOS_PY_LAUNCHER%" -3 -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" start --open-browser %*
     )
     goto :after_run
 )
@@ -112,9 +114,9 @@ if not defined COSMOS_PY_EXE (
 )
 
 if defined _COSMOS_PASSTHROUGH (
-    "%COSMOS_PY_EXE%" -B -m cosmos_mcp.launcher.cli %*
+    "%COSMOS_PY_EXE%" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" %*
 ) else (
-    "%COSMOS_PY_EXE%" -B -m cosmos_mcp.launcher.cli start --open-browser %*
+    "%COSMOS_PY_EXE%" -B -c "import os,sys; p=os.environ.get('COSMOS_REPO_SRC',''); p and p not in sys.path and sys.path.insert(0,p); from cosmos_mcp.launcher.cli import main; raise SystemExit(main(sys.argv[1:]))" start --open-browser %*
 )
 
 :after_run

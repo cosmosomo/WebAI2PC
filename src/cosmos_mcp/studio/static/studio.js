@@ -1149,12 +1149,23 @@
       b2.textContent = wdSlot.enabled ? "已启用" : "终身固定推荐";
     }
     var savedWdUrl = wdSlot.configured_url || conn.workers_dev_url || "";
+    var isWorkerDeployed = Boolean(conn.workers_deployed || isSafeHttpsUrl(savedWdUrl));
     if ($("cf-saved-hint-box")) {
-      $("cf-saved-hint-box").style.display = isSafeHttpsUrl(savedWdUrl) && !wdSlot.enabled ? "block" : "none";
+      $("cf-saved-hint-box").style.display = isWorkerDeployed && !wdSlot.enabled ? "block" : "none";
+    }
+    if ($("cf-tokenless-domain-bar")) {
+      $("cf-tokenless-domain-bar").style.display = isWorkerDeployed ? "flex" : "none";
     }
     var cfCustomInp = $("cf-custom-domain-input");
-    if (conn.workers_dev_custom_domain && cfCustomInp && document.activeElement !== cfCustomInp && !cfCustomInp.value) {
-      cfCustomInp.value = conn.workers_dev_custom_domain;
+    if (cfCustomInp && document.activeElement !== cfCustomInp && conn.workers_dev_custom_domain !== undefined) {
+      if (conn.workers_dev_custom_domain || !cfCustomInp.getAttribute("data-user-dirty")) {
+        cfCustomInp.value = conn.workers_dev_custom_domain || "";
+      }
+    }
+    if ($("clear-cf-custom-domain-btn")) {
+      $("clear-cf-custom-domain-btn").disabled = !Boolean(
+        conn.workers_dev_custom_domain || (cfCustomInp && cfCustomInp.value.trim())
+      );
     }
 
     var b3 = $("card3-status-badge");
@@ -1224,6 +1235,21 @@
       quickRestoreBtn.disabled = !isReadonly;
     }
 
+    var compatChk = $("chk-web-compat-mode");
+    var compatBox = $("web-compat-mode-box");
+    var compatHint = $("web-compat-ro-hint");
+    var webCompatSaved =
+      tc.web_compat_mode !== undefined ? Boolean(tc.web_compat_mode) : !Boolean(tc.confirm_popups);
+    if (compatChk) {
+      compatChk.checked = isReadonly ? true : webCompatSaved;
+      compatChk.disabled = isReadonly;
+    }
+    if (compatBox) compatBox.classList.toggle("disabled-switch", isReadonly);
+    if (compatHint) {
+      compatHint.style.display = isReadonly ? "inline-flex" : "none";
+      compatHint.textContent = "只读模式下自动开启";
+    }
+
     var popChk = $("chk-confirm-popups");
     var popBox = $("confirm-popups-box");
     var popHint = $("confirm-popups-ro-hint");
@@ -1263,12 +1289,22 @@
       dHint.textContent = isReadonly ? "只读模式下自动关闭" : "禁跑命令模式下自动关闭";
     }
 
+    var scanVal =
+      tc.scan_host_global_skills !== undefined
+        ? Boolean(tc.scan_host_global_skills)
+        : Boolean(state.scan_host_global_skills);
     if ($("chk-scan-host-skills")) {
-      var scanVal =
-        tc.scan_host_global_skills !== undefined
-          ? Boolean(tc.scan_host_global_skills)
-          : Boolean(state.scan_host_global_skills);
       $("chk-scan-host-skills").checked = scanVal;
+    }
+    if ($("chk-skills-scan-host")) {
+      $("chk-skills-scan-host").checked = scanVal;
+    }
+    var redactVal =
+      tc.redact_project_secrets !== undefined
+        ? Boolean(tc.redact_project_secrets)
+        : Boolean(state.redact_project_secrets);
+    if ($("chk-redact-project-secrets")) {
+      $("chk-redact-project-secrets").checked = redactVal;
     }
 
     var lbChk = $("chk-allow-loopback-dev");
@@ -1684,6 +1720,13 @@
     }
 
     var cf = subs.trycloudflare || {};
+    var instPolSel = $("instant-policy-select");
+    if (instPolSel && document.activeElement !== instPolSel) {
+      var polVal = String(instant.instant_policy || "auto").trim() || "auto";
+      if (["auto", "srv_us_only", "quick_only"].indexOf(polVal) >= 0) {
+        instPolSel.value = polVal;
+      }
+    }
     var cfEnabled = Boolean(cf.enabled || instant.trycloudflare_backup);
     var cfSt = String(cf.status || (cfEnabled ? "connecting" : "disabled"));
     var cfSw = $("instant-sub-trycf-switch");
@@ -1746,6 +1789,26 @@
       var el = $(id);
       if (el) el.style.display = epOn ? "inline-flex" : "none";
     });
+    var pwWiped = Boolean(conn.plaintext_password_wiped);
+    var wipeBtn = $("auth-wipe-plaintext-pw-btn");
+    if (wipeBtn) {
+      wipeBtn.textContent = pwWiped ? "已擦除本地 txt 明文口令" : "擦除本地 txt 明文口令文件";
+      wipeBtn.disabled = pwWiped;
+    }
+    var ocOn = Boolean(
+      doc.enable_oneclick_token_route !== undefined
+        ? doc.enable_oneclick_token_route
+        : conn.enable_oneclick_token_route
+    );
+    var ocChk = $("chk-enable-oneclick-route");
+    if (ocChk) {
+      ocChk.checked = ocOn;
+    }
+    var ocPill = $("auth-oneclick-route-pill");
+    if (ocPill) {
+      ocPill.textContent = ocOn ? "已开启（注意防外泄）" : "已默认关闭（返回 404）";
+      ocPill.className = ocOn ? "tag tag-warn" : "tag tag-muted";
+    }
   }
 
   function renderAuthPatList(patItems, isStrictLoopback) {
@@ -2011,9 +2074,21 @@
       });
   }
 
+  function syncCsrfMetaTag(tok) {
+    var clean = String(tok || "").trim();
+    if (!clean) return;
+    var metaEl = document.querySelector('meta[name="studio-csrf"]');
+    if (metaEl) {
+      metaEl.setAttribute("content", clean);
+    }
+  }
+
   function renderAll(doc) {
     if (!doc || typeof doc !== "object") return;
     state = doc;
+    if (doc.csrf_token) {
+      syncCsrfMetaTag(doc.csrf_token);
+    }
     if (doc.state_revision !== undefined && doc.state_revision !== null) {
       lastStateRevision = String(doc.state_revision);
     }
@@ -2025,6 +2100,15 @@
     if (doc.device_label && $("brand-subtitle")) {
       $("brand-subtitle").textContent =
         "本机设备：" + doc.device_label + " · 版本 v" + (doc.product_version || "1.0.0");
+    }
+    if ($("studio-update-sub")) {
+      var curVer = doc.product_version || "1.0.0";
+      var lastUpd = doc.last_update_status || {};
+      var updSuffix =
+        lastUpd && lastUpd.status === "succeeded" && lastUpd.to_version
+          ? " · 最近已平滑升级至 v" + lastUpd.to_version
+          : " · 支持保留公网隧道平滑升级";
+      $("studio-update-sub").textContent = "当前版本 v" + curVer + updSuffix;
     }
 
     var lockPanel = $("remote-lock-panel");
@@ -2096,11 +2180,15 @@
 
     var pwBox = $("conn-pw-box");
     if (pwBox) {
-      pwBox.setAttribute("data-secret", conn.connection_password || "");
+      pwBox.setAttribute("data-secret", "");
       if (pwBox.getAttribute("data-shown") === "1") {
-        pwBox.textContent = conn.connection_password || "(未记录明文口令)";
+        if (conn.connection_password) {
+          pwBox.textContent = conn.connection_password;
+        } else if (authBackupRevealed && authBackupPlain) {
+          pwBox.textContent = authBackupPlain;
+        }
       } else {
-        pwBox.textContent = "••••••••••••••••••••";
+        pwBox.textContent = conn.connection_password_masked || "••••••••••••••••••••";
       }
     }
 
@@ -3967,9 +4055,15 @@
           showToast("网关尚未就绪，请等待公网 HTTPS 地址生成后再复制。", true);
           return;
         }
+        var chosenGwId =
+          effTop.displayId ||
+          userPinnedGateway ||
+          (state.connection && state.connection.user_selected_gateway) ||
+          state.display_gateway_id ||
+          "";
         apiFetch("/api/studio/chatgpt-oneclick", {
           method: "POST",
-          body: { kind: kind, rotate: false },
+          body: { kind: kind, rotate: false, gateway_id: chosenGwId },
         })
           .then(function (d) {
             var connectPrompt = "";
@@ -4496,6 +4590,72 @@
       });
     }
 
+    if ($("cf-custom-domain-input")) {
+      $("cf-custom-domain-input").addEventListener("input", function () {
+        $("cf-custom-domain-input").setAttribute("data-user-dirty", "1");
+        if ($("clear-cf-custom-domain-btn")) {
+          var hasSavedDom = Boolean(state && state.connection && state.connection.workers_dev_custom_domain);
+          $("clear-cf-custom-domain-btn").disabled = !Boolean(hasSavedDom || $("cf-custom-domain-input").value.trim());
+        }
+      });
+    }
+
+    if ($("save-cf-custom-domain-btn")) {
+      $("save-cf-custom-domain-btn").addEventListener("click", function () {
+        var domInp = $("cf-custom-domain-input");
+        var domVal = domInp ? domInp.value.trim() : "";
+        var sBtn = $("save-cf-custom-domain-btn");
+        sBtn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "save_workers_custom_domain", custom_domain: domVal },
+        })
+          .then(function (d) {
+            sBtn.disabled = false;
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "保存自定义域名失败", true);
+              return;
+            }
+            if (domInp) domInp.removeAttribute("data-user-dirty");
+            renderAll(d);
+            showToast(d.message || "已更新 Cloudflare 自定义域名", false);
+          })
+          .catch(function (e) {
+            sBtn.disabled = false;
+            showToast("保存自定义域名失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    if ($("clear-cf-custom-domain-btn")) {
+      $("clear-cf-custom-domain-btn").addEventListener("click", function () {
+        var domInp = $("cf-custom-domain-input");
+        var cBtn = $("clear-cf-custom-domain-btn");
+        cBtn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "clear_workers_custom_domain" },
+        })
+          .then(function (d) {
+            cBtn.disabled = false;
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "清空自定义域名失败", true);
+              return;
+            }
+            if (domInp) {
+              domInp.value = "";
+              domInp.removeAttribute("data-user-dirty");
+            }
+            renderAll(d);
+            showToast(d.message || "已清空自定义域名并恢复默认网关地址", false);
+          })
+          .catch(function (e) {
+            cBtn.disabled = false;
+            showToast("清空自定义域名失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
     // Card 3 Subtabs & Actions (userPickedCard3Subtab prevents 4s poll from snapping back)
     document.querySelectorAll(".card3-subtab-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -4805,6 +4965,31 @@
       });
     });
 
+    if ($("instant-policy-select")) {
+      $("instant-policy-select").addEventListener("change", function () {
+        var polSel = $("instant-policy-select");
+        var chosenPol = String(polSel.value || "auto").trim();
+        polSel.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "set_instant_policy", instant_policy: chosenPol },
+        })
+          .then(function (d) {
+            polSel.disabled = false;
+            if (!d || !d.ok) {
+              showToast((d && (d.error || d.message)) || "切换通道策略失败", true);
+              return;
+            }
+            renderAll(d);
+            showToast(d.message || "第 1 类通道策略已切换", false);
+          })
+          .catch(function (e) {
+            polSel.disabled = false;
+            showToast("切换通道策略失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
     if ($("instant-sub-trycf-switch")) {
       $("instant-sub-trycf-switch").addEventListener("change", function () {
         var cfSw = $("instant-sub-trycf-switch");
@@ -5015,6 +5200,150 @@
           .catch(function () {
             rBtn.disabled = false;
             showToast("刷新配对码失败，请确认本机服务在线", true);
+          });
+      });
+    }
+
+    if ($("auth-wipe-plaintext-pw-btn")) {
+      $("auth-wipe-plaintext-pw-btn").addEventListener("click", function () {
+        var wBtn = $("auth-wipe-plaintext-pw-btn");
+        wBtn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "wipe_plaintext_password" },
+        })
+          .then(function (d) {
+            if (!d || !d.ok) {
+              wBtn.disabled = false;
+              showToast((d && (d.error || d.message)) || "擦除明文口令文件失败", true);
+              return;
+            }
+            renderAll(d);
+            showToast(d.message || "已擦除本地 txt 文件中的明文口令", false);
+          })
+          .catch(function (e) {
+            wBtn.disabled = false;
+            showToast("擦除失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    if ($("chk-enable-oneclick-route")) {
+      $("chk-enable-oneclick-route").addEventListener("change", function () {
+        var ocChk = $("chk-enable-oneclick-route");
+        var wantOc = Boolean(ocChk.checked);
+        ocChk.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: { action: "set_oneclick_token_route", enabled: wantOc },
+        })
+          .then(function (d) {
+            ocChk.disabled = false;
+            if (!d || !d.ok) {
+              ocChk.checked = !wantOc;
+              showToast((d && (d.error || d.message)) || "切换免 OAuth 直通策略失败", true);
+              return;
+            }
+            renderAll(d);
+            showToast(d.message || (wantOc ? "已开启免 OAuth 直通路径" : "已关闭免 OAuth 直通路径"), false);
+          })
+          .catch(function (e) {
+            ocChk.disabled = false;
+            ocChk.checked = !wantOc;
+            showToast("切换失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    var pendingUpdateAllowTunnelRestart = false;
+    if ($("check-update-btn")) {
+      $("check-update-btn").addEventListener("click", function () {
+        var ckBtn = $("check-update-btn");
+        var apBtn = $("apply-update-btn");
+        var uBox = $("studio-update-status-box");
+        ckBtn.disabled = true;
+        ckBtn.textContent = "正在检查…";
+        apiFetch("/api/studio/update", {
+          method: "POST",
+          body: { action: "check" },
+        })
+          .then(function (d) {
+            ckBtn.disabled = false;
+            ckBtn.textContent = "检查更新";
+            if (!uBox) return;
+            uBox.style.display = "block";
+            if (!d || !d.ok) {
+              uBox.className = "callout callout-warn";
+              uBox.textContent = (d && (d.message || d.error)) || "检查更新失败，请稍后重试。";
+              if (apBtn) apBtn.style.display = "none";
+              return;
+            }
+            if (d.update_available) {
+              uBox.className = "callout callout-ok";
+              pendingUpdateAllowTunnelRestart = Boolean(d.tunnel_impact && d.tunnel_impact.url_changes_on_full_restart);
+              uBox.textContent =
+                "发现新版本 v" +
+                (d.latest_version || "") +
+                "（当前 v" +
+                (d.current_version || "") +
+                "），点击右侧「一键升级」即可自动校验并平滑更新。";
+              if (apBtn) apBtn.style.display = "inline-flex";
+            } else {
+              uBox.className = "callout callout-info";
+              uBox.textContent = "当前已是最新版本（v" + (d.current_version || "") + "）。";
+              if (apBtn) apBtn.style.display = "none";
+            }
+          })
+          .catch(function (e) {
+            ckBtn.disabled = false;
+            ckBtn.textContent = "检查更新";
+            if (uBox) {
+              uBox.style.display = "block";
+              uBox.className = "callout callout-warn";
+              uBox.textContent = "检查更新失败：" + (e && e.message ? e.message : e);
+            }
+          });
+      });
+    }
+
+    if ($("apply-update-btn")) {
+      $("apply-update-btn").addEventListener("click", function () {
+        var apBtn = $("apply-update-btn");
+        var uBox = $("studio-update-status-box");
+        apBtn.disabled = true;
+        apBtn.textContent = "正在升级…";
+        apiFetch("/api/studio/update", {
+          method: "POST",
+          body: { action: "apply", allow_tunnel_restart: pendingUpdateAllowTunnelRestart },
+        })
+          .then(function (d) {
+            apBtn.disabled = false;
+            apBtn.textContent = "一键升级";
+            if (!d || !d.ok) {
+              var errTxt = (d && (d.message || d.error)) || "在线升级失败";
+              if (uBox) {
+                uBox.style.display = "block";
+                uBox.className = "callout callout-warn";
+                uBox.textContent = errTxt;
+              }
+              showToast(errTxt, true);
+              return;
+            }
+            apBtn.style.display = "none";
+            var okTxt =
+              d.message ||
+              ("升级包已就绪（目标版本 v" + (d.to_version || "") + "），后台工作进程正在平滑热重载…");
+            if (uBox) {
+              uBox.style.display = "block";
+              uBox.className = "callout callout-ok";
+              uBox.textContent = okTxt;
+            }
+            showToast(okTxt, false);
+          })
+          .catch(function (e) {
+            apBtn.disabled = false;
+            apBtn.textContent = "一键升级";
+            showToast("升级失败：" + (e && e.message ? e.message : e), true);
           });
       });
     }
@@ -5298,6 +5627,13 @@
       });
     }
 
+    if ($("chk-web-compat-mode")) {
+      $("chk-web-compat-mode").addEventListener("change", function () {
+        if ($("chk-web-compat-mode").disabled) return;
+        pushToolsSafetySwitches({ web_compat_mode: $("chk-web-compat-mode").checked });
+      });
+    }
+
     $("chk-confirm-popups").addEventListener("change", function () {
       if ($("chk-confirm-popups").disabled) return;
       pushToolsSafetySwitches({ confirm_popups: $("chk-confirm-popups").checked });
@@ -5306,6 +5642,18 @@
     if ($("chk-scan-host-skills")) {
       $("chk-scan-host-skills").addEventListener("change", function () {
         pushToolsSafetySwitches({ scan_host_global_skills: $("chk-scan-host-skills").checked });
+      });
+    }
+
+    if ($("chk-skills-scan-host")) {
+      $("chk-skills-scan-host").addEventListener("change", function () {
+        pushToolsSafetySwitches({ scan_host_global_skills: $("chk-skills-scan-host").checked });
+      });
+    }
+
+    if ($("chk-redact-project-secrets")) {
+      $("chk-redact-project-secrets").addEventListener("change", function () {
+        pushToolsSafetySwitches({ redact_project_secrets: $("chk-redact-project-secrets").checked });
       });
     }
 
