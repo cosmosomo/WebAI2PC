@@ -177,6 +177,197 @@ _PRIVATE_PAD_PACK_RE = re.compile(
     r"['\"]" + "pad" + r"['\"]\s*:\s*['\"(\[{]|\b" + "pad" + r"_(?:adb|fleet|gui_action|reverse_engineer)\b"
 )
 
+# Constructed dynamically so this script file itself contains zero literal forbidden tokens
+_CREDENTIAL_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
+    (
+        "github_token",
+        re.compile(
+            r"\b(?:"
+            + "gh" + "p|" + "gh" + "o|" + "gh" + "u|" + "gh" + "s|" + "gh" + "r"
+            + r")_[A-Za-z0-9]{20,}\b|\b"
+            + "github_" + "pat_"
+            + r"[A-Za-z0-9_]{20,}\b"
+        ),
+    ),
+    (
+        "api_sk_token",
+        re.compile(r"\b" + "sk" + r"-(?:proj-|ant-|live-|test-)?[A-Za-z0-9\-_]{20,}\b"),
+    ),
+    (
+        "google_api_key",
+        re.compile(r"\b" + "AI" + "za" + r"[0-9A-Za-z\-_]{30,}\b"),
+    ),
+    (
+        "slack_token",
+        re.compile(r"\b" + "xox" + r"[baprs]-[0-9A-Za-z\-]{10,}\b"),
+    ),
+    (
+        "cf_tunnel_token",
+        re.compile(r"\b" + "eyJ" + "hIjoi" + r"[A-Za-z0-9+/=_-]{20,}"),
+    ),
+    (
+        "jwt_token",
+        re.compile(r"\b" + "eyJ" + r"[A-Za-z0-9_-]{10,}\." + "eyJ" + r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+    ),
+    (
+        "private_key_block",
+        re.compile(r"-----" + "BEGIN " + r"[A-Z0-9 ]*" + "PRIVATE KEY" + r"-----"),
+    ),
+    (
+        "im_webhook_url",
+        re.compile(
+            r"https?://(?:"
+            + "hooks\\.slack\\.com|"
+            + "discord\\.com/api/webhooks|"
+            + "oapi\\.dingtalk\\.com|"
+            + "qyapi\\.weixin\\.qq\\.com|"
+            + "open\\.feishu\\.cn/open-apis/bot"
+            + r")[^\s'\"`]+"
+        ),
+    ),
+)
+_USER_HOME_PATH_RE = re.compile(
+    r"(?:" + r"[A-Z]:(?:\\+|/+)" + "Users" + r"(?:\\+|/+)|/" + "Users" + r"/)([A-Za-z0-9_.-]+)",
+    re.IGNORECASE,
+)
+_ALLOWED_PLACEHOLDER_USERNAMES: frozenset[str] = frozenset(
+    {"alice", "user", "yourname", "username", "public", "default", "shared"}
+)
+_WINDOWS_AUTO_HOSTNAME_RE = re.compile(
+    r"\b(?:" + "DESK" + "TOP|" + "LAP" + "TOP" + r")-(?=[A-Z0-9]{5,}\b)(?=[A-Z0-9]*\d)[A-Z0-9]{5,}\b",
+    re.IGNORECASE,
+)
+_INTERNAL_AGENT_LEAK_RE = re.compile(
+    r"\b" + "HUB-" + "EXP-" + r"[A-Z0-9]+\b"
+    + r"|\b" + "custom_" + "mcp__" + r"[0-9a-f]{16,}\b"
+    + r"|" + "_work" + "trees"
+    + r"|" + r"\.run" + "time" + r"[/\\]",
+    re.IGNORECASE,
+)
+_FORBIDDEN_TRACKED_DIRS: Tuple[str, ...] = (
+    ".interface-design/",
+    ".audit_screenshots/",
+    ".benchmarks/",
+)
+_ALLOWED_PNG_TEXT_KEYS: frozenset[str] = frozenset()
+
+
+def scan_text_credential_leaks(txt: str) -> List[str]:
+    """Return high-risk credential pattern names matched in `txt` (excluding obvious placeholder strings)."""
+    hits: List[str] = []
+    for name, rx in _CREDENTIAL_PATTERNS:
+        for m in rx.finditer(txt):
+            val_low = m.group(0).lower()
+            if name == "api_sk_token" and any(p in val_low for p in ("xxxx", "example", "placeholder", "your_")):
+                continue
+            if name not in hits:
+                hits.append(name)
+            break
+    return hits
+
+
+def scan_text_cross_machine_and_internal_leaks(txt: str) -> List[str]:
+    """Return cross-machine user path or internal agent/worktree leak tags matched in `txt`."""
+    hits: List[str] = []
+    for m in _USER_HOME_PATH_RE.finditer(txt):
+        uname = m.group(1).strip().lower()
+        if uname and uname not in _ALLOWED_PLACEHOLDER_USERNAMES:
+            tag = f"user_home_path:{m.group(1)[:2]}****"
+            if tag not in hits:
+                hits.append(tag)
+    if _WINDOWS_AUTO_HOSTNAME_RE.search(txt):
+        hits.append("windows_auto_hostname")
+    if _INTERNAL_AGENT_LEAK_RE.search(txt):
+        hits.append("internal_agent_or_worktree_ref")
+    return hits
+
+
+def scan_image_bytes_integrity_and_metadata(data: bytes, *, rel_path: str = "") -> List[str]:
+    """Verify PNG/JPEG decodability (`verify` + full `load`) and reject non-whitelisted metadata chunks."""
+    import struct
+    from PIL import Image, ImageFile
+
+    issues: List[str] = []
+    low = rel_path.lower()
+    if low.endswith(".png") or data.startswith(b"\x89PNG\r\n\x1a\n"):
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return [f"Invalid PNG header in `{rel_path}`"]
+        pos = 8
+        has_iend = False
+        while pos + 8 <= len(data):
+            clen = struct.unpack(">I", data[pos : pos + 4])[0]
+            ctype = data[pos + 4 : pos + 8].decode("latin1", errors="replace")
+            cdata = data[pos + 8 : pos + 8 + clen]
+            if pos + 12 + clen > len(data):
+                issues.append(f"Truncated PNG chunk `{ctype}` in `{rel_path}`")
+                break
+            if ctype == "IEND":
+                has_iend = True
+            elif ctype in ("tEXt", "iTXt", "zTXt", "eXIf"):
+                key = cdata.split(b"\x00", 1)[0].decode("latin1", errors="replace").strip() if ctype != "eXIf" else "eXIf"
+                if key.lower() not in _ALLOWED_PNG_TEXT_KEYS:
+                    issues.append(f"Forbidden PNG metadata chunk `{ctype}` (`{key}`) in `{rel_path}`")
+            pos += 12 + clen
+        if not has_iend:
+            issues.append(f"Missing PNG IEND chunk in `{rel_path}`")
+
+    prev_trunc = ImageFile.LOAD_TRUNCATED_IMAGES
+    try:
+        ImageFile.LOAD_TRUNCATED_IMAGES = False
+        with Image.open(io.BytesIO(data)) as im:
+            im.verify()
+        with Image.open(io.BytesIO(data)) as im2:
+            im2.load()
+            if low.endswith((".jpg", ".jpeg")):
+                exif = im2.getexif()
+                if exif and len(exif) > 0:
+                    issues.append(f"Forbidden JPEG EXIF metadata ({len(exif)} tag(s)) in `{rel_path}`")
+    except Exception as exc:
+        issues.append(f"Corrupted/unreadable image `{rel_path}`: {exc}")
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = prev_trunc
+    return issues
+
+
+def scan_git_diff_range(repo_root: Path, diff_range: str) -> List[str]:
+    """Scan added lines in `git diff --unified=0 <diff_range>` for secrets, PII paths, and internal IDs."""
+    errors: List[str] = []
+    res = subprocess.run(
+        ["git", "diff", "--unified=0", diff_range],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        creationflags=0x08000000 if os.name == "nt" else 0,
+    )
+    if res.returncode != 0:
+        return [f"git diff `{diff_range}` failed: {res.stderr.strip()[:200]}"]
+    cur_file = ""
+    cur_line = 0
+    for raw_ln in res.stdout.splitlines():
+        if raw_ln.startswith("+++ b/"):
+            cur_file = raw_ln[6:].strip()
+            continue
+        if raw_ln.startswith("@@ "):
+            m_ln = re.search(r"\+(\d+)", raw_ln)
+            if m_ln:
+                cur_line = int(m_ln.group(1))
+            continue
+        if raw_ln.startswith("+") and not raw_ln.startswith("+++"):
+            added = raw_ln[1:]
+            is_test = cur_file.startswith("tests/")
+            if not is_test:
+                for cred_tag in scan_text_credential_leaks(added):
+                    errors.append(f"Diff credential leak (`{cred_tag}`) in `{cur_file}:{cur_line}`")
+            for leak_tag in scan_text_cross_machine_and_internal_leaks(added):
+                errors.append(f"Diff path/internal leak (`{leak_tag}`) in `{cur_file}:{cur_line}`")
+            for em in scan_text_email_leaks(added, is_test_file=is_test):
+                errors.append(f"Diff unredacted email `{em}` in `{cur_file}:{cur_line}`")
+            cur_line += 1
+    return errors
+
 _SENSITIVE_TOKEN_SALT: bytes = b"cosmos-mcp-release-gate-v1:"
 # Never commit hardcoded hashes of short personal usernames/hostnames to a public repo
 # (public salt + short identifier is offline dictionary-guessable). Local dev machines
@@ -761,7 +952,12 @@ def _iter_repo_files_for_hygiene(repo_root: Path) -> Iterable[Tuple[str, Path]]:
             yield rel.as_posix(), fp
 
 
-def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None) -> Tuple[bool, List[str], Dict[str, object]]:
+def run_release_checks(
+    repo_root: Path = REPO_ROOT,
+    zip_path: Path | None = None,
+    *,
+    diff_range: str = "",
+) -> Tuple[bool, List[str], Dict[str, object]]:
     version = read_project_version(repo_root)
     eff_zip = (zip_path or (repo_root / "dist" / f"Cosmos-MCP-v{version}.zip")).resolve()
     errors: List[str] = []
@@ -770,7 +966,7 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
         errors.append(f"Release archive does not exist: {eff_zip}")
         return False, errors, {"zip_path": str(eff_zip)}
 
-    # 1. Check workspace for duplicate build/lib residue, tracked .env files, and required repo-root launchers
+    # 1. Check workspace for duplicate build/lib residue, tracked .env/internal dirs, and required repo-root launchers
     if (repo_root / "build" / "lib").exists():
         errors.append("Duplicate `build/lib/` residue exists in workspace.")
     if (repo_root / ".git").exists():
@@ -787,12 +983,16 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             )
             if ls_res.returncode == 0:
                 for tracked_rel in ls_res.stdout.splitlines():
-                    base_low = Path(tracked_rel.strip()).name.lower()
+                    norm_rel = tracked_rel.strip().replace("\\", "/")
+                    norm_low = norm_rel.lower()
+                    base_low = Path(norm_rel).name.lower()
                     if base_low == ".env" or (
                         base_low.startswith(".env.")
                         and base_low not in {".env.example", ".env.sample", ".env.template"}
                     ):
-                        errors.append(f"Git-tracked local env file must not exist in repository: `{tracked_rel.strip()}`")
+                        errors.append(f"Git-tracked local env file must not exist in repository: `{norm_rel}`")
+                    if any(norm_low.startswith(pfx) for pfx in _FORBIDDEN_TRACKED_DIRS):
+                        errors.append(f"Git-tracked internal directory file must not exist in repository: `{norm_rel}`")
         except OSError:
             pass
     for gl in GENERATED_LAUNCHERS:
@@ -855,6 +1055,16 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             hit_tokens = scan_archive_entry_sensitive_bytes(data, forbidden_archive_tokens, arc_name=arc)
             if hit_tokens:
                 errors.append(f"Byte-level sensitive token leaked in ZIP entry `{arc}` (matched {len(hit_tokens)} token(s))")
+
+            if not is_embed_entry and not is_bundled_wheel:
+                if low_arc.startswith("assets/") and low_arc.endswith((".png", ".jpg", ".jpeg")):
+                    errors.extend(scan_image_bytes_integrity_and_metadata(data, rel_path=f"zip:{arc}"))
+                elif b"\x00" not in data[:4096]:
+                    arc_txt = data.decode("utf-8", errors="replace")
+                    for cred_tag in scan_text_credential_leaks(arc_txt):
+                        errors.append(f"High-risk credential pattern (`{cred_tag}`) leaked in ZIP entry `{arc}`")
+                    for leak_tag in scan_text_cross_machine_and_internal_leaks(arc_txt):
+                        errors.append(f"Cross-machine path or internal reference (`{leak_tag}`) leaked in ZIP entry `{arc}`")
 
             if low_arc.endswith((".whl", ".zip")) and not low_arc.endswith("python312.zip"):
                 try:
@@ -930,14 +1140,19 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             if zip_src_hashes[arc] != ws_sha:
                 errors.append(f"`src/cosmos_mcp` SHA-256 mismatch on `{arc}`: zip={zip_src_hashes[arc]} != ws={ws_sha}")
 
-    # 3. Repo-wide privacy, private path, private pack, and public documentation hygiene checks
+    # 3. Repo-wide privacy, private path, private pack, image integrity, and public documentation hygiene checks
     doc_checked_count = 0
     repo_checked_count = 0
     code_web_checked_count = 0
+    image_checked_count = 0
     binary_suffixes = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".whl", ".sqlite3", ".exe", ".dll", ".pyd")
     code_web_suffixes = (".py", ".js", ".mjs", ".html", ".css", ".svg")
     for rel_arc, fp in _iter_repo_files_for_hygiene(repo_root):
         low_sfx = fp.suffix.lower()
+        if low_sfx in (".png", ".jpg", ".jpeg") and rel_arc.startswith("assets/"):
+            image_checked_count += 1
+            errors.extend(scan_image_bytes_integrity_and_metadata(fp.read_bytes(), rel_path=rel_arc))
+            continue
         if low_sfx in binary_suffixes:
             continue
         txt = fp.read_text(encoding="utf-8", errors="replace")
@@ -967,6 +1182,11 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
             errors.append(f"Private `pad` pack residue found in repo file `{rel_arc}`")
 
         is_test_file = rel_arc.startswith("tests/")
+        if not is_test_file:
+            for cred_tag in scan_text_credential_leaks(txt):
+                errors.append(f"High-risk credential pattern (`{cred_tag}`) leaked in repo file `{rel_arc}`")
+        for leak_tag in scan_text_cross_machine_and_internal_leaks(txt):
+            errors.append(f"Cross-machine path or internal reference (`{leak_tag}`) leaked in repo file `{rel_arc}`")
         for leaked_em in scan_text_email_leaks(txt, is_test_file=is_test_file):
             errors.append(f"Unredacted email address `{leaked_em}` leaked in repo file `{rel_arc}`")
 
@@ -1009,6 +1229,9 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
         elif is_user_facing_ui_catalog and _BRACKET_AT_RE.search(txt):
             errors.append(f"Escaped bracket-at typo found in UI/tutorial source `{rel_arc}` (use `{chr(64)}Cosmos`)")
 
+    if diff_range.strip():
+        errors.extend(scan_git_diff_range(repo_root, diff_range.strip()))
+
     summary = {
         "ok": len(errors) == 0,
         "version": version,
@@ -1019,6 +1242,7 @@ def run_release_checks(repo_root: Path = REPO_ROOT, zip_path: Path | None = None
         "verified_docs": doc_checked_count,
         "scanned_repo_files": repo_checked_count,
         "scanned_code_web_files": code_web_checked_count,
+        "scanned_image_assets": image_checked_count,
         "embedded_pth_checked": embed_pth_checked,
         "error_count": len(errors),
     }
@@ -1040,6 +1264,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--check", action="store_true", help="Run SHA-256 parity and repo/archive byte hygiene verification gates")
     parser.add_argument("--no-build", action="store_true", help="Verify an existing archive without rebuilding")
+    parser.add_argument(
+        "--diff-range",
+        default="",
+        help="Optional git diff range (e.g. origin/main..HEAD) whose added lines are scanned for secrets and PII",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     out_zip = Path(args.output).resolve() if args.output else None
@@ -1061,7 +1290,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         eff_zip = out_zip or (REPO_ROOT / "dist" / f"Cosmos-MCP-v{read_project_version(REPO_ROOT)}.zip")
 
     if args.check:
-        ok, errs, summary = run_release_checks(REPO_ROOT, zip_path=eff_zip)
+        ok, errs, summary = run_release_checks(REPO_ROOT, zip_path=eff_zip, diff_range=args.diff_range)
         if not ok:
             print(f"[CHECK FAILED] {len(errs)} issue(s) detected:", file=sys.stderr)
             for item in errs:

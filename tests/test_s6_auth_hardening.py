@@ -1,4 +1,4 @@
-"""Production ASGI end-to-end verification suite for S6 Auth & Trust Hardening (`HUB-EXP-BDCB8E15`).
+"""Production ASGI end-to-end verification suite for S6 Auth & Trust Hardening.
 
 Verifies through full `create_standalone_app` live HTTP entrypoints:
 1. RFC 8707 `/mcp/readonly` audience & scope isolation:

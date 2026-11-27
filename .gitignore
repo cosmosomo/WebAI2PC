@@ -10,6 +10,7 @@ venv/
 wheels/
 python-embed/
 .benchmarks/
+.interface-design/
 .undo_history/
 .pytest_cache/
 .mypy_cache/
