@@ -4815,7 +4815,8 @@ def mount_standalone_status_ui(
                 d_doc = json.loads(d_status_file.read_text(encoding="utf-8-sig"))
                 if isinstance(d_doc, dict) and str(d_doc.get("status") or "") in ("running", "starting", "restarting"):
                     sup_pid = int(d_doc.get("supervisor_pid") or d_doc.get("pid") or 0)
-                    supervised_alive = verify_pid_alive(sup_pid) if sup_pid > 0 else True
+                    sup_tok = d_doc.get("supervisor_create_token")
+                    supervised_alive = bool(verify_pid_alive(sup_pid, sup_tok)[0]) if sup_pid > 0 else False
             except Exception:
                 supervised_alive = False
 

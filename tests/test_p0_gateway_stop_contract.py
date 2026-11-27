@@ -286,3 +286,62 @@ def test_cli_explicit_start_passes_clear_user_stop_true() -> None:
     assert "clear_user_stop" in kw_map
     assert isinstance(kw_map["clear_user_stop"], ast.Constant)
     assert kw_map["clear_user_stop"].value is True
+
+
+def test_studio_service_restart_unpacks_verify_pid_alive_tuple_and_respawns_dead_supervisor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from starlette.testclient import TestClient
+    from cosmos_mcp.core.config import ensure_initialized
+    from cosmos_mcp.launcher.app import create_standalone_app
+    from cosmos_mcp.studio import routes as routes_mod
+
+    ws_dir = tmp_path / "ws_svc"
+    st_dir = tmp_path / "st_svc"
+    ws_dir.mkdir(parents=True)
+    (st_dir / "state").mkdir(parents=True)
+    port = 18968
+    ensure_initialized(
+        product_root=st_dir,
+        public_url=f"http://127.0.0.1:{port}",
+        port=port,
+        cli_state_dir=str(st_dir),
+        tier_key="tier3_workspace_dev",
+        prefix="pc",
+        workspace_roots=[ws_dir],
+    )
+    # Write a stale `daemon_status.json` pointing to a dead supervisor PID
+    (st_dir / "state" / "daemon_status.json").write_text(
+        json.dumps({"status": "running", "supervisor_pid": 99999991}),
+        encoding="utf-8",
+    )
+    spawned_kwargs = []
+    monkeypatch.setattr(
+        routes_mod,
+        "spawn_detached_daemon",
+        lambda **kw: (spawned_kwargs.append(kw), {"ok": True, "pid": 43210})[1],
+    )
+
+    app = create_standalone_app(
+        workspace=str(ws_dir),
+        state_dir=str(st_dir),
+        port=port,
+        public_url=f"http://127.0.0.1:{port}",
+        prefix="pc",
+    )
+    hdrs = {"Origin": f"http://127.0.0.1:{port}", "Host": f"127.0.0.1:{port}"}
+    with TestClient(app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 52122)) as client:
+        csrf = client.get("/api/studio/state", headers=hdrs).json()["csrf_token"]
+        r_res = client.post(
+            "/api/studio/service-control",
+            headers={**hdrs, "X-Studio-Csrf": csrf},
+            json={"action": "restart"},
+        )
+        assert r_res.status_code == 200
+        body = r_res.json()
+        assert isinstance(body["supervised"], bool)
+        assert body["supervised"] is False
+        assert len(spawned_kwargs) == 1
+        assert spawned_kwargs[0]["clear_user_stop"] is True
+
