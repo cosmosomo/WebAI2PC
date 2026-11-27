@@ -137,6 +137,25 @@ def sanitize_daemon_inherited_env(target_env: Optional[Any] = None) -> Dict[str,
     return dict(work)
 
 
+INSTANT_POLICIES: Tuple[str, ...] = ("auto", "srv_us_only", "quick_only")
+SRVUS_START_WAIT_TIMEOUT_SEC: float = 10.0
+
+
+def normalize_instant_policy(
+    raw_policy: Any = None,
+    *,
+    prefer_quick_tunnel: Any = None,
+    submode: str = "",
+) -> str:
+    """Normalize 3-state instant gateway policy (`auto` | `srv_us_only` | `quick_only`) with legacy compat."""
+    pol = str(raw_policy or "").strip().lower()
+    if pol in INSTANT_POLICIES:
+        return pol
+    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
+        return "quick_only"
+    return "auto"
+
+
 @dataclass
 class GatewaySlotRuntime:
     """Live runtime state for one independent gateway slot (`instant` | `workers_dev` | `self_hosted`)."""
@@ -145,6 +164,7 @@ class GatewaySlotRuntime:
     enabled: bool = False
     submode: str = ""
     effective_mode: str = ""
+    instant_policy: str = "auto"
     state: str = "disabled"  # "disabled" | "connecting" | "ready" | "error"
     ready: bool = False
     public_url: str = ""
@@ -160,6 +180,15 @@ class GatewaySlotRuntime:
     pid: Optional[int] = None
     e2e_verified_url: str = ""
     e2e_probe_error: str = ""
+    # Dual-subchannel state for `instant` (`srv_us` primary + `trycloudflare` backup)
+    srvus_url: str = ""
+    srvus_status: str = "disabled"
+    srvus_error: str = ""
+    trycloudflare_backup: bool = False
+    trycloudflare_enabled: bool = False
+    trycloudflare_url: str = ""
+    trycloudflare_status: str = "disabled"
+    trycloudflare_error: str = ""
 
     def reset_disabled(self, submode: str = "") -> None:
         self.enabled = False
@@ -181,6 +210,44 @@ class GatewaySlotRuntime:
         self.pid = None
         self.e2e_verified_url = ""
         self.e2e_probe_error = ""
+        self.srvus_url = ""
+        self.srvus_status = "disabled"
+        self.srvus_error = ""
+        self.trycloudflare_enabled = False
+        self.trycloudflare_url = ""
+        self.trycloudflare_status = "disabled"
+        self.trycloudflare_error = ""
+
+    def build_instant_subchannels_dict(self) -> Dict[str, Dict[str, Any]]:
+        srv_u = self.srvus_url if self.enabled else ""
+        srv_st = self.srvus_status if self.enabled else "disabled"
+        srv_err = self.srvus_error[:500] if (self.enabled and self.srvus_error) else ""
+        cf_en = bool(self.enabled and self.trycloudflare_enabled)
+        cf_u = self.trycloudflare_url if cf_en else ""
+        cf_st = self.trycloudflare_status if cf_en else "disabled"
+        cf_err = self.trycloudflare_error[:500] if (cf_en and self.trycloudflare_error) else ""
+        return {
+            "srv_us": {
+                "label": "srv.us 免登录固定地址",
+                "role": "primary",
+                "enabled": bool(self.enabled),
+                "status": srv_st,
+                "public_url": srv_u,
+                "mcp_url": f"{srv_u}/mcp" if srv_u else "",
+                "readonly_mcp_url": f"{srv_u}/mcp/readonly" if srv_u else "",
+                "last_error": srv_err,
+            },
+            "trycloudflare": {
+                "label": "trycloudflare 备用临时通道（重启会变）",
+                "role": "backup",
+                "enabled": cf_en,
+                "status": cf_st,
+                "public_url": cf_u,
+                "mcp_url": f"{cf_u}/mcp" if cf_u else "",
+                "readonly_mcp_url": f"{cf_u}/mcp/readonly" if cf_u else "",
+                "last_error": cf_err,
+            },
+        }
 
     def to_status_dict(self) -> Dict[str, Any]:
         eff_pub = self.public_url if self.enabled else ""
@@ -214,6 +281,16 @@ class GatewaySlotRuntime:
                 self.last_disconnect_reason_zh[:240] if (self.enabled and self.last_disconnect_reason_zh) else ""
             ),
         }
+        if self.slot_id == "instant":
+            out["instant_policy"] = normalize_instant_policy(self.instant_policy)
+            out["trycloudflare_backup"] = bool(self.trycloudflare_backup)
+            out["srvus_url"] = self.srvus_url if self.enabled else ""
+            out["srvus_status"] = self.srvus_status if self.enabled else "disabled"
+            out["srvus_error"] = self.srvus_error[:500] if (self.enabled and self.srvus_error) else ""
+            out["trycloudflare_url"] = self.trycloudflare_url if (self.enabled and self.trycloudflare_enabled) else ""
+            out["trycloudflare_status"] = self.trycloudflare_status if (self.enabled and self.trycloudflare_enabled) else "disabled"
+            out["trycloudflare_error"] = self.trycloudflare_error[:500] if (self.enabled and self.trycloudflare_enabled and self.trycloudflare_error) else ""
+            out["subchannels"] = self.build_instant_subchannels_dict()
         if self.enabled and self.probe_note:
             out["probe_note"] = self.probe_note[:240]
         return out
@@ -1307,9 +1384,25 @@ class StandaloneSupervisorLoop:
         self._srvus_supervisor: Optional[Any] = None
         self._srvus_retry_not_before: float = 0.0
         self._srvus_fixed_active: bool = False
+        self._last_srvus_error: str = ""
+        self._srvus_auto_recover_interval_sec: float = 120.0
+        self._srvus_next_auto_recover_mono: float = 0.0
         self._last_srvus_retry_req_ts: float = float(cfg_doc.get("srvus_retry_requested_at") or 0.0)
         self._active_srvus_key_sig: Optional[Tuple[bool, int, int, str]] = None
         self._last_seen_srvus_key_sig: Tuple[bool, int, int, str] = self._compute_srvus_key_sig()
+        raw_gw_recon = cfg_doc.get("gateway_reconnect_requested_at")
+        self._last_gw_reconnect_req_ts: Dict[str, float] = {
+            gid: float(raw_gw_recon.get(gid) or 0.0) if isinstance(raw_gw_recon, dict) else 0.0
+            for gid in GATEWAY_IDS
+        }
+        raw_sub_recon = cfg_doc.get("subchannel_reconnect_requested_at")
+        self._last_subchannel_reconnect_req_ts: Dict[str, float] = {
+            sc: float(raw_sub_recon.get(sc) or 0.0) if isinstance(raw_sub_recon, dict) else 0.0
+            for sc in ("srv_us", "trycloudflare")
+        }
+        self._instant_trycloudflare_backup: bool = bool(cfg_doc.get("instant_trycloudflare_backup", False))
+        self._last_local_inflight: Optional[int] = None
+        self._last_local_inflight_mono: float = 0.0
 
         self._pg_workers_supervisor: Optional[Any] = None
         self._active_pg_workers_sig: str = ""
@@ -1334,6 +1427,14 @@ class StandaloneSupervisorLoop:
         self._public_gateway_online: Optional[bool] = None
         self._instant_fallback_active: bool = False
         self._last_prefer_quick: bool = bool(cfg_doc.get("prefer_quick_tunnel"))
+        init_inst_slot_cfg = (cfg_doc.get("gateways") or {}).get("instant") if isinstance(cfg_doc.get("gateways"), dict) else {}
+        self._last_instant_policy: str = normalize_instant_policy(
+            (init_inst_slot_cfg.get("instant_policy") if isinstance(init_inst_slot_cfg, dict) else None)
+            or cfg_doc.get("instant_policy"),
+            prefer_quick_tunnel=cfg_doc.get("prefer_quick_tunnel"),
+            submode=str(init_inst_slot_cfg.get("submode") or "") if isinstance(init_inst_slot_cfg, dict) else "",
+        )
+        self._gateway_slots["instant"].instant_policy = self._last_instant_policy
         self._effective_tunnel_mode: str = self.mode
         self._pg_last_base: str = "__unprobed__"
         self._pg_next_probe_mono: float = 0.0
@@ -1637,7 +1738,17 @@ class StandaloneSupervisorLoop:
         sel_slot = self._gateway_slots[sel_id]
 
         if ready_slots:
-            chosen = sel_slot if sel_slot in ready_slots else ready_slots[0]
+            permanent_ready = [s for s in ready_slots if s.slot_id in ("workers_dev", "self_hosted")]
+            inst_is_temp = bool(
+                self._instant_fallback_active
+                or ".trycloudflare.com" in str(self._gateway_slots["instant"].public_url or "").lower()
+            )
+            if sel_slot in ready_slots and not (sel_slot.slot_id == "instant" and inst_is_temp and permanent_ready):
+                chosen = sel_slot
+            elif permanent_ready:
+                chosen = permanent_ready[0]
+            else:
+                chosen = ready_slots[0]
             clean_ready_u = self._sanitize_public_gateway_url(chosen.public_url)
             self.mode = chosen.submode or self.mode
             self._effective_tunnel_mode = chosen.effective_mode or chosen.submode or self.mode
@@ -2034,9 +2145,25 @@ class StandaloneSupervisorLoop:
             finally:
                 if slot.probing_url == clean_u:
                     slot.probing_url = ""
-            if self._should_stop() or not slot.enabled or (slot.public_url or "").strip().rstrip("/") != clean_u:
+            if self._should_stop() or not slot.enabled:
+                return
+            is_instant_subch = slot_id == "instant" and clean_u in (
+                (slot.srvus_url or "").strip().rstrip("/"),
+                (slot.trycloudflare_url or "").strip().rstrip("/"),
+            )
+            if (slot.public_url or "").strip().rstrip("/") != clean_u and not is_instant_subch:
                 return
             if res.get("ok"):
+                if slot_id == "instant":
+                    if clean_u == (slot.srvus_url or "").strip().rstrip("/"):
+                        slot.srvus_status = "ready"
+                        slot.srvus_error = ""
+                    if clean_u == (slot.trycloudflare_url or "").strip().rstrip("/"):
+                        slot.trycloudflare_status = "ready"
+                        slot.trycloudflare_error = ""
+                if (slot.public_url or "").strip().rstrip("/") != clean_u:
+                    self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
+                    return
                 was_already_ready = bool(slot.ready and slot.ready_url == clean_u)
                 if not was_already_ready:
                     hot_refresh_public_url(
@@ -2605,7 +2732,14 @@ class StandaloneSupervisorLoop:
                     slot.public_url = ""
                     slot.ready = False
                     slot.ready_url = ""
-            elif self._is_relay_obj_alive(self._srvus_supervisor) and slot.public_url.startswith("https://"):
+            elif self._is_relay_obj_alive(self._srvus_supervisor) and (slot.srvus_url or slot.public_url).startswith("https://"):
+                if not slot.srvus_url and slot.public_url.lower().endswith(".srv.us"):
+                    slot.srvus_url = slot.public_url
+                if slot.srvus_url:
+                    slot.public_url = slot.srvus_url
+                slot.srvus_error = ""
+                if slot.srvus_status not in ("ready", "connecting"):
+                    slot.srvus_status = "ready" if (slot.ready and slot.ready_url == slot.srvus_url) else "connecting"
                 slot.effective_mode = "srv_us"
                 self._srvus_fixed_active = True
                 self._instant_fallback_active = False
@@ -2662,16 +2796,28 @@ class StandaloneSupervisorLoop:
                 pass
             srvus_inst = srvus_cls(**srvus_kwargs)
             start_fn = getattr(srvus_inst, "start", None)
-            found_url = str(start_fn(wait_url_timeout_sec=4.0) if callable(start_fn) else "").strip().rstrip("/")
+            found_url = str(
+                start_fn(wait_url_timeout_sec=SRVUS_START_WAIT_TIMEOUT_SEC) if callable(start_fn) else ""
+            ).strip().rstrip("/")
             if found_url.startswith("https://"):
-                self._stop_cf_quick_supervisor()
-                self._cf_quick_retry_not_before = 0.0
+                if not self._instant_trycloudflare_backup:
+                    self._stop_cf_quick_supervisor()
+                    self._cf_quick_retry_not_before = 0.0
+                    slot.trycloudflare_enabled = False
+                    slot.trycloudflare_url = ""
+                    slot.trycloudflare_status = "disabled"
+                    slot.trycloudflare_error = ""
                 self._srvus_supervisor = srvus_inst
                 self._active_srvus_key_sig = self._compute_srvus_key_sig()
                 self._last_seen_srvus_key_sig = self._active_srvus_key_sig
                 self._srvus_retry_not_before = 0.0
+                self._srvus_next_auto_recover_mono = 0.0
                 self._srvus_fixed_active = True
                 self._instant_fallback_active = False
+                self._last_srvus_error = ""
+                slot.srvus_url = found_url
+                slot.srvus_error = ""
+                slot.srvus_status = "ready" if (slot.ready and slot.ready_url == found_url) else "connecting"
                 slot.effective_mode = "srv_us"
                 slot.public_url = found_url
                 slot.last_error = ""
@@ -2688,8 +2834,19 @@ class StandaloneSupervisorLoop:
                 self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
                 self._verify_slot_public_ready_async(slot, found_url, tunnel_mode="public_gateway")
                 return True
+            srvus_tail_err = str(getattr(srvus_inst, "last_error", "") or "").strip()
+            self._last_srvus_error = (
+                f"srv.us tunnel error: {srvus_tail_err}"
+                if srvus_tail_err
+                else f"srv.us tunnel error: 在 {SRVUS_START_WAIT_TIMEOUT_SEC:.0f}s 内未获取到 srv.us 固定公网 HTTPS 地址。"
+            )
+            slot.srvus_error = self._last_srvus_error
+            slot.srvus_status = "error"
         except Exception as exc:
-            self._log("srv.us persistent SSH tunnel unavailable, falling back to Quick Tunnel: %s", exc)
+            self._last_srvus_error = f"srv.us tunnel error: {exc}"
+            slot.srvus_error = self._last_srvus_error
+            slot.srvus_status = "error"
+            self._log("srv.us persistent SSH tunnel unavailable, falling back if allowed: %s", exc)
 
         if srvus_inst is not None:
             try:
@@ -2708,9 +2865,11 @@ class StandaloneSupervisorLoop:
         *,
         initial: bool,
         fallback_from_public_gateway: bool = False,
+        coexist_with_srvus: bool = False,
     ) -> None:
         want_sig = "quick_fb" if fallback_from_public_gateway else "quick_direct"
         eff_tm = "public_gateway" if fallback_from_public_gateway else "cloudflare"
+        slot.trycloudflare_enabled = True
         if self._cf_quick_supervisor is None or self._active_cf_quick_sig != want_sig:
             if not initial and time.monotonic() < self._cf_quick_retry_not_before:
                 return
@@ -2721,25 +2880,32 @@ class StandaloneSupervisorLoop:
                 def _on_cf_url(new_u: str) -> None:
                     if not slot.enabled:
                         return
-                    if new_u != slot.public_url:
-                        slot.ready = False
-                        slot.ready_url = ""
-                        slot.probing_url = ""
-                        slot.next_reprobe_mono = 0.0
-                    slot.public_url = new_u
-                    slot.last_error = ""
-                    slot.state = "ready" if slot.ready else "connecting"
-                    hot_refresh_public_url(
-                        self.state_root,
-                        new_u,
-                        port=self.port,
-                        prefix=self.prefix,
-                        tunnel_mode=eff_tm,
-                        gateway_id="instant",
-                    )
+                    clean_cf = (new_u or "").strip().rstrip("/")
+                    slot.trycloudflare_enabled = True
+                    slot.trycloudflare_url = clean_cf
+                    slot.trycloudflare_error = ""
+                    slot.trycloudflare_status = "connecting"
+                    srvus_primary_live = bool(self._srvus_fixed_active and slot.srvus_url.startswith("https://"))
+                    if not srvus_primary_live:
+                        if clean_cf != slot.public_url:
+                            slot.ready = False
+                            slot.ready_url = ""
+                            slot.probing_url = ""
+                            slot.next_reprobe_mono = 0.0
+                        slot.public_url = clean_cf
+                        slot.last_error = ""
+                        slot.state = "ready" if slot.ready else "connecting"
+                        hot_refresh_public_url(
+                            self.state_root,
+                            clean_cf,
+                            port=self.port,
+                            prefix=self.prefix,
+                            tunnel_mode=eff_tm,
+                            gateway_id="instant",
+                        )
                     self._recompute_aggregated_gateway_state()
                     self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
-                    self._verify_slot_public_ready_async(slot, new_u, tunnel_mode=eff_tm)
+                    self._verify_slot_public_ready_async(slot, clean_cf, tunnel_mode=eff_tm)
 
                 self._cf_quick_supervisor = _instantiate_cloudflared_supervisor(
                     CloudflaredTunnelSupervisor,
@@ -2754,79 +2920,112 @@ class StandaloneSupervisorLoop:
                 )
                 self._active_cf_quick_sig = want_sig
                 self._cf_quick_retry_not_before = 0.0
-                found_url = str(self._cf_quick_supervisor.start(wait_url_timeout_sec=15.0) or "").strip()
+                found_url = str(self._cf_quick_supervisor.start(wait_url_timeout_sec=15.0) or "").strip().rstrip("/")
+                srvus_primary_live = bool(
+                    coexist_with_srvus and self._srvus_fixed_active and slot.srvus_url.startswith("https://")
+                )
                 if found_url:
-                    slot.public_url = found_url
-                    slot.last_error = ""
-                    slot.state = "ready" if slot.ready else "connecting"
-                    hot_refresh_public_url(
-                        self.state_root,
-                        found_url,
-                        port=self.port,
-                        prefix=self.prefix,
-                        tunnel_mode=eff_tm,
-                        gateway_id="instant",
-                    )
+                    slot.trycloudflare_url = found_url
+                    slot.trycloudflare_error = ""
+                    slot.trycloudflare_status = "connecting"
+                    if not srvus_primary_live:
+                        slot.public_url = found_url
+                        slot.last_error = ""
+                        slot.state = "ready" if slot.ready else "connecting"
+                        hot_refresh_public_url(
+                            self.state_root,
+                            found_url,
+                            port=self.port,
+                            prefix=self.prefix,
+                            tunnel_mode=eff_tm,
+                            gateway_id="instant",
+                        )
                     self._recompute_aggregated_gateway_state()
                     self._write_daemon_status(state_label="running", last_error=self._last_tunnel_error)
                     self._verify_slot_public_ready_async(slot, found_url, tunnel_mode=eff_tm)
                 else:
                     cf_tail_err = str(getattr(self._cf_quick_supervisor, "last_error", "") or "").strip()
                     tail_sfx = f"（子进程摘要: {cf_tail_err}）" if cf_tail_err else ""
-                    slot.state = "error"
-                    slot.last_error = (
+                    cf_err_msg = (
                         "cloudflare tunnel error: 暂未连上 Cloudflare 边缘节点分配公网 HTTPS 地址"
                         f"（正在后台持续重试，请检查网络连接或切换其他通道）{tail_sfx}"
                     )
+                    slot.trycloudflare_status = "error"
+                    slot.trycloudflare_error = cf_err_msg
+                    if not srvus_primary_live:
+                        slot.state = "error"
+                        slot.last_error = cf_err_msg
             except Exception as exc:
                 self._cf_quick_retry_not_before = time.monotonic() + 15.0
-                slot.state = "error"
-                slot.last_error = (
+                cf_exc_msg = (
                     f"cloudflare tunnel error: 无法启动 Cloudflare 加密通道"
                     f"（联网后自动重试）：{exc}"
                 )
+                slot.trycloudflare_status = "error"
+                slot.trycloudflare_error = cf_exc_msg
+                if not (coexist_with_srvus and self._srvus_fixed_active and slot.srvus_url.startswith("https://")):
+                    slot.state = "error"
+                    slot.last_error = cf_exc_msg
+
+    def _is_mcp_idle_for_switchback(self) -> bool:
+        """Return True when local MCP server has zero inflight requests (`inflight == 0`) so smooth switchback is safe."""
+        hz = probe_local_healthz(self.port, timeout_sec=1.5)
+        if isinstance(hz, dict) and "inflight" in hz:
+            try:
+                cnt = int(hz.get("inflight") or 0)
+            except (TypeError, ValueError):
+                cnt = 0
+            self._last_local_inflight = cnt
+            self._last_local_inflight_mono = time.monotonic()
+            return cnt == 0
+        if self._last_local_inflight is not None and (time.monotonic() - self._last_local_inflight_mono) <= 30.0:
+            return self._last_local_inflight == 0
+        return True
 
     def _sync_instant_slot(self, slot_cfg: Dict[str, Any], doc: Dict[str, Any], *, initial: bool) -> None:
         slot = self._gateway_slots["instant"]
         raw_sub = str(slot_cfg.get("submode") or "public_gateway").strip().lower()
         submode = raw_sub if raw_sub in ("public_gateway", "cloudflare") else "public_gateway"
+        trycf_backup = bool(
+            slot_cfg.get("trycloudflare_backup")
+            if "trycloudflare_backup" in slot_cfg
+            else doc.get("instant_trycloudflare_backup", False)
+        )
+        instant_policy = normalize_instant_policy(
+            slot_cfg.get("instant_policy") or doc.get("instant_policy"),
+            prefer_quick_tunnel=doc.get("prefer_quick_tunnel"),
+            submode=submode,
+        )
+        self._instant_trycloudflare_backup = trycf_backup
+        slot.trycloudflare_backup = trycf_backup
+        slot.instant_policy = instant_policy
         if not bool(slot_cfg.get("enabled")):
             self._stop_srvus_supervisor()
             self._stop_cf_quick_supervisor()
             self._stop_pg_workers_supervisor()
             self._srvus_retry_not_before = 0.0
+            self._srvus_next_auto_recover_mono = 0.0
             self._cf_quick_retry_not_before = 0.0
             self._pg_workers_retry_not_before = 0.0
             self._public_gateway_online = None
             self._instant_fallback_active = False
             self._srvus_fixed_active = False
             self._last_prefer_quick = bool(doc.get("prefer_quick_tunnel"))
+            self._last_instant_policy = instant_policy
             slot.reset_disabled(submode=submode)
+            slot.instant_policy = instant_policy
+            slot.trycloudflare_backup = trycf_backup
             return
 
         prev_sub = slot.submode
         was_enabled = slot.enabled
+        prev_policy = self._last_instant_policy
+        policy_changed = (not initial) and (instant_policy != prev_policy)
+        self._last_instant_policy = instant_policy
         slot.enabled = True
         slot.submode = submode
 
-        if submode == "cloudflare":
-            self._stop_srvus_supervisor()
-            self._stop_pg_workers_supervisor()
-            self._srvus_retry_not_before = 0.0
-            self._pg_workers_retry_not_before = 0.0
-            self._public_gateway_online = None
-            self._instant_fallback_active = False
-            self._srvus_fixed_active = False
-            self._last_prefer_quick = bool(doc.get("prefer_quick_tunnel"))
-            slot.effective_mode = "cloudflare"
-            if (not was_enabled or prev_sub != "cloudflare") and not initial and "trycloudflare.com" not in slot.public_url.lower():
-                slot.public_url = ""
-                slot.ready = False
-                slot.ready_url = ""
-            self._start_or_maintain_quick_cloudflared(slot, initial=initial, fallback_from_public_gateway=False)
-            return
-
-        # `submode == "public_gateway"`
+        # Primary (`srv.us`) + Optional Coexisting Backup (`trycloudflare`)
         sup_cls, sec_fn, seed_fn = _resolve_workers_gateway_components()
         prefer_quick = bool(doc.get("prefer_quick_tunnel"))
         prev_prefer_quick = self._last_prefer_quick
@@ -2836,14 +3035,17 @@ class StandaloneSupervisorLoop:
         if retry_req_ts > self._last_srvus_retry_req_ts:
             self._last_srvus_retry_req_ts = retry_req_ts
             self._srvus_retry_not_before = 0.0
+            self._srvus_next_auto_recover_mono = 0.0
             self._pg_next_probe_mono = 0.0
             user_requested_srvus = True
         if (not initial) and (
             (not was_enabled)
             or (prev_sub != "public_gateway")
             or (prev_prefer_quick and not prefer_quick)
+            or policy_changed
         ):
             self._srvus_retry_not_before = 0.0
+            self._srvus_next_auto_recover_mono = 0.0
             user_requested_srvus = True
         if self._compute_srvus_key_sig() != self._last_seen_srvus_key_sig:
             user_requested_srvus = True
@@ -2888,29 +3090,91 @@ class StandaloneSupervisorLoop:
             if quick_sup is not None and self._active_cf_quick_sig == "quick_fb":
                 alive_fn = getattr(quick_sup, "is_process_alive", None)
                 quick_alive = bool(alive_fn()) if callable(alive_fn) else (getattr(quick_sup, "pid", None) is not None)
-            cur_quick_u = (slot.public_url or str(getattr(quick_sup, "current_url", "") or "")).strip().lower()
-            keep_live_quick_fallback = (
+            cur_quick_u = (
+                slot.trycloudflare_url or slot.public_url or str(getattr(quick_sup, "current_url", "") or "")
+            ).strip().lower()
+            live_quick_fallback = (
                 self._instant_fallback_active
+                and not self._srvus_fixed_active
                 and quick_alive
                 and ".trycloudflare.com" in cur_quick_u
                 and slot.state != "error"
-                and not user_requested_srvus
             )
-            if prefer_quick:
-                self._stop_srvus_supervisor()
-                self._srvus_retry_not_before = 0.0
-            elif not keep_live_quick_fallback and self._start_or_maintain_srvus_tunnel(slot, initial=initial):
+
+            srvus_ok = False
+            if live_quick_fallback and not trycf_backup:
+                now_m = time.monotonic()
+                if self._srvus_next_auto_recover_mono <= 0.0:
+                    self._srvus_next_auto_recover_mono = now_m + max(1.0, float(self._srvus_auto_recover_interval_sec))
+                should_try_recover = (
+                    user_requested_srvus
+                    or policy_changed
+                    or (now_m >= self._srvus_next_auto_recover_mono and now_m >= self._srvus_retry_not_before)
+                )
+                if should_try_recover:
+                    if user_requested_srvus or policy_changed or self._is_mcp_idle_for_switchback():
+                        self._srvus_next_auto_recover_mono = now_m + max(
+                            1.0, float(self._srvus_auto_recover_interval_sec)
+                        )
+                        srvus_ok = self._start_or_maintain_srvus_tunnel(slot, initial=False)
+                    else:
+                        # Active MCP request in flight (`inflight > 0`): defer switchback until idle
+                        self._srvus_next_auto_recover_mono = now_m + min(
+                            15.0, max(1.0, float(self._srvus_auto_recover_interval_sec))
+                        )
+            else:
+                srvus_ok = self._start_or_maintain_srvus_tunnel(slot, initial=initial)
+
+            if srvus_ok:
+                # Primary `srv.us` is online: ALWAYS keep `srv.us` as `instant`'s primary URL
+                if slot.srvus_url:
+                    slot.public_url = slot.srvus_url
+                slot.effective_mode = "srv_us"
+                self._srvus_fixed_active = True
+                self._instant_fallback_active = False
+                if trycf_backup:
+                    # Coexist: run backup `trycloudflare` concurrently without killing or overriding `srv.us`
+                    self._start_or_maintain_quick_cloudflared(
+                        slot,
+                        initial=initial,
+                        fallback_from_public_gateway=True,
+                        coexist_with_srvus=True,
+                    )
+                    if slot.srvus_url:
+                        slot.public_url = slot.srvus_url
+                    slot.effective_mode = "srv_us"
+                else:
+                    self._stop_cf_quick_supervisor()
+                    self._cf_quick_retry_not_before = 0.0
+                    slot.trycloudflare_enabled = False
+                    slot.trycloudflare_url = ""
+                    slot.trycloudflare_status = "disabled"
+                    slot.trycloudflare_error = ""
                 return
 
+            # `srv.us` unavailable -> auto-start `trycloudflare` backup/fallback while preserving `srv.us` error
+            was_fallback = self._instant_fallback_active
             self._srvus_fixed_active = False
             self._instant_fallback_active = True
+            slot.srvus_status = "error"
+            if self._last_srvus_error:
+                slot.srvus_error = self._last_srvus_error
+            if not was_fallback or self._srvus_next_auto_recover_mono <= 0.0:
+                self._srvus_next_auto_recover_mono = time.monotonic() + max(
+                    1.0, float(self._srvus_auto_recover_interval_sec)
+                )
             slot.effective_mode = "cloudflare"
             if slot.public_url and "trycloudflare.com" not in slot.public_url.lower():
                 slot.public_url = ""
                 slot.ready = False
                 slot.ready_url = ""
                 slot.probing_url = ""
-            self._start_or_maintain_quick_cloudflared(slot, initial=initial, fallback_from_public_gateway=True)
+            self._start_or_maintain_quick_cloudflared(
+                slot,
+                initial=initial,
+                fallback_from_public_gateway=True,
+                coexist_with_srvus=False,
+            )
             return
 
         # `public_gateway` online
@@ -3544,8 +3808,79 @@ class StandaloneSupervisorLoop:
             work_doc["tunnel_mode"] = self._explicit_init_mode
         return normalize_gateways_config(work_doc)
 
+    def _consume_gateway_reconnect_requests(self, doc: Dict[str, Any]) -> None:
+        raw_sub_req = doc.get("subchannel_reconnect_requested_at")
+        if isinstance(raw_sub_req, dict):
+            inst_slot = self._gateway_slots["instant"]
+            for sc in ("srv_us", "trycloudflare"):
+                try:
+                    sc_ts = float(raw_sub_req.get(sc) or 0.0)
+                except (TypeError, ValueError):
+                    sc_ts = 0.0
+                if sc_ts <= self._last_subchannel_reconnect_req_ts.get(sc, 0.0):
+                    continue
+                self._last_subchannel_reconnect_req_ts[sc] = sc_ts
+                self._log("Single-subchannel reconnect requested for instant.%s (sibling untouched)", sc)
+                if sc == "srv_us":
+                    self._stop_srvus_supervisor()
+                    self._srvus_retry_not_before = 0.0
+                    self._srvus_next_auto_recover_mono = 0.0
+                    self._srvus_fixed_active = False
+                    inst_slot.srvus_status = "connecting" if inst_slot.enabled else "disabled"
+                    inst_slot.srvus_error = ""
+                elif sc == "trycloudflare":
+                    self._stop_cf_quick_supervisor()
+                    self._cf_quick_retry_not_before = 0.0
+                    inst_slot.trycloudflare_status = "connecting" if inst_slot.enabled else "disabled"
+                    inst_slot.trycloudflare_error = ""
+
+        raw_req = doc.get("gateway_reconnect_requested_at")
+        if not isinstance(raw_req, dict):
+            return
+        for gid in GATEWAY_IDS:
+            try:
+                req_ts = float(raw_req.get(gid) or 0.0)
+            except (TypeError, ValueError):
+                req_ts = 0.0
+            if req_ts <= self._last_gw_reconnect_req_ts.get(gid, 0.0):
+                continue
+            self._last_gw_reconnect_req_ts[gid] = req_ts
+            slot = self._gateway_slots[gid]
+            self._log("Single-gateway reconnect requested for `%s` (other gateways untouched)", gid)
+            slot.ready = False
+            slot.ready_url = ""
+            slot.probing_url = ""
+            slot.next_reprobe_mono = 0.0
+            slot.last_error = ""
+            slot.consecutive_failures = 0
+            slot.state = "connecting" if slot.enabled else "disabled"
+            if gid == "instant":
+                self._stop_srvus_supervisor()
+                self._stop_cf_quick_supervisor()
+                self._stop_pg_workers_supervisor()
+                self._srvus_retry_not_before = 0.0
+                self._srvus_next_auto_recover_mono = 0.0
+                self._cf_quick_retry_not_before = 0.0
+                self._pg_workers_retry_not_before = 0.0
+                self._srvus_fixed_active = False
+                self._instant_fallback_active = False
+            elif gid == "workers_dev":
+                self._stop_workers_supervisor()
+                self._workers_retry_not_before = 0.0
+                slot.e2e_verified_url = ""
+                slot.e2e_probe_error = ""
+            elif gid == "self_hosted":
+                self._stop_cf_named_supervisor()
+                self._stop_vps_wss_supervisor()
+                self._stop_ssh_tunnel()
+                self._cf_named_retry_not_before = 0.0
+                self._vps_wss_retry_not_before = 0.0
+                self._ssh_retry_not_before = 0.0
+
     def _sync_all_gateways_from_cfg(self, *, initial: bool = False) -> None:
         doc = self._read_cfg_doc()
+        if not initial:
+            self._consume_gateway_reconnect_requests(doc)
         if doc.get("tool_prefix"):
             self.tool_prefix = _norm_prefix(str(doc["tool_prefix"]))
         if "vps_ssh" in doc:
@@ -3904,6 +4239,12 @@ class StandaloneSupervisorLoop:
                             )
                             if hz_doc is not None:
                                 local_hz_failures = 0
+                                if "inflight" in hz_doc:
+                                    try:
+                                        self._last_local_inflight = int(hz_doc.get("inflight") or 0)
+                                        self._last_local_inflight_mono = time.monotonic()
+                                    except (TypeError, ValueError):
+                                        pass
                             else:
                                 local_hz_failures += 1
                                 self._log(

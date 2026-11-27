@@ -959,99 +959,16 @@ class GatewayContextASGI:
         peer_h = str(cli_t[0] or "").strip().lower() if isinstance(cli_t, (list, tuple)) and cli_t else ""
 
         if raw_path == "/c" or raw_path.startswith("/c/"):
-            m_c = _INBOUND_ONECLICK_PATH_RE.match(raw_path)
-            if not m_c or (m_c.group(3) or "") not in ("", "/"):
-                stealth_404 = Response(
-                    "404 Not Found",
-                    status_code=404,
-                    media_type="text/plain; charset=utf-8",
-                    headers={"Cache-Control": "no-store"},
-                )
-                await stealth_404(scope, receive, send)
-                return
-            cand_tok = m_c.group(1)
-            target_ep = m_c.group(2)
-            eff_store = self.store or getattr(self.provider, "store", None)
-            tok_rec = eff_store.get("access", cand_tok) if (eff_store is not None and cand_tok) else None
-            if not isinstance(tok_rec, dict):
-                stealth_404 = Response(
-                    "404 Not Found",
-                    status_code=404,
-                    media_type="text/plain; charset=utf-8",
-                    headers={"Cache-Control": "no-store"},
-                )
-                await stealth_404(scope, receive, send)
-                return
-            tok_res = str(tok_rec.get("resource") or "").strip().rstrip("/")
-            if not _authority_matches_gateway(tok_res, gw, self.provider):
-                stealth_404 = Response(
-                    "404 Not Found",
-                    status_code=404,
-                    media_type="text/plain; charset=utf-8",
-                    headers={"Cache-Control": "no-store"},
-                )
-                await stealth_404(scope, receive, send)
-                return
-            raw_sc = tok_rec.get("scopes") or []
-            tok_scopes = {str(s).strip() for s in raw_sc if str(s).strip()}
-            if target_ep == "/mcp" and (is_readonly_resource_url(tok_res) or "workspace" not in tok_scopes):
-                err_403 = JSONResponse(
-                    {
-                        "error": "forbidden_cross_resource",
-                        "error_description": "Readonly endpoint token cannot access full /mcp endpoint",
-                    },
-                    status_code=403,
-                    headers={"Cache-Control": "no-store"},
-                )
-                await err_403(scope, receive, send)
-                return
-            cand_gw_ep = _without_public_prefix(gw)
-            self._register_allowed_res(
-                tok_res,
-                cand_gw_ep.base_url,
-                cand_gw_ep.resource,
-                cand_gw_ep.readonly_resource,
+            # Pre-authorized passwordless `/c/<token>/mcp` capability path is disabled by default
+            # for security hardening (use standard OAuth 2.1 on `/mcp` or `/mcp/readonly`).
+            stealth_404 = Response(
+                "404 Not Found",
+                status_code=404,
+                media_type="text/plain; charset=utf-8",
+                headers={"Cache-Control": "no-store"},
             )
-            gw = cand_gw_ep
-            req_method = str(scope.get("method") or "GET").upper()
-            raw_accept = hdr_map.get("accept", "")
-            need_accept_fix = req_method == "POST" and (
-                "application/json" not in raw_accept.lower()
-                or "text/event-stream" not in raw_accept.lower()
-            )
-            raw_origin = hdr_map.get("origin", "")
-            raw_cookie = hdr_map.get("cookie", "")
-            sec_fetch_site = hdr_map.get("sec-fetch-site", "").lower()
-            origin_host = (urlsplit(raw_origin).hostname or "").strip().lower() if raw_origin else ""
-            strip_forwarded_origin = bool(
-                raw_origin
-                and req_method != "OPTIONS"
-                and not raw_cookie
-                and (
-                    sec_fetch_site != "cross-site"
-                    or origin_host.endswith(".chatgpt.site")
-                    or origin_host == "chatgpt.com"
-                )
-            )
-            new_hdrs: List[Tuple[bytes, bytes]] = []
-            for hk, hv in scope.get("headers") or ():
-                kl = hk.decode("latin-1", errors="replace").strip().lower()
-                if kl in ("authorization", "x-cosmos-public-prefix"):
-                    continue
-                if need_accept_fix and kl == "accept":
-                    continue
-                if strip_forwarded_origin and kl == "origin":
-                    continue
-                new_hdrs.append((hk, hv))
-            new_hdrs.append((b"authorization", f"Bearer {cand_tok}".encode("latin-1")))
-            if need_accept_fix:
-                new_hdrs.append((b"accept", b"application/json, text/event-stream"))
-            scope = {
-                **scope,
-                "path": target_ep,
-                "raw_path": target_ep.encode("latin-1", errors="replace"),
-                "headers": new_hdrs,
-            }
+            await stealth_404(scope, receive, send)
+            return
             tok = set_current_request_gateway(gw)
             try:
                 await self.app(scope, receive, send)

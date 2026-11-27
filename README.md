@@ -40,14 +40,14 @@
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`（首次双击若弹出 Windows SmartScreen 蓝屏保护提示，点击「更多信息 -> 仍要运行」即可）。
 3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开；控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue**）：
    - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@Cosmos` 唤醒；同账号手机端 Gemini App 自动同步可用。
-   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 自动接入并验证 `WebAI2PC`（若工作区限制外部域名 MCP 也会自动通过私有 `ChatGPT Sites` 转发接入，全程零 401 且可随时在控制台一键断开作废）。装好后同账号互通：日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证。
+   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 按标准 OAuth 自动接入并验证 `WebAI2PC`（若工作区管理员关闭了外部 MCP 插件权限，则需由管理员放开或使用个人账号）。装好后同账号互通：日常在普通 `Chat` 模式发 `@WebAI2PC` 零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式发 `@WebAI2PC`，首次调用 `pc_get_status` 验证。
 
 ### 懒得自己装？复制一句话发给你的 AI / Agent 帮你配好
 
-直接把下面这句话发给 **Cursor、Claude Code、Codex、Windsurf、Trae、GitHub Copilot、Cline / Roo Code、Antigravity、Qoder、通义灵码、OpenCode、豆包电脑版 / 豆包工作、WorkBuddy、OpenClaw、Manus、网页版 Gemini、网页版 ChatGPT** 等任意 AI 助手（**有本机权限的 Agent 会自动帮你下载解压、启动服务并拿到 `/mcp` 地址；纯网页 AI 会一步步带你点完**）：
+直接把下面这句话发给 **Cursor、Claude Code、Codex、Windsurf、Trae、GitHub Copilot、Cline / Roo Code、Antigravity、Qoder、通义灵码、OpenCode、豆包电脑版 / 豆包工作、WorkBuddy、OpenClaw、Manus、网页版 Gemini、网页版 ChatGPT** 等任意 AI 助手（**有本机权限的 Agent 会自动克隆仓库最新源码、启动服务并拿到 `/mcp` 地址；纯网页 AI 会一步步带你点完**）：
 
 ```text
-请帮我安装并配置 https://github.com/cosmosomo/WebAI2PC ，先读取仓库里的 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md ，如果你有本机命令权限请直接帮我下载解压并启动拿到 /mcp 地址，再一步步带我在网页版 Gemini 或 ChatGPT 里完成绑定。
+请帮我从源码安装并配置 https://github.com/cosmosomo/WebAI2PC ，先读取仓库里的 https://raw.githubusercontent.com/cosmosomo/WebAI2PC/main/docs/AI_SETUP_GUIDE.md ，如果你有本机命令权限请直接帮我克隆最新源码并启动拿到 /mcp 地址，再一步步带我在网页版 Gemini 或 ChatGPT 里完成绑定。
 ```
 
 > 就算只把仓库链接 `https://github.com/cosmosomo/WebAI2PC` 直接发给上述 Agent 说“帮我装这个”，它们打开首页第一屏也能直接定位到 [`docs/AI_SETUP_GUIDE.md`](docs/AI_SETUP_GUIDE.md)。注意：启动后生成的连接地址与接入指令仅限填入你本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue。

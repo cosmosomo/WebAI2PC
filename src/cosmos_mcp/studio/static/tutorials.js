@@ -857,24 +857,24 @@
             "",
             "插件名称：WebAI2PC",
             "MCP 地址：" + effUrl,
-            "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0），用于" +
+            "服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0，采用标准 OAuth 2.0 授权），用于" +
               scopeDesc +
-              "；该专属地址已预授权，支持标准 Streamable HTTP（无状态 JSON-RPC 2.0 POST，无需额外配置 OAuth 令牌或密钥）；首次验证工具为 " +
+              "；首次验证工具为 " +
               statusHint +
               "。",
             "",
             "执行要求：",
-            "1. 请优先用 @Plugin Creator 直接接入上述 MCP 地址创建并安装 WebAI2PC 插件（如该地址启用了 OAuth 则按服务端公布的元数据自动协商，需要我点授权确认时提示我操作）。",
-            "2. 如果当前工作区限制直接绑定外部域名 MCP（例如返回 403），请直接通过私有 ChatGPT Sites 部署轻量 MCP 转发服务指向上述地址，用自动生成的同域配套插件完成接入（把上述专属地址保存在你的服务端配置中，不要对外公开）。",
-            "3. 插件就绪后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
+            "1. 请使用 @Plugin Creator 直接接入上述 MCP 地址创建并安装 WebAI2PC 插件，按服务端公布的 OAuth 元数据自动协商认证，需要我点授权确认时提示我操作。",
+            "2. 插件就绪后，实际调用一次 " + statusHint + "，确认返回我电脑的主机名与当前工作区状态即可。",
             "",
             "安全提醒：上方包含本机专属连接地址，仅限发给本人登录的 ChatGPT 账号，请勿发往群聊、论坛、公开 Issue 或转给他人（若不慎外发可在本地控制台一键更换作废）。"
           ].join("\n");
         }
         var csrfTok = String((state.lastStateDoc && state.lastStateDoc.csrf_token) || "");
-        var finishCopy = function (effUrl) {
+        var finishCopy = function (promptOrUrl, isFullPrompt) {
+          var finalTxt = isFullPrompt ? promptOrUrl : buildTutOneclickPrompt(promptOrUrl);
           copyTextToClipboard(
-            buildTutOneclickPrompt(effUrl),
+            finalTxt,
             assistTarget,
             "已复制一键配置提示词（请粘贴发给 ChatGPT Work 模式；含本机专属地址，仅限本人账号使用，请勿发往群聊或公开帖子）"
           );
@@ -894,16 +894,23 @@
               return r.ok ? r.json() : null;
             })
             .then(function (d) {
-              var ocUrl = d && d.ok && typeof d.oneclick_url === "string" && d.oneclick_url.indexOf("https://") === 0
-                ? d.oneclick_url
-                : aUrl;
-              finishCopy(ocUrl);
+              if (d && d.ok && typeof d.prompt === "string" && d.prompt.trim()) {
+                finishCopy(d.prompt.trim(), true);
+                return;
+              }
+              var ocUrl =
+                d && d.ok && typeof d.mcp_url === "string" && d.mcp_url.indexOf("https://") === 0
+                  ? d.mcp_url
+                  : d && d.ok && typeof d.oneclick_url === "string" && d.oneclick_url.indexOf("https://") === 0
+                  ? d.oneclick_url
+                  : aUrl;
+              finishCopy(ocUrl, false);
             })
             .catch(function () {
-              finishCopy(aUrl);
+              finishCopy(aUrl, false);
             });
         } else {
-          finishCopy(aUrl);
+          finishCopy(aUrl, false);
         }
         return;
       }

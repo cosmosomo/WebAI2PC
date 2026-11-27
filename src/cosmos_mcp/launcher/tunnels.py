@@ -110,7 +110,7 @@ def _rotate_tunnel_log_if_needed(log_file: Path, max_bytes: int = MAX_TUNNEL_LOG
     except OSError:
         return False
 
-QUICK_TUNNEL_REBOOT_NOTICE_ZH = "提示：电脑关机重启后临时地址会更换；如需开机自启保持永久固定域名不断联，请切换为 Cloudflare 固定 Tunnel Token 模式。"
+QUICK_TUNNEL_REBOOT_NOTICE_ZH = "提示：当前为临时快速通道，电脑重启后地址可能更换；如需永久固定网址，可等待 srv.us 自动恢复，或开启第 2 类 Cloudflare Workers / 第 3 类自有服务器网关。"
 
 DOH_ENDPOINTS: Tuple[str, ...] = (
     "https://doh.pub/dns-query",

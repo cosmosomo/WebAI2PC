@@ -1298,6 +1298,7 @@
     }
     if (lockPanel) lockPanel.style.display = "none";
     if (mainContent) mainContent.style.display = "block";
+    try { renderTransparentGatewaysAndAuth(doc); } catch (_e) {}
 
     var sBar = $("session-unlock-bar");
     var sText = $("session-bar-text");
@@ -2968,7 +2969,7 @@
   var currentSettingsCat = "gateways";
 
   function switchSettingsCategory(catName) {
-    var valid = ["gateways", "runtime", "tools", "skills", "appearance"];
+    var valid = ["gateways", "auth", "runtime", "tools", "skills", "appearance"];
     var target = valid.indexOf(catName) >= 0 ? catName : "gateways";
     currentSettingsCat = target;
     document.querySelectorAll(".settings-nav-btn").forEach(function (btn) {
@@ -5906,6 +5907,308 @@
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-lang"] });
   }
 
+  var _authBackupRevealed = false;
+
+  function renderTransparentGatewaysAndAuth(doc) {
+    if (!doc || typeof doc !== "object") return;
+    var conn = doc.connection && typeof doc.connection === "object" ? doc.connection : doc;
+    var gws = (conn && conn.gateways) || doc.gateways || {};
+    var instant = gws.instant || {};
+    var subs = instant.subchannels && typeof instant.subchannels === "object" ? instant.subchannels : {};
+
+    // 1. Subchannel srv.us (primary fixed)
+    var srv = subs.srv_us || {};
+    var srvSt = String(srv.status || (instant.srvus_fixed_active ? "ready" : (instant.enabled ? "connecting" : "disabled")));
+    var srvPill = $("sub-pill-srv_us");
+    if (srvPill) {
+      srvPill.className = "gw-status-pill is-" + srvSt;
+      srvPill.textContent = srvSt === "ready" ? "已连通" : srvSt === "error" ? "异常" : srvSt === "connecting" ? "连接中" : "未开启";
+    }
+    var srvUrl = String(srv.mcp_url || "").trim();
+    var srvUrlEl = $("sub-url-srv_us");
+    var srvCopyBtn = $("sub-copy-srv_us");
+    if (srvUrlEl) {
+      srvUrlEl.textContent = srvUrl || (srvSt === "error" ? "srv.us 暂未连通（可点击右侧重连或展开下方排查日志）" : "等待 srv.us 分配固定地址…");
+      srvUrlEl.className = srvUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
+    }
+    if (srvCopyBtn) {
+      srvCopyBtn.disabled = !srvUrl;
+      srvCopyBtn.setAttribute("data-url", srvUrl);
+    }
+    var srvErr = $("sub-err-srv_us");
+    if (srvErr) {
+      var srvErrTxt = String(srv.last_error || "").trim();
+      srvErr.style.display = srvErrTxt ? "block" : "none";
+      srvErr.textContent = srvErrTxt;
+    }
+
+    // 2. Subchannel trycloudflare (backup temporary)
+    var cf = subs.trycloudflare || {};
+    var cfEnabled = Boolean(cf.enabled || instant.trycloudflare_backup);
+    var cfSt = String(cf.status || (cfEnabled ? "connecting" : "disabled"));
+    var cfSw = $("instant-sub-trycf-switch");
+    if (cfSw) {
+      cfSw.checked = Boolean(instant.trycloudflare_backup || cf.enabled);
+      cfSw.setAttribute("aria-checked", cfSw.checked ? "true" : "false");
+    }
+    var cfPill = $("sub-pill-trycloudflare");
+    if (cfPill) {
+      cfPill.className = "gw-status-pill is-" + cfSt;
+      cfPill.textContent = cfSt === "ready" ? "已连通" : cfSt === "error" ? "异常" : cfSt === "connecting" ? "连接中" : "未开启";
+    }
+    var cfUrl = String(cf.mcp_url || "").trim();
+    var cfUrlEl = $("sub-url-trycloudflare");
+    var cfCopyBtn = $("sub-copy-trycloudflare");
+    if (cfUrlEl) {
+      cfUrlEl.textContent = cfUrl || (cfEnabled ? "正在建立 trycloudflare 临时通道…" : "未开启（需要时打开上方开关即可与 srv.us 同时显示两个 URL）");
+      cfUrlEl.className = cfUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
+    }
+    if (cfCopyBtn) {
+      cfCopyBtn.disabled = !cfUrl;
+      cfCopyBtn.setAttribute("data-url", cfUrl);
+    }
+    var cfErr = $("sub-err-trycloudflare");
+    if (cfErr) {
+      var cfErrTxt = String(cf.last_error || "").trim();
+      cfErr.style.display = cfErrTxt ? "block" : "none";
+      cfErr.textContent = cfErrTxt;
+    }
+
+    // 3. Endpoint secret (/u/<secret>) status in both Gateways & Auth panes
+    var epOn = Boolean(conn.endpoint_secret_enabled || doc.endpoint_secret_enabled);
+    var epMask = String(conn.endpoint_secret_masked || doc.endpoint_secret_masked || "");
+    var epLabel = epOn ? ("已开启（/u/" + (epMask || "••••") + "/mcp）") : "未开启（默认 /mcp）";
+    ["gw-endpoint-secret-status-pill", "auth-endpoint-secret-pill"].forEach(function (id) {
+      var el = $(id);
+      if (el) {
+        el.textContent = epLabel;
+        el.className = epOn ? "tag tag-ok" : "tag tag-muted";
+      }
+    });
+    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.style.display = epOn ? "inline-flex" : "none";
+    });
+
+    // 4. Auth pane live values (pair code, verify code, backup token, PAT count)
+    var pairEl = $("auth-pair-code-val");
+    if (pairEl) pairEl.textContent = String(doc.pair_code || conn.pair_code || "-");
+    var verEl = $("auth-verify-code-val");
+    if (verEl) verEl.textContent = String(doc.verify_code || conn.verify_code || "-");
+    var bkEl = $("auth-backup-token-val");
+    var bkRaw = String(doc.auth_token || conn.auth_token || "");
+    if (bkEl) {
+      bkEl.textContent = _authBackupRevealed && bkRaw ? bkRaw : "••••••••••••••••••••";
+    }
+    var patEl = $("auth-pat-count-val");
+    if (patEl) {
+      var pats = Array.isArray(doc.pats) ? doc.pats : (Array.isArray(doc.personal_access_tokens) ? doc.personal_access_tokens : []);
+      patEl.textContent = String(doc.pat_count != null ? doc.pat_count : pats.length);
+    }
+  }
+
+  function loadGatewayDebug(gid) {
+    var logEl = $("gw-debug-log-" + gid);
+    if (logEl) logEl.textContent = "正在拉取脱敏实时日志…";
+    apiFetch("/api/studio/gateway-debug", { method: "GET" })
+      .then(function (data) {
+        if (!data || !data.gateways) return;
+        var g = data.gateways[gid] || {};
+        var eng = $("gw-debug-engine-" + gid);
+        if (eng) eng.textContent = String(g.effective_mode || g.status || "-");
+        var fb = $("gw-debug-fallback-" + gid);
+        if (fb) fb.textContent = g.fallback_active ? "是（已降级临时通道）" : "否";
+        var err = $("gw-debug-error-" + gid);
+        if (err) err.textContent = String(g.last_error || "无");
+        var src = $("gw-debug-source-" + gid);
+        if (src) src.textContent = "日志来源：" + String(g.log_source || "-");
+        if (logEl) {
+          var lines = Array.isArray(g.log_tail) ? g.log_tail : [];
+          logEl.textContent = lines.length ? lines.join("\n") : "（当前暂无相关日志记录）";
+        }
+      })
+      .catch(function (e) {
+        if (logEl) logEl.textContent = "拉取调试日志失败：" + (e && e.message ? e.message : String(e));
+      });
+  }
+
+  function bindTransparentGatewaysAndAuth() {
+    // Subchannel reconnect buttons (srv_us / trycloudflare)
+    document.querySelectorAll("[data-subchannel-reconnect]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var sub = btn.getAttribute("data-subchannel-reconnect");
+        if (!sub) return;
+        btn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: JSON.stringify({ action: "reconnect_subchannel", subchannel: sub })
+        })
+          .then(function (d) {
+            showToast("已触发 " + sub + " 独立重连", false);
+            if (d && d.state) renderAll(d.state);
+            else if (typeof refreshState === "function") refreshState();
+          })
+          .catch(function (e) {
+            showToast("重连失败：" + (e && e.message ? e.message : e), true);
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+    });
+
+    // Subchannel copy buttons
+    document.querySelectorAll("[data-subchannel-copy]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var u = btn.getAttribute("data-url") || "";
+        if (!u) return;
+        if (typeof copyText === "function") copyText(u);
+        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u);
+        showToast("已复制连接地址（请仅用于本人登录的 AI 账号）", false);
+      });
+    });
+
+    // Backup trycloudflare toggle switch
+    var cfSw = $("instant-sub-trycf-switch");
+    if (cfSw) {
+      cfSw.addEventListener("change", function () {
+        var en = Boolean(cfSw.checked);
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: JSON.stringify({ action: "set_trycloudflare_backup", enabled: en })
+        })
+          .then(function (d) {
+            showToast(en ? "已开启 trycloudflare 备用通道（与 srv.us 并存）" : "已关闭 trycloudflare 备用通道", false);
+            if (d && d.state) renderAll(d.state);
+            else if (typeof refreshState === "function") refreshState();
+          })
+          .catch(function (e) {
+            cfSw.checked = !en;
+            showToast("切换备用通道失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    }
+
+    // Per-gateway reconnect buttons
+    document.querySelectorAll("[data-gw-reconnect]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var gid = btn.getAttribute("data-gw-reconnect");
+        if (!gid) return;
+        btn.disabled = true;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: JSON.stringify({ action: "reconnect_gateway", gateway_id: gid })
+        })
+          .then(function (d) {
+            showToast("已触发 " + gid + " 通道重连", false);
+            if (d && d.state) renderAll(d.state);
+            else if (typeof refreshState === "function") refreshState();
+          })
+          .catch(function (e) {
+            showToast("重连失败：" + (e && e.message ? e.message : e), true);
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+    });
+
+    // Debug drawers auto-load & manual refresh
+    document.querySelectorAll("[data-gw-debug]").forEach(function (el) {
+      var gid = el.getAttribute("data-gw-debug");
+      el.addEventListener("toggle", function () {
+        if (el.open && gid) loadGatewayDebug(gid);
+      });
+    });
+    document.querySelectorAll("[data-gw-debug-refresh]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var gid = btn.getAttribute("data-gw-debug-refresh");
+        if (gid) loadGatewayDebug(gid);
+      });
+    });
+
+    // Endpoint secret (/u/<secret>) rotate & disable buttons in both Gateways & Auth panes
+    ["gw-rotate-endpoint-secret-btn", "auth-rotate-endpoint-secret-btn"].forEach(function (id) {
+      var btn = $(id);
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        if (!window.confirm("开启或更换静态防扫描路径（/u/<secret>）会改变所有网关 URL，已绑定的 AI 客户端需同步更新一次。确认继续？")) return;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: JSON.stringify({ action: "rotate_endpoint_secret", revoke_sessions: false })
+        })
+          .then(function (d) {
+            showToast("已更新静态防扫描路径（/u/<secret>）", false);
+            if (d && d.state) renderAll(d.state);
+            else if (typeof refreshState === "function") refreshState();
+          })
+          .catch(function (e) {
+            showToast("操作失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    });
+    ["gw-disable-endpoint-secret-btn", "auth-disable-endpoint-secret-btn"].forEach(function (id) {
+      var btn = $(id);
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        if (!window.confirm("关闭防扫描路径并恢复默认 /mcp 地址，已绑定旧 /u/<secret> 的客户端需同步更新。确认继续？")) return;
+        apiFetch("/api/studio/connection", {
+          method: "POST",
+          body: JSON.stringify({ action: "disable_endpoint_secret" })
+        })
+          .then(function (d) {
+            showToast("已恢复默认 /mcp 路径", false);
+            if (d && d.state) renderAll(d.state);
+            else if (typeof refreshState === "function") refreshState();
+          })
+          .catch(function (e) {
+            showToast("操作失败：" + (e && e.message ? e.message : e), true);
+          });
+      });
+    });
+
+    // Auth pane actions
+    var copyPairBtn = $("auth-copy-pair-btn");
+    if (copyPairBtn) {
+      copyPairBtn.addEventListener("click", function () {
+        var val = ($("auth-pair-code-val") && $("auth-pair-code-val").textContent || "").trim();
+        if (!val || val === "-") return;
+        if (typeof copyText === "function") copyText(val);
+        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(val);
+        showToast("已复制 6 位动态配对码", false);
+      });
+    }
+    var refPairBtn = $("auth-refresh-pair-btn");
+    if (refPairBtn) {
+      refPairBtn.addEventListener("click", function () {
+        var origBtn = $("refresh-pair-code-btn") || $("rotate-pair-btn");
+        if (origBtn) origBtn.click();
+        else if (typeof refreshState === "function") refreshState();
+      });
+    }
+    var togBkBtn = $("auth-toggle-backup-btn");
+    if (togBkBtn) {
+      togBkBtn.addEventListener("click", function () {
+        _authBackupRevealed = !_authBackupRevealed;
+        renderTransparentGatewaysAndAuth(state);
+      });
+    }
+    var copyBkBtn = $("auth-copy-backup-btn");
+    if (copyBkBtn) {
+      copyBkBtn.addEventListener("click", function () {
+        var raw = String((state && state.auth_token) || (state && state.connection && state.connection.auth_token) || "");
+        if (!raw) { showToast("当前会话未返回明文口令", true); return; }
+        if (typeof copyText === "function") copyText(raw);
+        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(raw);
+        showToast("已复制 20 位备用口令（请妥善保管）", false);
+      });
+    }
+    var patBtn = $("auth-open-pat-modal-btn");
+    if (patBtn) {
+      patBtn.addEventListener("click", function () {
+        var orig = $("open-pat-modal-btn") || $("pat-manage-btn") || $("manage-pats-btn");
+        if (orig) orig.click();
+        else showToast("请在主控台安全区打开专用密钥管理弹窗", false);
+      });
+    }
+  }
+
   function boot() {
     registerConnCheckI18n();
     bindConnCheckLangObserver();
@@ -5919,6 +6222,7 @@
       } catch (e) {}
     }
     bindEvents();
+    bindTransparentGatewaysAndAuth();
     // Honor URL hash #settings/<category> or #onboarding on initial load
     var h = String(window.location.hash || "");
     if (h.indexOf("#settings") === 0) {

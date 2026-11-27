@@ -7,10 +7,13 @@
 ## 一、给当前 AI 助手 / Agent 的执行分工（先判断你有没有本机命令权限）
 
 ### 模式 A：你具备本机文件与终端执行权限（Cursor、Claude Code、Codex、Windsurf、Trae、Cline / Roo Code、豆包工作、WorkBuddy、OpenClaw、OpenCode 等）
-请**直接替用户完成本机下载、解压、启动与健康检查**，把需要用户手动操作的步骤压缩到最后 2 次点击：
-1. **自动识别系统与目录**：检测操作系统（Windows / macOS / Linux）与 Python 版本；若尚未下载，优先从 GitHub Releases（`https://api.github.com/repos/cosmosomo/WebAI2PC/releases/latest`）拉取最新包（Windows 未装 Python 3.10+ 选 `*win64-full.zip`，其余环境选标准 `.zip` 或直接 `git clone https://github.com/cosmosomo/WebAI2PC.git`），**完整解压到普通目录**（如 `D:\WebAI2PC` 或 `~/WebAI2PC`）。
+请**直接替用户完成本机源码拉取、启动与健康检查**，把需要用户手动操作的步骤压缩到最后 2 次点击：
+1. **统一采用源码安装（与 `main` 单一真源同步）**：检测操作系统（Windows / macOS / Linux）、`git` 与 Python 3.10+ 环境：
+   - **首选（推荐）**：直接 `git clone https://github.com/cosmosomo/WebAI2PC.git <目标目录>`（如 `D:\WebAI2PC` 或 `~/WebAI2PC`；若目标目录已存在则执行 `git pull --ff-only` 更新到最新 `main`）。
+   - **本机无 `git` 时**：直接下载源码归档 `https://github.com/cosmosomo/WebAI2PC/archive/refs/heads/main.zip` 并完整解压到普通目录。
+   - **仅当 Windows 完全无 Python 且无法安装时**：才从 Releases 兜底拉取带内置 Python 的 `*win64-full.zip`。
 2. **后台启动并核验就绪**：
-   - Windows：在解压目录后台运行 `一键启动_Cosmos_MCP.bat`（或直接用自带 `python-embed/python.exe` / 系统 Python 启动服务）；
+   - Windows：在源码目录后台运行 `一键启动_Cosmos_MCP.bat`（启动脚本会自动创建独立 `.venv` 并安装依赖，或在已有 Python 环境下直接拉起服务）；
    - macOS / Linux：执行 `chmod +x start_cosmos_mcp.sh && ./start_cosmos_mcp.sh`。
    - 轮询 `http://127.0.0.1:8096/healthz` 确认本地控制台已就绪，并读取已生成的公网 `/mcp`（及 `/mcp/readonly`）地址返回给用户。
 3. **安全红线（严禁越权）**：

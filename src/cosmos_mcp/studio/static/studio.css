@@ -1018,6 +1018,235 @@ code,
   padding: 3px;
 }
 
+/* Instant Policy Selector (Card 1 transparency controls) */
+.instant-policy-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+}
+
+.instant-policy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.instant-policy-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.instant-policy-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.instant-policy-btn {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+.instant-policy-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.instant-policy-btn.is-active,
+.instant-policy-btn[aria-checked="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft, rgba(37, 99, 235, 0.1));
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+.instant-policy-btn-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.instant-policy-btn-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* Unified Per-Gateway Debug & Log Drawer */
+.gw-debug-drawer {
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  overflow: hidden;
+}
+
+.gw-debug-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.gw-debug-summary::-webkit-details-marker {
+  display: none;
+}
+
+.gw-debug-summary:hover {
+  color: var(--text);
+}
+
+.gw-debug-summary-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.gw-debug-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px 11px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.gw-debug-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 12px;
+}
+
+.gw-debug-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gw-debug-meta-key {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.gw-debug-meta-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.gw-debug-meta-val.is-warn {
+  color: var(--warn-text);
+}
+
+.gw-debug-meta-val.is-err {
+  color: var(--danger-text);
+}
+
+.gw-debug-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gw-debug-log-source {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.gw-debug-log-pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 190px;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Static Anti-Scan Path (/u/<secret>) Status Bar */
+.gw-endpoint-secret-bar {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gw-endpoint-secret-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gw-endpoint-secret-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gw-endpoint-secret-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gw-endpoint-secret-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .instant-policy-group {
+    grid-template-columns: 1fr;
+  }
+}
+
 .card3-subtab-btn {
   appearance: none;
   border: 1px solid transparent;

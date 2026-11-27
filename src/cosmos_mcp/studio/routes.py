@@ -501,6 +501,16 @@ def _normalize_studio_gateways_cfg(
             {
                 "enabled": bool(g_inst.get("enabled", False)),
                 "submode": inst_sub,
+                "trycloudflare_backup": bool(
+                    g_inst.get("trycloudflare_backup")
+                    if "trycloudflare_backup" in g_inst
+                    else extra_cfg.get("instant_trycloudflare_backup", False)
+                ),
+                "instant_policy": _normalize_instant_policy(
+                    g_inst.get("instant_policy") or extra_cfg.get("instant_policy"),
+                    prefer_quick_tunnel=extra_cfg.get("prefer_quick_tunnel"),
+                    submode=inst_sub,
+                ),
                 "public_url": "" if (inst_sub == "cloudflare" and inst_pub.lower().endswith(".srv.us")) else inst_pub,
                 "updated_at": float(g_inst.get("updated_at") or 0.0),
             }
@@ -847,6 +857,85 @@ def _update_studio_gateway_slot(
     return slots, selected_gw
 
 
+INSTANT_POLICIES: Tuple[str, ...] = ("auto", "srv_us_only", "quick_only")
+
+
+def _normalize_instant_policy(
+    raw_policy: Any = None,
+    *,
+    prefer_quick_tunnel: Any = None,
+    submode: str = "",
+) -> str:
+    pol = str(raw_policy or "").strip().lower()
+    if pol in INSTANT_POLICIES:
+        return pol
+    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
+        return "quick_only"
+    return "auto"
+
+
+_DEBUG_LOG_REDACT_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{6,}"), "Bearer [REDACTED]"),
+    (re.compile(r"\boc_[A-Za-z0-9_-]{8,}"), "oc_[REDACTED]"),
+    (re.compile(r"\bcmcp_[A-Za-z0-9_-]{8,}"), "cmcp_[REDACTED]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}(?:\.[A-Za-z0-9_-]+)?"), "[REDACTED_JWT]"),
+    (re.compile(r"/c/[A-Za-z0-9_-]{10,}"), "/c/[REDACTED]"),
+    (re.compile(r"/u/[a-z0-9]{16,64}\b"), "/u/[REDACTED]"),
+    (
+        re.compile(
+            r"(?i)(\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+            r"authorization|x-cosmos-local-token|x-cosmos-tunnel-secret|tunnel_token|client_secret)"
+            r"\s*[:=]\s*)([^\s\"',;}{]{4,})"
+        ),
+        r"\1[REDACTED]",
+    ),
+    (re.compile(r"(?<![A-Za-z0-9/._-])([A-Fa-f0-9]{32,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9/._-])"), "[REDACTED]"),
+)
+
+
+def _sanitize_debug_log_line(raw_line: str) -> str:
+    line = str(raw_line or "").rstrip("\r\n")
+    for pat, repl in _DEBUG_LOG_REDACT_PATTERNS:
+        line = pat.sub(repl, line)
+    if len(line) > 500:
+        line = line[:497] + "..."
+    return line
+
+
+def _read_sanitized_log_tail(
+    paths: Sequence[Path],
+    *,
+    max_lines: int = 25,
+    filter_keywords: Optional[Tuple[str, ...]] = None,
+) -> Tuple[str, List[str]]:
+    sources: List[str] = []
+    collected: List[str] = []
+    kw_lower = tuple(k.lower() for k in (filter_keywords or ()) if k)
+    for p in paths:
+        if not p.is_file():
+            continue
+        sources.append(p.name)
+        try:
+            fsize = p.stat().st_size
+            with p.open("rb") as fh:
+                if fsize > 65536:
+                    fh.seek(fsize - 65536)
+                chunk = fh.read().decode("utf-8", errors="replace")
+            raw_lines = chunk.splitlines()
+            if fsize > 65536 and len(raw_lines) > 1:
+                raw_lines = raw_lines[1:]
+            for ln in raw_lines:
+                s_ln = ln.strip()
+                if not s_ln:
+                    continue
+                if kw_lower and not any(k in s_ln.lower() for k in kw_lower):
+                    continue
+                collected.append(_sanitize_debug_log_line(s_ln))
+        except OSError:
+            continue
+    return (" / ".join(sources) if sources else "", collected[-max_lines:] if max_lines > 0 else [])
+
+
 def _resolve_studio_gateways_view(
     *,
     policy: LiveRuntimePolicy,
@@ -954,12 +1043,138 @@ def _resolve_studio_gateways_view(
                 status_label_zh = "连接中"
 
         if gid == "instant":
+            trycf_backup = bool(
+                scfg.get("trycloudflare_backup")
+                if "trycloudflare_backup" in scfg
+                else extra_cfg.get(
+                    "instant_trycloudflare_backup",
+                    (slot_d or {}).get("trycloudflare_backup", False) if isinstance(slot_d, dict) else False,
+                )
+            )
+            instant_policy = _normalize_instant_policy(
+                scfg.get("instant_policy")
+                or extra_cfg.get("instant_policy")
+                or ((slot_d or {}).get("instant_policy") if isinstance(slot_d, dict) else None),
+                prefer_quick_tunnel=extra_cfg.get("prefer_quick_tunnel"),
+                submode=submode,
+            )
+            d_subch = (slot_d or {}).get("subchannels") if isinstance(slot_d, dict) and isinstance((slot_d or {}).get("subchannels"), dict) else {}
+            d_srv = d_subch.get("srv_us") if isinstance(d_subch.get("srv_us"), dict) else {}
+            d_cf = d_subch.get("trycloudflare") if isinstance(d_subch.get("trycloudflare"), dict) else {}
+
+            raw_srv_u = _clean_https_candidate(
+                d_srv.get("public_url")
+                or ((slot_d or {}).get("srvus_url") if isinstance(slot_d, dict) else "")
+                or (cand_url if cand_host.endswith(".srv.us") else "")
+            )
+            raw_cf_u = _clean_https_candidate(
+                d_cf.get("public_url")
+                or ((slot_d or {}).get("trycloudflare_url") if isinstance(slot_d, dict) else "")
+                or (cand_url if ".trycloudflare.com" in cand_host else "")
+            )
+            srv_st_raw = str(
+                d_srv.get("status")
+                or ((slot_d or {}).get("srvus_status") if isinstance(slot_d, dict) else "")
+                or ""
+            ).strip().lower()
+            if not enabled:
+                srv_st = "disabled"
+            elif srv_st_raw in ("ready", "connecting", "error", "disabled"):
+                srv_st = srv_st_raw
+            elif raw_srv_u and public_https_ready:
+                srv_st = "ready"
+            elif raw_srv_u:
+                srv_st = "connecting"
+            elif slot_err and not raw_cf_u:
+                srv_st = "error"
+            else:
+                srv_st = "connecting"
+
+            srv_err = str(
+                d_srv.get("last_error")
+                or ((slot_d or {}).get("srvus_error") if isinstance(slot_d, dict) else "")
+                or (slot_err if srv_st == "error" else "")
+            ).strip()
+
+            cf_en_raw = d_cf.get("enabled")
+            cf_enabled = bool(
+                enabled
+                and (
+                    bool(cf_en_raw)
+                    if cf_en_raw is not None
+                    else (trycf_backup or bool(raw_cf_u) or submode == "cloudflare")
+                )
+            )
+            cf_st_raw = str(
+                d_cf.get("status")
+                or ((slot_d or {}).get("trycloudflare_status") if isinstance(slot_d, dict) else "")
+                or ""
+            ).strip().lower()
+            if not cf_enabled:
+                cf_st = "disabled"
+            elif cf_st_raw in ("ready", "connecting", "error", "disabled"):
+                cf_st = cf_st_raw
+            elif raw_cf_u and (public_https_ready or srv_st == "ready"):
+                cf_st = "ready"
+            elif raw_cf_u:
+                cf_st = "connecting"
+            else:
+                cf_st = "connecting"
+
+            cf_err = str(
+                d_cf.get("last_error")
+                or ((slot_d or {}).get("trycloudflare_error") if isinstance(slot_d, dict) else "")
+                or ""
+            ).strip()
+
+            # Primary `srv.us` ALWAYS takes precedence over coexisting `trycloudflare` when ready
+            if enabled and raw_srv_u and srv_st == "ready":
+                cand_url = raw_srv_u
+                cand_host = (urlsplit(cand_url).hostname or "").strip().lower()
+                public_https_ready = True
+                status = "ready"
+                status_label_zh = "已连通"
+                slot_err = ""
+
+            srv_disp_u = (
+                apply_endpoint_secret_to_url(raw_srv_u, ep_sec)
+                if (ep_sec and raw_srv_u and enabled)
+                else (raw_srv_u if enabled else "")
+            )
+            cf_disp_u = (
+                apply_endpoint_secret_to_url(raw_cf_u, ep_sec)
+                if (ep_sec and raw_cf_u and cf_enabled)
+                else (raw_cf_u if cf_enabled else "")
+            )
+            instant_subchannels: Dict[str, Dict[str, Any]] = {
+                "srv_us": {
+                    "label": "srv.us 免登录固定地址",
+                    "role": "primary",
+                    "enabled": bool(enabled),
+                    "status": srv_st,
+                    "public_url": srv_disp_u,
+                    "mcp_url": f"{srv_disp_u}/mcp" if srv_disp_u else "",
+                    "readonly_mcp_url": f"{srv_disp_u}/mcp/readonly" if srv_disp_u else "",
+                    "last_error": srv_err if enabled else "",
+                },
+                "trycloudflare": {
+                    "label": "trycloudflare 备用临时通道（重启会变）",
+                    "role": "backup",
+                    "enabled": cf_enabled,
+                    "status": cf_st,
+                    "public_url": cf_disp_u,
+                    "mcp_url": f"{cf_disp_u}/mcp" if cf_disp_u else "",
+                    "readonly_mcp_url": f"{cf_disp_u}/mcp/readonly" if cf_disp_u else "",
+                    "last_error": cf_err if cf_enabled else "",
+                },
+            }
+
             is_srvus_host = cand_host.endswith(".srv.us") and public_https_ready
             srvus_fixed_active = bool(
                 enabled
-                and submode == "public_gateway"
                 and (
-                    (slot_d is not None and bool(slot_d.get("srvus_fixed_active")) and public_https_ready)
+                    (srv_st == "ready" and bool(raw_srv_u))
+                    or (slot_d is not None and bool(slot_d.get("srvus_fixed_active")) and public_https_ready)
                     or is_srvus_host
                 )
             )
@@ -971,21 +1186,27 @@ def _resolve_studio_gateways_view(
                 and not srvus_fixed_active
                 and (
                     (slot_d is not None and bool(slot_d.get("instant_fallback_active")))
-                    or submode == "cloudflare"
                     or is_ephemeral
                     or (submode == "public_gateway" and not pub_gw_online)
                 )
             )
             eff_mode = (
-                str(
-                    (slot_d or {}).get("effective_mode")
-                    or (slot_d or {}).get("effective_tunnel_mode")
-                    or ("srv_us" if srvus_fixed_active else ("cloudflare" if instant_fallback_active else submode))
+                "srv_us"
+                if srvus_fixed_active
+                else (
+                    str(
+                        (slot_d or {}).get("effective_mode")
+                        or (slot_d or {}).get("effective_tunnel_mode")
+                        or ("cloudflare" if instant_fallback_active else submode)
+                    )
+                    if enabled
+                    else "disabled"
                 )
-                if enabled
-                else "disabled"
             )
         else:
+            trycf_backup = False
+            instant_policy = ""
+            instant_subchannels = {}
             srvus_fixed_active = False
             instant_fallback_active = False
             eff_mode = submode if enabled else "disabled"
@@ -1002,7 +1223,7 @@ def _resolve_studio_gateways_view(
             if (ep_sec and disp_cfg_pub)
             else disp_cfg_pub
         )
-        gateways_view[gid] = {
+        gw_entry: Dict[str, Any] = {
             "gateway_id": gid,
             "label_zh": GATEWAY_SLOT_LABELS_ZH[gid],
             "enabled": enabled,
@@ -1024,11 +1245,22 @@ def _resolve_studio_gateways_view(
             "consecutive_failures": consec_f,
             "last_error": slot_err,
         }
+        if gid == "instant":
+            gw_entry["instant_policy"] = instant_policy
+            gw_entry["trycloudflare_backup"] = trycf_backup
+            gw_entry["subchannels"] = instant_subchannels
+        gateways_view[gid] = gw_entry
 
     enabled_gateway_ids = [gid for gid in STUDIO_GATEWAY_IDS if gateways_view[gid]["enabled"]]
     ready_gateway_ids = [
         gid for gid in STUDIO_GATEWAY_IDS if gateways_view[gid]["enabled"] and gateways_view[gid]["status"] == "ready"
     ]
+    permanent_ready_ids = [gid for gid in ("workers_dev", "self_hosted") if gid in ready_gateway_ids]
+    inst_view_tmp = gateways_view["instant"]
+    instant_is_temp_fallback = bool(
+        inst_view_tmp.get("instant_fallback_active")
+        or ".trycloudflare.com" in str(inst_view_tmp.get("public_url") or "").lower()
+    )
 
     if not enabled_gateway_ids:
         display_gateway_id = ""
@@ -1045,8 +1277,12 @@ def _resolve_studio_gateways_view(
     else:
         if user_pinned_gw and user_pinned_gw in enabled_gateway_ids:
             display_gateway_id = user_pinned_gw
-        elif selected_gw in ready_gateway_ids:
+        elif selected_gw in ready_gateway_ids and not (
+            selected_gw == "instant" and instant_is_temp_fallback and permanent_ready_ids
+        ):
             display_gateway_id = selected_gw
+        elif permanent_ready_ids:
+            display_gateway_id = permanent_ready_ids[0]
         elif ready_gateway_ids:
             display_gateway_id = ready_gateway_ids[0]
         elif selected_gw in enabled_gateway_ids:
@@ -1405,7 +1641,11 @@ def _persist_extra_studio_config(
     tunnel_mode: Optional[str] = None,
     public_url: Optional[str] = None,
     prefer_quick_tunnel: Optional[bool] = None,
+    instant_policy: Optional[str] = None,
+    instant_trycloudflare_backup: Optional[bool] = None,
     srvus_retry_requested_at: Optional[float] = None,
+    gateway_reconnect_requested_at: Optional[Dict[str, float]] = None,
+    subchannel_reconnect_requested_at: Optional[Dict[str, float]] = None,
     readonly_workspace_roots: Optional[Sequence[Any]] = None,
     scan_host_global_skills: Optional[bool] = None,
     tool_prefix: Optional[str] = None,
@@ -1527,7 +1767,11 @@ def _persist_extra_studio_config(
             tunnel_mode,
             public_url,
             prefer_quick_tunnel,
+            instant_policy,
+            instant_trycloudflare_backup,
             srvus_retry_requested_at,
+            gateway_reconnect_requested_at,
+            subchannel_reconnect_requested_at,
             readonly_workspace_roots,
             scan_host_global_skills,
             tool_prefix,
@@ -1566,8 +1810,34 @@ def _persist_extra_studio_config(
             doc["tunnel_mode"] = tunnel_mode
         if prefer_quick_tunnel is not None:
             doc["prefer_quick_tunnel"] = bool(prefer_quick_tunnel)
+        if instant_policy is not None:
+            norm_ip = _normalize_instant_policy(instant_policy)
+            doc["instant_policy"] = norm_ip
+            if prefer_quick_tunnel is None:
+                doc["prefer_quick_tunnel"] = norm_ip == "quick_only"
+            if isinstance(doc.get("gateways"), dict) and isinstance(doc["gateways"].get("instant"), dict):
+                doc["gateways"]["instant"]["instant_policy"] = norm_ip
+        if instant_trycloudflare_backup is not None:
+            b_val = bool(instant_trycloudflare_backup)
+            doc["instant_trycloudflare_backup"] = b_val
+            if isinstance(doc.get("gateways"), dict) and isinstance(doc["gateways"].get("instant"), dict):
+                doc["gateways"]["instant"]["trycloudflare_backup"] = b_val
         if srvus_retry_requested_at is not None:
             doc["srvus_retry_requested_at"] = float(srvus_retry_requested_at)
+        if isinstance(gateway_reconnect_requested_at, dict) and gateway_reconnect_requested_at:
+            cur_recon = doc.get("gateway_reconnect_requested_at")
+            merged_recon = dict(cur_recon) if isinstance(cur_recon, dict) else {}
+            for rk, rv in gateway_reconnect_requested_at.items():
+                if rk in STUDIO_GATEWAY_IDS and rv is not None:
+                    merged_recon[rk] = float(rv)
+            doc["gateway_reconnect_requested_at"] = merged_recon
+        if isinstance(subchannel_reconnect_requested_at, dict) and subchannel_reconnect_requested_at:
+            cur_srec = doc.get("subchannel_reconnect_requested_at")
+            merged_srec = dict(cur_srec) if isinstance(cur_srec, dict) else {}
+            for sk, sv in subchannel_reconnect_requested_at.items():
+                if sk in ("srv_us", "trycloudflare") and sv is not None:
+                    merged_srec[sk] = float(sv)
+            doc["subchannel_reconnect_requested_at"] = merged_srec
         if public_url is not None:
             doc["public_base"] = public_url
             doc["public_base_url"] = public_url
@@ -4460,6 +4730,103 @@ def mount_standalone_status_ui(
                     else:
                         disable_autostart(state_root=policy.state_root, prefix=policy.eff_prefix)
                 msg = "系统运行与常驻开关已更新。"
+            elif sub_act == "set_trycloudflare_backup":
+                want_backup = parse_bool_flag(data.get("enabled"), default=False)
+                saved_extra_tb = _read_saved_extra_cfg(policy)
+                cur_slots_tb, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_tb)
+                now_ts_tb = round(time.time(), 3)
+                _persist_extra_studio_config(
+                    policy,
+                    instant_trycloudflare_backup=want_backup,
+                    subchannel_reconnect_requested_at={"trycloudflare": now_ts_tb} if want_backup else None,
+                )
+                _update_studio_gateway_slot(
+                    policy,
+                    "instant",
+                    enabled=bool(cur_slots_tb["instant"]["enabled"]),
+                    submode="public_gateway",
+                    extra_slot_fields={"trycloudflare_backup": want_backup},
+                    port=port,
+                    set_public_url=set_public_url,
+                )
+                policy.refresh(force=True)
+                msg = (
+                    "已开启 trycloudflare 备用临时通道（与 srv.us 固定通道同时在线并跑，互不干扰）。"
+                    if want_backup
+                    else "已关闭 trycloudflare 备用临时通道（保留 srv.us 首选固定通道）。"
+                )
+            elif sub_act == "reconnect_subchannel":
+                raw_subch = str(data.get("subchannel") or "").strip().lower()
+                if raw_subch not in ("srv_us", "trycloudflare"):
+                    raise ValueError(
+                        f"不支持的子通道：{raw_subch or '(空)'}（仅支持 srv_us 或 trycloudflare）。"
+                    )
+                now_ts_sc = round(time.time(), 3)
+                _persist_extra_studio_config(
+                    policy,
+                    srvus_retry_requested_at=now_ts_sc if raw_subch == "srv_us" else None,
+                    subchannel_reconnect_requested_at={raw_subch: now_ts_sc},
+                )
+                policy.refresh(force=True)
+                sc_label = "srv.us 免登录固定地址" if raw_subch == "srv_us" else "trycloudflare 备用临时通道"
+                msg = f"已触发「{sc_label}」独立重连（不影响另一条子通道与其他网关）。"
+            elif sub_act == "set_instant_policy":
+                raw_pol = str(data.get("instant_policy") or "").strip().lower()
+                if raw_pol not in INSTANT_POLICIES:
+                    raise ValueError(
+                        f"不支持的 instant_policy：{raw_pol or '(空)'}（仅支持 auto / srv_us_only / quick_only）。"
+                    )
+                saved_extra_ip = _read_saved_extra_cfg(policy)
+                cur_slots_ip, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_ip)
+                now_ts_ip = round(time.time(), 3)
+                eff_sub_ip = "cloudflare" if raw_pol == "quick_only" else "public_gateway"
+                want_en_ip = (
+                    parse_bool_flag(data.get("enabled"), default=bool(cur_slots_ip["instant"]["enabled"]))
+                    if "enabled" in data
+                    else bool(cur_slots_ip["instant"]["enabled"])
+                )
+                cur_inst_u_ip = str(cur_slots_ip["instant"].get("public_url") or "").strip()
+                next_inst_u_ip: Optional[str] = None
+                if raw_pol == "quick_only" and cur_inst_u_ip.lower().endswith(".srv.us"):
+                    next_inst_u_ip = ""
+                elif raw_pol == "srv_us_only" and ".trycloudflare.com" in cur_inst_u_ip.lower():
+                    next_inst_u_ip = ""
+                _persist_extra_studio_config(
+                    policy,
+                    instant_policy=raw_pol,
+                    prefer_quick_tunnel=(raw_pol == "quick_only"),
+                    srvus_retry_requested_at=now_ts_ip,
+                    gateway_reconnect_requested_at={"instant": now_ts_ip},
+                )
+                _update_studio_gateway_slot(
+                    policy,
+                    "instant",
+                    enabled=want_en_ip,
+                    submode=eff_sub_ip,
+                    public_url=next_inst_u_ip,
+                    extra_slot_fields={"instant_policy": raw_pol},
+                    port=port,
+                    set_public_url=set_public_url,
+                )
+                policy.refresh(force=True)
+                pol_labels = {
+                    "auto": "自动优选 srv.us（受阻降级临时通道，空闲时自动回切）",
+                    "srv_us_only": "锁定 srv.us 固定网址（不降级临时通道）",
+                    "quick_only": "仅使用 trycloudflare 临时通道",
+                }
+                msg = f"第 1 类通道策略已切换为：{pol_labels[raw_pol]}，已触发重新连接。"
+            elif sub_act == "reconnect_gateway":
+                gw_id_rec = str(data.get("gateway_id") or "").strip().lower()
+                if gw_id_rec not in STUDIO_GATEWAY_IDS:
+                    raise ValueError(f"不支持的网关槽位：{gw_id_rec or '(空)'}")
+                now_ts_rec = round(time.time(), 3)
+                _persist_extra_studio_config(
+                    policy,
+                    srvus_retry_requested_at=now_ts_rec if gw_id_rec == "instant" else None,
+                    gateway_reconnect_requested_at={gw_id_rec: now_ts_rec},
+                )
+                policy.refresh(force=True)
+                msg = f"已触发「{GATEWAY_SLOT_LABELS_ZH[gw_id_rec]}」单通道重连（不影响其他已开启网关）。"
             elif sub_act == "select_copy_gateway":
                 gw_id = str(data.get("gateway_id") or "").strip().lower()
                 if gw_id not in STUDIO_GATEWAY_IDS:
@@ -6136,13 +6503,111 @@ def mount_standalone_status_ui(
         )
         return JSONResponse(snap, status_code=200, headers={"Cache-Control": "no-store"})
 
+    async def studio_gateway_debug_ep(request: Request) -> Response:
+        if not is_strict_direct_loopback(request, port):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "forbidden_non_loopback",
+                    "message": "通道调试接口仅允许在本机 127.0.0.1 回环访问，禁止远程请求。",
+                },
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        snap = _state_snapshot(request)
+        gws_snap = snap.get("gateways") if isinstance(snap.get("gateways"), dict) else {}
+        conn_snap = snap.get("connection") if isinstance(snap.get("connection"), dict) else {}
+        logs_dir = policy.state_root / "logs"
+        eff_p = policy.eff_prefix
+        srvus_log = logs_dir / (f"srvus_{eff_p}.log" if eff_p != "pc" else "srvus.log")
+        cf_log = logs_dir / (f"cloudflared_{eff_p}.log" if eff_p != "pc" else "cloudflared.log")
+        sup_log = logs_dir / (f"supervisor_{eff_p}.log" if eff_p != "pc" else "supervisor.log")
+        vps_ssh_log = logs_dir / (f"vps_ssh_{eff_p}.log" if eff_p != "pc" else "vps_ssh.log")
+
+        inst_g = gws_snap.get("instant") if isinstance(gws_snap.get("instant"), dict) else {}
+        wd_g = gws_snap.get("workers_dev") if isinstance(gws_snap.get("workers_dev"), dict) else {}
+        sh_g = gws_snap.get("self_hosted") if isinstance(gws_snap.get("self_hosted"), dict) else {}
+
+        inst_log_src, inst_log_tail = _read_sanitized_log_tail([srvus_log, cf_log], max_lines=25)
+        if not inst_log_src:
+            inst_log_src = f"{srvus_log.name} / {cf_log.name}"
+        wd_log_src, wd_log_tail = _read_sanitized_log_tail(
+            [sup_log],
+            max_lines=25,
+            filter_keywords=("workers", "workers_dev", "cf_workers", "relay", "wss", "1027", "healthz"),
+        )
+        if not wd_log_src:
+            wd_log_src = sup_log.name
+        sh_sources: List[Path] = []
+        if vps_ssh_log.is_file():
+            sh_sources.append(vps_ssh_log)
+        if sh_g.get("submode") == "cloudflare_token" and cf_log.is_file():
+            sh_sources.append(cf_log)
+        sh_log_src, sh_log_tail = _read_sanitized_log_tail(sh_sources, max_lines=25)
+        if len(sh_log_tail) < 25 and sup_log.is_file():
+            sup_src_sh, sup_tail_sh = _read_sanitized_log_tail(
+                [sup_log],
+                max_lines=25 - len(sh_log_tail),
+                filter_keywords=("self_hosted", "vps", "ssh", "cloudflare_token", "named", "custom"),
+            )
+            if sup_tail_sh:
+                sh_log_tail = (sh_log_tail + sup_tail_sh)[-25:]
+                sh_log_src = f"{sh_log_src} / {sup_src_sh}" if sh_log_src else sup_src_sh
+        if not sh_log_src:
+            sh_log_src = sup_log.name
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "gateways": {
+                    "instant": {
+                        "gateway_id": "instant",
+                        "effective_mode": str(inst_g.get("effective_mode") or "disabled"),
+                        "instant_policy": _normalize_instant_policy(inst_g.get("instant_policy")),
+                        "trycloudflare_backup": bool(inst_g.get("trycloudflare_backup")),
+                        "status": str(inst_g.get("status") or "disabled"),
+                        "fallback_active": bool(inst_g.get("instant_fallback_active")),
+                        "public_url": str(inst_g.get("public_url") or ""),
+                        "last_error": str(inst_g.get("last_error") or ""),
+                        "subchannels": inst_g.get("subchannels") if isinstance(inst_g.get("subchannels"), dict) else {},
+                        "log_source": inst_log_src,
+                        "log_tail": inst_log_tail,
+                    },
+                    "workers_dev": {
+                        "gateway_id": "workers_dev",
+                        "effective_mode": str(wd_g.get("effective_mode") or "disabled"),
+                        "status": str(wd_g.get("status") or "disabled"),
+                        "fallback_active": False,
+                        "public_url": str(wd_g.get("public_url") or ""),
+                        "last_error": str(wd_g.get("last_error") or ""),
+                        "log_source": wd_log_src,
+                        "log_tail": wd_log_tail,
+                    },
+                    "self_hosted": {
+                        "gateway_id": "self_hosted",
+                        "effective_mode": str(sh_g.get("effective_mode") or "disabled"),
+                        "status": str(sh_g.get("status") or "disabled"),
+                        "fallback_active": False,
+                        "public_url": str(sh_g.get("public_url") or ""),
+                        "last_error": str(sh_g.get("last_error") or ""),
+                        "log_source": sh_log_src,
+                        "log_tail": sh_log_tail,
+                    },
+                },
+                "endpoint_secret_enabled": bool(conn_snap.get("endpoint_secret_enabled")),
+                "endpoint_secret_masked": str(conn_snap.get("endpoint_secret_masked") or ""),
+            },
+            status_code=200,
+            headers={"Cache-Control": "no-store"},
+        )
+
     async def studio_chatgpt_oneclick_ep(request: Request) -> Response:
         if not is_strict_direct_loopback(request, port):
             return JSONResponse(
                 {
                     "ok": False,
                     "error": "forbidden_non_loopback",
-                    "message": "ChatGPT 一键连接专属地址仅允许在本机 127.0.0.1 控制台生成，禁止远程请求。",
+                    "message": "ChatGPT 一键配置提示词仅允许在本机 127.0.0.1 控制台生成，禁止远程请求。",
                 },
                 status_code=403,
                 headers={"Cache-Control": "no-store"},
@@ -6165,54 +6630,130 @@ def mount_standalone_status_ui(
         if csrf_err is not None:
             return csrf_err
 
-        kind = str(data.get("kind") or "mcp").strip().lower()
-        if kind not in ("mcp", "readonly"):
-            return JSONResponse(
-                {"ok": False, "error": "invalid_kind", "message": "kind 仅支持 mcp 或 readonly。"},
-                status_code=400,
-                headers={"Cache-Control": "no-store"},
-            )
-        rotate_flag = parse_bool_flag(data.get("rotate"), default=False)
-        snap = _state_snapshot(request)
-        if not snap.get("public_https_ready"):
-            return JSONResponse(
-                {
-                    "ok": False,
-                    "error": "gateway_not_ready",
-                    "message": "公网 HTTPS 通道尚未就绪，请等待连接就绪后再生成一键配置地址。",
-                },
-                status_code=409,
-                headers={"Cache-Control": "no-store"},
-            )
-        raw_mcp_url = str(snap.get("mcp_url") or "").strip()
-        parsed_u = urlsplit(raw_mcp_url)
-        host_only = (parsed_u.hostname or "").strip().lower()
-        if parsed_u.scheme.lower() != "https" or not parsed_u.netloc or host_only in ("127.0.0.1", "localhost", "::1"):
-            return JSONResponse(
-                {
-                    "ok": False,
-                    "error": "gateway_not_ready",
-                    "message": "当前未检测到可用的公网 HTTPS 网关地址。",
-                },
-                status_code=409,
-                headers={"Cache-Control": "no-store"},
-            )
-        is_ro = kind == "readonly"
-        if hasattr(provider, "get_or_mint_oneclick_capability_token"):
-            minted_oc = provider.get_or_mint_oneclick_capability_token(readonly=is_ro, rotate=rotate_flag)
+        raw_scope = str(data.get("scope") or "").strip().lower()
+        raw_kind = str(data.get("kind") or "").strip().lower()
+        if raw_scope:
+            if raw_scope not in ("full", "readonly"):
+                return JSONResponse(
+                    {"ok": False, "error": "invalid_scope", "message": "scope 仅支持 full 或 readonly。"},
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
+            eff_scope = raw_scope
+        elif raw_kind:
+            if raw_kind not in ("mcp", "full", "readonly"):
+                return JSONResponse(
+                    {"ok": False, "error": "invalid_kind", "message": "kind 仅支持 mcp 或 readonly。"},
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
+            eff_scope = "readonly" if raw_kind == "readonly" else "full"
         else:
-            minted_oc = store.get_or_mint_oneclick_capability_token(readonly=is_ro, rotate=rotate_flag)
-        ep_suffix = "/mcp/readonly" if is_ro else "/mcp"
-        oneclick_url = f"https://{parsed_u.netloc}/c/{minted_oc['token']}{ep_suffix}"
+            eff_scope = "full"
+
+        is_ro = eff_scope == "readonly"
+        snap = _state_snapshot(request)
+        gws_snap = snap.get("gateways") if isinstance(snap.get("gateways"), dict) else {}
+
+        def _extract_ready_url(gw_item: Any) -> str:
+            if not isinstance(gw_item, dict):
+                return ""
+            if not gw_item.get("enabled") or not gw_item.get("public_https_ready"):
+                return ""
+            cand = str(gw_item.get("readonly_mcp_url") if is_ro else gw_item.get("mcp_url") or "").strip()
+            p_u = urlsplit(cand)
+            h_only = (p_u.hostname or "").strip().lower()
+            if p_u.scheme.lower() != "https" or not p_u.netloc or h_only in ("127.0.0.1", "localhost", "::1"):
+                return ""
+            return cand
+
+        chosen_gid = ""
+        chosen_mcp_url = ""
+        chosen_is_temp = False
+
+        # Priority: ready permanent gateway (`workers_dev` / `self_hosted` / `srv.us`) > temporary `trycloudflare`
+        for gid_cand in ("workers_dev", "self_hosted"):
+            cand_u = _extract_ready_url(gws_snap.get(gid_cand))
+            if cand_u:
+                chosen_gid = gid_cand
+                chosen_mcp_url = cand_u
+                chosen_is_temp = False
+                break
+
+        if not chosen_mcp_url:
+            inst_item = gws_snap.get("instant")
+            cand_inst = _extract_ready_url(inst_item)
+            if cand_inst:
+                inst_is_temp = bool(
+                    (isinstance(inst_item, dict) and inst_item.get("instant_fallback_active"))
+                    or ".trycloudflare.com" in cand_inst.lower()
+                )
+                chosen_gid = "instant"
+                chosen_mcp_url = cand_inst
+                chosen_is_temp = inst_is_temp
+
+        if not chosen_mcp_url:
+            fallback_top = str(snap.get("readonly_mcp_url") if is_ro else snap.get("mcp_url") or "").strip()
+            p_fb = urlsplit(fallback_top)
+            h_fb = (p_fb.hostname or "").strip().lower()
+            if snap.get("public_https_ready") and p_fb.scheme.lower() == "https" and p_fb.netloc and h_fb not in ("127.0.0.1", "localhost", "::1"):
+                chosen_gid = str(snap.get("display_gateway_id") or "instant")
+                chosen_mcp_url = fallback_top
+                chosen_is_temp = ".trycloudflare.com" in fallback_top.lower()
+
+        if not chosen_mcp_url:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "gateway_not_ready",
+                    "message": "公网 HTTPS 通道尚未就绪，请等待连接就绪后再生成一键配置提示词。",
+                },
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        tool_pfx = str(snap.get("tool_prefix") or policy.tool_prefix or "pc").strip() or "pc"
+        status_tool = f"{tool_pfx}_get_status"
+        verify_tool_hint = (
+            "pc_get_status"
+            if status_tool in ("pc_get_status", "get_status")
+            else f"{status_tool}（或 pc_get_status）"
+        )
+        scope_desc = (
+            "只读查看我本地授权目录的文件与状态"
+            if is_ro
+            else "读写我本地授权目录的文件并执行本地开发工具"
+        )
+        plugin_creator_tag = (
+            "[@Plugin Creator](plugin://plugin-creator@openai-curated-remote"
+            "?remotePluginId=plugin_connector_1p_e1a10c53223481918a42f1510ec46c1e)"
+        )
+        prompt_text = "\n".join(
+            [
+                f"{plugin_creator_tag} 帮我创建一个插件，把我的本地电脑服务 WebAI2PC 接入当前 ChatGPT 账号，并完成首次调用验证（请在 Work 模式下执行；装好后日常可在 Chat 模式通过 @WebAI2PC 直接调用）。",
+                "",
+                "插件名称：WebAI2PC",
+                f"MCP 地址：{chosen_mcp_url}",
+                f"服务说明：标准 Streamable HTTP MCP 服务（JSON-RPC 2.0，采用标准 OAuth 2.1 认证），用于{scope_desc}；首次验证工具为 {verify_tool_hint}。",
+                "",
+                "执行步骤：",
+                "1. 请使用 @Plugin Creator 直接接入上述标准 OAuth MCP 地址创建并安装 WebAI2PC 插件；按服务端公布的 OAuth 元数据自动协商，需要我点击授权确认时请提示我操作。",
+                f"2. 插件安装并授权完成后，实际调用一次 {verify_tool_hint}，确认返回我电脑的主机名与当前工作区状态即可。",
+                "3. 若当前工作区策略禁止添加或绑定外部 MCP 插件（例如返回 403 或缺少相应权限），请如实向我汇报该限制即可。",
+            ]
+        )
         return JSONResponse(
             {
                 "ok": True,
-                "oneclick_url": oneclick_url,
-                "client_id": str(minted_oc["client_id"]),
-                "client_name": str(minted_oc["client_name"]),
+                "scope": eff_scope,
                 "readonly": is_ro,
-                "reused": bool(minted_oc.get("reused", False)),
-                "expires_at": int(minted_oc.get("expires_at") or 0),
+                "gateway_id": chosen_gid,
+                "is_temporary": chosen_is_temp,
+                "mcp_url": chosen_mcp_url,
+                "oneclick_url": chosen_mcp_url,
+                "plugin_name": "WebAI2PC",
+                "verify_tool": status_tool,
+                "prompt": prompt_text,
             },
             status_code=200,
             headers={"Cache-Control": "no-store"},
@@ -6515,6 +7056,7 @@ def mount_standalone_status_ui(
         Route("/llms.txt", endpoint=tutorials_md_ep, methods=["GET", "HEAD"]),
         Route("/api/studio/state", endpoint=studio_state_ep, methods=["GET"]),
         Route("/api/studio/poll", endpoint=studio_poll_ep, methods=["GET"]),
+        Route("/api/studio/gateway-debug", endpoint=studio_gateway_debug_ep, methods=["GET"]),
         Route("/api/studio/unlock", endpoint=studio_unlock_ep, methods=["POST"]),
         Route("/api/studio/lock", endpoint=studio_lock_ep, methods=["POST"]),
         Route("/api/studio/fs-tree", endpoint=studio_fs_tree_ep, methods=["GET"]),

@@ -601,7 +601,7 @@
                 <span class="field-label" id="chatgpt-full-url-label">Team / Business / Enterprise / Edu 工作区（全功能读写 · 装好后日常用 Chat 省额度，长任务用 Work）</span>
                 <div class="copy-row">
                   <div class="mono-value" id="chatgpt-full-url-box" title="点击直接复制全权限地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-full-btn" data-copy-chatgpt-assist="mcp" title="复制一键配置提示词（含预授权专属地址）发给 ChatGPT Work 一键创建并验证" disabled>复制一键配置提示词（发给 Work）</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-full-btn" data-copy-chatgpt-assist="mcp" title="复制一键配置提示词发给 ChatGPT Work，由 @Plugin Creator 自动创建并完成 OAuth 授权验证" disabled>复制一键配置提示词（发给 Work）</button>
                   <button type="button" class="btn btn-sm" id="copy-chatgpt-full-btn" data-copy-url-kind="mcp" disabled>仅复制地址</button>
                 </div>
               </div>
@@ -609,7 +609,7 @@
                 <span class="field-label" id="ro-url-label">个人 Plus / Pro 账号（只读连接 · 平台限制写工具时使用，装好后日常用 Chat 省额度）</span>
                 <div class="copy-row">
                   <div class="mono-value" id="ro-url-box" title="点击直接复制只读地址">正在建立加密连接通道…</div>
-                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-ro-btn" data-copy-chatgpt-assist="readonly" title="复制只读一键配置提示词（含只读预授权专属地址）发给 ChatGPT Work 一键创建并验证" disabled>复制只读配置提示词（发给 Work）</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="copy-chatgpt-assist-ro-btn" data-copy-chatgpt-assist="readonly" title="复制只读一键配置提示词发给 ChatGPT Work，由 @Plugin Creator 自动创建并完成 OAuth 授权验证" disabled>复制只读配置提示词（发给 Work）</button>
                   <button type="button" class="btn btn-sm" id="copy-ro-url-btn" data-copy-url-kind="readonly" disabled>仅复制地址</button>
                 </div>
               </div>
@@ -630,7 +630,7 @@
               <div class="wb-fold-body" id="gemini-https-guide">
                 <ol class="wb-guide-ol">
                   <li><strong>Gemini：</strong><strong>勿在浏览器地址栏直接打开 <code>/mcp</code></strong>，请打开 <a href="https://gemini.google.com/customize/connectors" target="_blank" rel="noopener noreferrer"><code>gemini.google.com/customize/connectors</code></a>（或左下角菜单 <code>Personal Intelligence -&gt; Connected Apps</code>），点右上角 <code>+ Custom</code>，把上方 <code>https://.../mcp</code> 粘贴到 <code>MCP Server URL</code> 配置栏点 <code>Next</code>，确认页点「本机一键允许连接」并把 <code>App actions</code> 设为 <code>Always allow</code>；首句输入 <code>@Cosmos</code> 唤醒。</li>
-                  <li><strong>ChatGPT（一键配置 · 装好后日常用 Chat 省额度）：</strong>网关就绪后点上方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），直接粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动创建并验证 <code>WebAI2PC</code> 插件（若工作区限制外部域名 MCP 也会自动通过私有 <code>ChatGPT Sites</code> 转发接入）。装好后同账号互通：日常改代码跑脚本切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>pc_get_status</code> 验证。</li>
+                  <li><strong>ChatGPT（一键配置 · 装好后日常用 Chat 省额度）：</strong>网关就绪后点上方「复制一键配置提示词（发给 Work）」（个人只读账号点「复制只读配置提示词（发给 Work）」），直接粘贴发给网页版 ChatGPT 的 <code>Work</code> 模式即可由 <code>@Plugin Creator</code> 自动创建 <code>WebAI2PC</code> 插件并按标准 OAuth 流程完成授权验证。装好后同账号互通：日常改代码跑脚本切回普通 <code>Chat</code> 模式发 <code>@WebAI2PC</code>（快且不扣 <code>Work / Codex</code> 额度），跨应用长程交付与定时任务切 <code>Work</code> 模式发 <code>@WebAI2PC</code>，首次调用 <code>pc_get_status</code> 验证。</li>
                 </ol>
                 <div class="ws-actions" style="margin-top:10px;">
                   <button type="button" class="btn btn-sm" id="copy-gemini-guide-wake-btn">复制唤醒词</button>
@@ -902,6 +902,10 @@
                 <span>连接与网关</span>
                 <span class="tab-count-pill" id="tab-badge-overview">待连</span>
               </button>
+              <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="auth">
+                <span>鉴权与凭据</span>
+                <span class="tab-count-pill" id="tab-badge-auth">5项</span>
+              </button>
               <button type="button" class="settings-nav-btn" role="tab" aria-selected="false" data-settings-cat="runtime">
                 <span>环境与系统</span>
               </button>
@@ -982,6 +986,49 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
+                        <div class="instant-subchannels-list" id="instant-subchannels-list" style="display:flex;flex-direction:column;gap:10px;">
+                          <!-- Subchannel 1: srv.us primary fixed -->
+                          <div class="instant-sub-row" id="instant-sub-srvus" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2, rgba(127,127,127,0.05));">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <span class="tag tag-ok">首选 · 固定地址</span>
+                                <strong style="font-size:13px;"><code>srv.us</code> 免登录固定通道</strong>
+                                <span class="gw-status-pill is-connecting" id="sub-pill-srv_us">连接中</span>
+                              </div>
+                              <div class="ws-actions">
+                                <button type="button" class="btn btn-sm" id="sub-reconnect-srv_us" data-subchannel-reconnect="srv_us">重连 srv.us</button>
+                              </div>
+                            </div>
+                            <div class="gw-card-url-row" style="display:flex;margin:0;">
+                              <div class="gw-card-url-box" id="sub-url-srv_us">等待 srv.us 分配固定地址…</div>
+                              <button type="button" class="btn btn-tonal btn-sm" id="sub-copy-srv_us" data-subchannel-copy="srv_us" disabled>复制地址</button>
+                            </div>
+                            <div class="gw-card-error" id="sub-err-srv_us" style="display:none;margin-top:6px;"></div>
+                          </div>
+
+                          <!-- Subchannel 2: trycloudflare backup -->
+                          <div class="instant-sub-row" id="instant-sub-trycloudflare" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2, rgba(127,127,127,0.05));">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <span class="tag tag-muted">备用 · 重启会变</span>
+                                <strong style="font-size:13px;"><code>trycloudflare</code> 临时备用通道</strong>
+                                <span class="gw-status-pill is-disabled" id="sub-pill-trycloudflare">未开启</span>
+                              </div>
+                              <div class="ws-actions" style="align-items:center;">
+                                <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                  <span>开启备用（可与 srv.us 同时在线）</span>
+                                  <input type="checkbox" class="apple-switch" role="switch" id="instant-sub-trycf-switch" aria-label="开关 trycloudflare 备用通道">
+                                </label>
+                                <button type="button" class="btn btn-sm" id="sub-reconnect-trycloudflare" data-subchannel-reconnect="trycloudflare">重连备用</button>
+                              </div>
+                            </div>
+                            <div class="gw-card-url-row" style="display:flex;margin:0;">
+                              <div class="gw-card-url-box" id="sub-url-trycloudflare">未开启（需要时打开上方开关即可同时显示两个 URL）</div>
+                              <button type="button" class="btn btn-tonal btn-sm" id="sub-copy-trycloudflare" data-subchannel-copy="trycloudflare" disabled>复制地址</button>
+                            </div>
+                            <div class="gw-card-error" id="sub-err-trycloudflare" style="display:none;margin-top:6px;"></div>
+                          </div>
+                        </div>
                         <div class="gw-dep-note" id="card1-dep-note">
                           <strong>前置依赖说明：</strong>默认 <code>*.srv.us</code> 依赖系统内置 <code>ssh</code> 客户端与出站 TCP <code>22</code> 端口（国内可免代理直连）；当 <code>22</code> 端口受阻自动切换至 <code>*.trycloudflare.com</code> 临时通道时，依赖 <code>cloudflared</code> 官方客户端组件（未预装时首次自动从 GitHub Releases 下载，重启会换网址，单连接无在线率保障）。
                         </div>
@@ -1005,6 +1052,36 @@
                           <button type="button" class="btn btn-sm" id="open-import-id-modal-btn">导入恢复卡 PNG</button>
                         </div>
                       </div>
+                      <details class="gw-debug-drawer" id="gw-debug-drawer-instant" data-gw-debug="instant">
+                        <summary class="gw-debug-summary">
+                          <span>排查与调试</span>
+                          <span class="gw-debug-summary-hint">查看底层引擎、降级态与脱敏实时日志</span>
+                        </summary>
+                        <div class="gw-debug-body">
+                          <div class="gw-debug-meta">
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">当前底层引擎</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-engine-instant">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">是否处于降级态</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-fallback-instant">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">最近报错</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-error-instant">无</span>
+                            </div>
+                          </div>
+                          <div class="gw-debug-toolbar">
+                            <span class="gw-debug-log-source" id="gw-debug-source-instant">日志来源：-</span>
+                            <div class="ws-actions">
+                              <button type="button" class="btn btn-sm" data-gw-reconnect="instant">重连此通道</button>
+                              <button type="button" class="btn btn-tonal btn-sm" data-gw-debug-refresh="instant">刷新日志</button>
+                            </div>
+                          </div>
+                          <pre class="gw-debug-log-pre" id="gw-debug-log-instant">展开后自动加载脱敏实时日志…</pre>
+                        </div>
+                      </details>
                     </div>
                   </div>
 
@@ -1072,6 +1149,36 @@
                       <div>
                         <button type="button" class="btn btn-primary btn-sm" id="deploy-cf-workers-btn">一键部署并开启（约 3 秒）</button>
                       </div>
+                      <details class="gw-debug-drawer" id="gw-debug-drawer-workers_dev" data-gw-debug="workers_dev">
+                        <summary class="gw-debug-summary">
+                          <span>排查与调试</span>
+                          <span class="gw-debug-summary-hint">查看底层引擎、降级态与脱敏实时日志</span>
+                        </summary>
+                        <div class="gw-debug-body">
+                          <div class="gw-debug-meta">
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">当前底层引擎</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-engine-workers_dev">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">是否处于降级态</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-fallback-workers_dev">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">最近报错</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-error-workers_dev">无</span>
+                            </div>
+                          </div>
+                          <div class="gw-debug-toolbar">
+                            <span class="gw-debug-log-source" id="gw-debug-source-workers_dev">日志来源：-</span>
+                            <div class="ws-actions">
+                              <button type="button" class="btn btn-sm" data-gw-reconnect="workers_dev">重连此通道</button>
+                              <button type="button" class="btn btn-tonal btn-sm" data-gw-debug-refresh="workers_dev">刷新日志</button>
+                            </div>
+                          </div>
+                          <pre class="gw-debug-log-pre" id="gw-debug-log-workers_dev">展开后自动加载脱敏实时日志…</pre>
+                        </div>
+                      </details>
                     </div>
                   </div>
 
@@ -1174,6 +1281,140 @@
                           </div>
                         </div>
                       </div>
+                      <details class="gw-debug-drawer" id="gw-debug-drawer-self_hosted" data-gw-debug="self_hosted">
+                        <summary class="gw-debug-summary">
+                          <span>排查与调试</span>
+                          <span class="gw-debug-summary-hint">查看底层引擎、降级态与脱敏实时日志</span>
+                        </summary>
+                        <div class="gw-debug-body">
+                          <div class="gw-debug-meta">
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">当前底层引擎</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-engine-self_hosted">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">是否处于降级态</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-fallback-self_hosted">-</span>
+                            </div>
+                            <div class="gw-debug-meta-item">
+                              <span class="gw-debug-meta-key">最近报错</span>
+                              <span class="gw-debug-meta-val" id="gw-debug-error-self_hosted">无</span>
+                            </div>
+                          </div>
+                          <div class="gw-debug-toolbar">
+                            <span class="gw-debug-log-source" id="gw-debug-source-self_hosted">日志来源：-</span>
+                            <div class="ws-actions">
+                              <button type="button" class="btn btn-sm" data-gw-reconnect="self_hosted">重连此通道</button>
+                              <button type="button" class="btn btn-tonal btn-sm" data-gw-debug-refresh="self_hosted">刷新日志</button>
+                            </div>
+                          </div>
+                          <pre class="gw-debug-log-pre" id="gw-debug-log-self_hosted">展开后自动加载脱敏实时日志…</pre>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="gw-endpoint-secret-bar" class="gw-endpoint-secret-bar" role="region" aria-label="静态防扫描路径状态栏">
+                <div class="gw-endpoint-secret-head">
+                  <div class="gw-endpoint-secret-title-wrap">
+                    <h3 class="gw-endpoint-secret-title">静态防扫描路径（<code>/u/&lt;secret&gt;</code>）</h3>
+                    <span class="tag tag-muted" id="gw-endpoint-secret-status-pill">未开启（默认 /mcp）</span>
+                  </div>
+                  <div class="ws-actions">
+                    <button type="button" class="btn btn-tonal btn-sm" id="gw-rotate-endpoint-secret-btn">开启 / 更换路径</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="gw-disable-endpoint-secret-btn" style="display:none;">关闭并恢复 /mcp</button>
+                  </div>
+                </div>
+                <p class="gw-endpoint-secret-desc">
+                  这是固定不变的静态随机路径（不是动态混淆），默认关闭以保持现有客户端 URL 不变；开启或更换会改变所有网关 URL，需在已绑定的 AI 客户端同步更新一次。
+                </p>
+              </div>
+            </section>
+
+            <!-- Category 1.5: 鉴权与凭据（全部 5 类透明管理） -->
+            <section class="settings-pane" id="settings-pane-auth" role="tabpanel">
+              <div class="settings-pane-head settings-pane-head-flex">
+                <div style="min-width:0;flex:1 1 240px;">
+                  <h2 class="settings-pane-title">鉴权与凭据</h2>
+                  <p class="settings-pane-desc">透明展示全部 5 类连接鉴权与路径凭据的实时状态，逐项独立配置、刷新或吊销，不做黑盒。</p>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">1. 同机回环一键免密（<code>127.0.0.1</code> OAuth 授权桥）</div>
+                <div class="settings-row-stack">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                    <span class="tag tag-ok" id="auth-local-bridge-pill">已启用（仅限本机 127.0.0.1 浏览器）</span>
+                    <span style="font-size:12px;color:var(--muted);">同机浏览器打开 OAuth 授权确认页时可直接点击「本机一键允许连接」，免手输配对码。</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">2. 6 位动态配对码与 4 位核对码（手机 / 异地授权）</div>
+                <div class="settings-row-stack">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                      <span>6 位配对码：<strong style="font-family:monospace;font-size:15px;" id="auth-pair-code-val">-</strong></span>
+                      <span>4 位核对码：<strong style="font-family:monospace;font-size:15px;" id="auth-verify-code-val">-</strong></span>
+                    </div>
+                    <div class="ws-actions">
+                      <button type="button" class="btn btn-tonal btn-sm" id="auth-copy-pair-btn">复制 6 位配对码</button>
+                      <button type="button" class="btn btn-sm" id="auth-refresh-pair-btn">刷新配对码</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">3. 20 位固定备用口令（Windows DPAPI 加密存储）</div>
+                <div class="settings-row-stack">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div>
+                      <span class="tag tag-ok">本地加密保存</span>
+                      <code id="auth-backup-token-val" style="margin-left:8px;">••••••••••••••••••••</code>
+                    </div>
+                    <div class="ws-actions">
+                      <button type="button" class="btn btn-sm" id="auth-toggle-backup-btn">显示 / 隐藏</button>
+                      <button type="button" class="btn btn-tonal btn-sm" id="auth-copy-backup-btn">复制备用口令</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">4. 可吊销专用密钥（PAT <code>cmcp_*</code>，受限工作区 / CLI 专用）</div>
+                <div class="settings-row-stack">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <span style="font-size:12.5px;color:var(--muted);">当前已签发专用密钥：<strong id="auth-pat-count-val">0</strong> 条（可在下方随时单条新建或吊销，不影响其他会话）。</span>
+                    <div class="ws-actions">
+                      <button type="button" class="btn btn-tonal btn-sm" id="auth-open-pat-modal-btn">管理 / 新建专用密钥</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-group">
+                <div class="settings-group-title">5. URL 路径保护与直通策略</div>
+                <div class="settings-row-stack" style="display:flex;flex-direction:column;gap:10px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div>
+                      <strong>静态防扫描路径（<code>/u/&lt;secret&gt;</code>）</strong>
+                      <span class="tag tag-muted" id="auth-endpoint-secret-pill" style="margin-left:6px;">未开启（默认 /mcp）</span>
+                      <div style="font-size:12px;color:var(--muted);margin-top:3px;">固定静态路径（不动态混淆）；开启或更换会变更所有网关 URL，需在已绑定 AI 客户端同步更新。</div>
+                    </div>
+                    <div class="ws-actions">
+                      <button type="button" class="btn btn-tonal btn-sm" id="auth-rotate-endpoint-secret-btn">开启 / 更换路径</button>
+                      <button type="button" class="btn btn-ghost btn-sm" id="auth-disable-endpoint-secret-btn" style="display:none;">关闭并恢复 /mcp</button>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border);">
+                    <div>
+                      <strong>免 OAuth 长效直通路径（<code>/c/&lt;token&gt;/mcp</code>）</strong>
+                      <span class="tag tag-muted" style="margin-left:6px;">已默认禁用（返回 404）</span>
+                      <div style="font-size:12px;color:var(--muted);margin-top:3px;">为防止提示词外泄直接免密控机，已默认关闭免 OAuth 直通；所有网页 AI 统一走标准 OAuth 授权。</div>
                     </div>
                   </div>
                 </div>
