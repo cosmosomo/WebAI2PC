@@ -227,7 +227,7 @@
             <div class="ob-wizard-top">
               <div class="ob-wizard-title-group">
                 <span class="ob-kicker-badge">首次接入向导</span>
-                <h2 class="ob-wizard-title">3 步连上你的网页端 AI</h2>
+                <h2 class="ob-wizard-title">4 步连上并体验你的网页端 AI</h2>
               </div>
 
               <div class="ob-stepper" role="tablist" aria-label="配置向导步骤">
@@ -244,6 +244,11 @@
                 <button type="button" class="ob-step-pill" id="ob-step-tab-3" data-ob-step="3" role="tab" aria-selected="false">
                   <span class="ob-step-num" id="ob-step-num-3">3</span>
                   <span>选目录与首句验证</span>
+                </button>
+                <span class="ob-step-line" aria-hidden="true"></span>
+                <button type="button" class="ob-step-pill" id="ob-step-tab-4" data-ob-step="4" role="tab" aria-selected="false">
+                  <span class="ob-step-num" id="ob-step-num-4">4</span>
+                  <span>连上后立刻体验</span>
                 </button>
               </div>
 
@@ -446,6 +451,61 @@
 
               <div class="ob-footer-bar">
                 <button type="button" class="btn btn-ghost" id="ob-back-to-2-btn">← 上一步</button>
+                <div class="ws-actions">
+                  <button type="button" class="btn btn-ghost" id="ob-skip-to-console-btn">直接进入主控台</button>
+                  <button type="button" class="btn btn-primary" id="ob-next-to-4-btn">下一步：连上后立刻体验 →</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- STEP 4: Try 3 One-Shot 3D WebGL2 Demos Immediately -->
+            <div class="ob-pane" id="ob-pane-4" role="tabpanel">
+              <div class="ob-showcase-intro">
+                <span>选一个下面的一句话案例，复制后在对话框里输入 <code>@</code> 选中你刚命名的连接器，粘贴发送即可看效果。</span>
+              </div>
+              <div class="ob-showcase-grid">
+                <div class="ob-showcase-card">
+                  <img class="ob-showcase-thumb" data-showcase-img="blackhole" src="/static/showcase/case-01-blackhole.png" alt="黑洞引力透镜仿真" loading="lazy" width="640" height="360">
+                  <div class="ob-showcase-info">
+                    <h3 class="ob-showcase-title">黑洞引力透镜仿真</h3>
+                    <p class="ob-showcase-meta">写一个纯离线 3D 黑洞网页，支持三组电影机位与物理滑块实时调节。</p>
+                  </div>
+                  <pre class="ob-showcase-prompt-preview" data-ob-showcase-preview="blackhole" hidden></pre>
+                  <div class="ob-showcase-foot">
+                    <button type="button" class="btn btn-primary btn-sm" id="ob-copy-showcase-blackhole-btn" data-ob-copy-showcase="blackhole">复制提示词</button>
+                    <button type="button" class="btn-link-subtle" data-ob-toggle-showcase="blackhole" aria-expanded="false">查看全文</button>
+                  </div>
+                </div>
+
+                <div class="ob-showcase-card">
+                  <img class="ob-showcase-thumb" data-showcase-img="holo" src="/static/showcase/case-02-holo-cards.png" alt="元素全息金属典藏卡" loading="lazy" width="640" height="360">
+                  <div class="ob-showcase-info">
+                    <h3 class="ob-showcase-title">元素全息金属典藏卡</h3>
+                    <p class="ob-showcase-meta">无外链生成 3 张带金属彩虹反光的 3D 元素卡，支持悬停倾角与翻转。</p>
+                  </div>
+                  <pre class="ob-showcase-prompt-preview" data-ob-showcase-preview="holo" hidden></pre>
+                  <div class="ob-showcase-foot">
+                    <button type="button" class="btn btn-primary btn-sm" id="ob-copy-showcase-holo-btn" data-ob-copy-showcase="holo">复制提示词</button>
+                    <button type="button" class="btn-link-subtle" data-ob-toggle-showcase="holo" aria-expanded="false">查看全文</button>
+                  </div>
+                </div>
+
+                <div class="ob-showcase-card">
+                  <img class="ob-showcase-thumb" data-showcase-img="canyon" src="/static/showcase/case-03-neon-canyon.png" alt="霓虹峡谷 3D 低空飞行" loading="lazy" width="640" height="360">
+                  <div class="ob-showcase-info">
+                    <h3 class="ob-showcase-title">霓虹峡谷 3D 低空飞行</h3>
+                    <p class="ob-showcase-meta">自动建 5 文件本地工程，生成带合成音效的 3D 飞行小游戏并本地运行。</p>
+                  </div>
+                  <pre class="ob-showcase-prompt-preview" data-ob-showcase-preview="canyon" hidden></pre>
+                  <div class="ob-showcase-foot">
+                    <button type="button" class="btn btn-primary btn-sm" id="ob-copy-showcase-canyon-btn" data-ob-copy-showcase="canyon">复制提示词</button>
+                    <button type="button" class="btn-link-subtle" data-ob-toggle-showcase="canyon" aria-expanded="false">查看全文</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ob-footer-bar">
+                <button type="button" class="btn btn-ghost" id="ob-back-to-3-btn">← 上一步</button>
                 <div class="ws-actions">
                   <button type="button" class="btn btn-primary" id="ob-finish-btn">完成并进入主控台</button>
                 </div>

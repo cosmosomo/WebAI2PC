@@ -4834,9 +4834,9 @@
   }
 
   function setObStep(stepNum) {
-    var s = stepNum === 2 ? 2 : stepNum === 3 ? 3 : 1;
+    var s = stepNum === 2 ? 2 : stepNum === 3 ? 3 : stepNum === 4 ? 4 : 1;
     obState.step = s;
-    [1, 2, 3].forEach(function (n) {
+    [1, 2, 3, 4].forEach(function (n) {
       var tab = $("ob-step-tab-" + n);
       var pane = $("ob-pane-" + n);
       var numEl = $("ob-step-num-" + n);
@@ -5036,11 +5036,10 @@
         setObStep(3);
         showToast("已检测到网页端授权成功！请复制第 3 步首句测试词发送验证。", false);
       }
-      // Auto-complete & collapse once first tool call arrives while on Step 3
+      // Auto-advance to Step 4 (Live 3D Demos) once first tool call arrives while on Step 3
       if (sessCnt >= 1 && auditCnt >= 1 && !obState.manualOpen && obState.step === 3) {
-        setOnboardingDismissed(true);
-        band.style.display = "none";
-        showToast("首句调用已跑通，配置向导已自动收起。", false);
+        setObStep(4);
+        showToast("首句调用已跑通！现在可以直接选一个下面的一句话案例体验。", false);
         obState.prevSessions = sessCnt;
         return;
       }
@@ -5051,6 +5050,12 @@
       renderObDynamicState();
     }
   }
+
+  var OB_SHOWCASE_PROMPTS = {
+    blackhole: "在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。",
+    holo: "在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。",
+    canyon: "在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。"
+  };
 
   function bindOnboardingEvents() {
     var band = $("onboarding-wizard-band");
@@ -5064,7 +5069,7 @@
     } catch (e) {}
 
     // Stepper tab clicks
-    [1, 2, 3].forEach(function (n) {
+    [1, 2, 3, 4].forEach(function (n) {
       var tab = $("ob-step-tab-" + n);
       if (tab) {
         tab.addEventListener("click", function () {
@@ -5088,6 +5093,7 @@
       band.style.display = "none";
     }
     if ($("ob-dismiss-btn")) $("ob-dismiss-btn").addEventListener("click", closeWizard);
+    if ($("ob-skip-to-console-btn")) $("ob-skip-to-console-btn").addEventListener("click", closeWizard);
     if ($("ob-finish-btn")) $("ob-finish-btn").addEventListener("click", closeWizard);
 
     // Copy AI Setup Guide prompt
@@ -5163,6 +5169,48 @@
     if ($("ob-back-to-2-btn")) {
       $("ob-back-to-2-btn").addEventListener("click", function () { setObStep(2); });
     }
+    if ($("ob-next-to-4-btn")) {
+      $("ob-next-to-4-btn").addEventListener("click", function () { setObStep(4); });
+    }
+    if ($("ob-back-to-3-btn")) {
+      $("ob-back-to-3-btn").addEventListener("click", function () { setObStep(3); });
+    }
+
+    // Step 4: One-shot 3D showcase cards copy & preview toggle
+    document.querySelectorAll("[data-ob-copy-showcase]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-ob-copy-showcase");
+        var promptTxt = OB_SHOWCASE_PROMPTS[key];
+        if (!promptTxt) return;
+        copyText(promptTxt, btn);
+        var isEn = window.WebAI2PCI18n && window.WebAI2PCI18n.getLang() === "en";
+        showToast(
+          isEn
+            ? "Prompt copied! Type @ in chat to select your connector, then paste and send."
+            : "已复制提示词！在对话框输入 @ 选中你的连接器，粘贴发送即可体验。",
+          false
+        );
+      });
+    });
+    document.querySelectorAll("[data-ob-toggle-showcase]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-ob-toggle-showcase");
+        var pre = document.querySelector('[data-ob-showcase-preview="' + key + '"]');
+        if (!pre) return;
+        var isHidden = pre.hasAttribute("hidden");
+        var isEn = window.WebAI2PCI18n && window.WebAI2PCI18n.getLang() === "en";
+        if (isHidden) {
+          pre.textContent = OB_SHOWCASE_PROMPTS[key] || "";
+          pre.removeAttribute("hidden");
+          btn.setAttribute("aria-expanded", "true");
+          btn.textContent = isEn ? "Hide Prompt" : "收起全文";
+        } else {
+          pre.setAttribute("hidden", "");
+          btn.setAttribute("aria-expanded", "false");
+          btn.textContent = isEn ? "View Prompt" : "查看全文";
+        }
+      });
+    });
 
     // Step 2: Dual route switcher & VPS submode
     document.querySelectorAll("#ob-dual-route-bar [data-ob-route]").forEach(function (btn) {

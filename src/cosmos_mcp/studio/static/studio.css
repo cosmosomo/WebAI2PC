@@ -4879,6 +4879,96 @@ html[data-theme="dark"] .header-perm-pill[data-safety-mode="readonly"] {
   overflow-x: auto;
 }
 
+/* Step 4: One-Shot 3D Showcase Cards inside Onboarding Wizard */
+.ob-showcase-intro {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.55;
+}
+.ob-showcase-intro code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+.ob-showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.ob-showcase-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+  transition: border-color 140ms var(--ease-out), transform 140ms var(--ease-out);
+}
+.ob-showcase-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+.ob-showcase-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #090d16;
+  display: block;
+}
+.ob-showcase-info {
+  flex: 1 1 auto;
+}
+.ob-showcase-title {
+  margin: 0 0 4px;
+  font-size: 13.8px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+.ob-showcase-meta {
+  margin: 0;
+  font-size: 12.4px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.ob-showcase-prompt-preview {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font-family: var(--font-mono);
+  font-size: 11.6px;
+  line-height: 1.52;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.ob-showcase-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+@media (max-width: 860px) {
+  .ob-showcase-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .ob-footer-bar {
   display: flex;
   align-items: center;
