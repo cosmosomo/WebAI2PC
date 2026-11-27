@@ -527,3 +527,102 @@ def test_public_tutorials_md_llms_txt_zero_leak_and_static_brand_svgs(tmp_path: 
         for rejected_name in ("unknown.svg", "index.html", "webai2pc-logo-v1.svg"):
             r_404 = pub_client.get(f"http://127.0.0.1:{port}/static/brand/{rejected_name}")
             assert r_404.status_code == 404
+
+
+def test_tutorial_zero_divergence_and_overwrite_guard() -> None:
+    """Prevent stale worktrees/branches from re-introducing legacy Gemini paths or dropping AI setup links."""
+    legacy_paths = (
+        "Customize -> Connectors",
+        "Customize（自定义） -> Connectors",
+        "Customize -&gt; Connectors",
+        "Settings -> Connectors",
+    )
+
+    scan_files: List[Path] = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "README_EN.md",
+        REPO_ROOT / "src/cosmos_mcp/core/tutorials_catalog.py",
+        REPO_ROOT / "src/cosmos_mcp/protocol/skill_renderer.py",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/index.html",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/tutorials.html",
+        REPO_ROOT / "src/cosmos_mcp/core/config.py",
+        REPO_ROOT / "scripts/build_release.py",
+    ]
+    scan_files.extend(sorted((REPO_ROOT / "docs").glob("*.md")))
+    scan_files.extend(sorted((REPO_ROOT / "host_skills").rglob("*.md")))
+
+    legacy_hits: List[str] = []
+    for path in scan_files:
+        assert path.exists(), f"Expected tracked file missing: {path}"
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        for token in legacy_paths:
+            if token in text:
+                legacy_hits.append(f"{rel}: {token}")
+    assert not legacy_hits, f"Legacy Gemini connector path residue found: {legacy_hits}"
+
+    doc01_files = sorted((REPO_ROOT / "docs").glob("01_*.md"))
+    assert doc01_files, "Expected docs/01_*.md tutorial file to exist"
+
+    required_guide_files: List[Path] = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "README_EN.md",
+        *doc01_files,
+        REPO_ROOT / "docs/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "src/cosmos_mcp/core/tutorials_catalog.py",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/index.html",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/tutorials.html",
+    ]
+    required_tokens = (
+        "https://gemini.google.com/customize/connectors",
+        "Personal Intelligence",
+        "Connected Apps",
+        "MCP Server URL",
+    )
+    no_browser_open_zh = (
+        "勿在浏览器地址栏",
+        "不要把",
+        "不是从浏览器地址栏",
+        "不是用来直接在浏览器地址栏",
+        "勿直接浏览器打开",
+        "不要直接打开",
+        "不要在浏览器地址栏",
+    )
+    no_browser_open_en = (
+        "address bar",
+        "do not open",
+        "don't open",
+    )
+
+    for path in required_guide_files:
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        for token in required_tokens:
+            assert token in text, f"{rel} missing required Gemini connector token: {token}"
+        if path.name == "README_EN.md":
+            lower = text.lower()
+            assert any(k in lower for k in no_browser_open_en), (
+                f"{rel} missing do-not-open-in-browser-address-bar warning"
+            )
+        else:
+            assert any(k in text for k in no_browser_open_zh), (
+                f"{rel} missing 勿直接浏览器打开 warning"
+            )
+
+    required_screenshots = (
+        "assets/tutorials/gemini-step1-personal-intelligence.png",
+        "assets/tutorials/gemini-step2-connected-apps.png",
+        "assets/tutorials/gemini-step3-connectors-custom.png",
+        "assets/tutorials/gemini-step4-mcp-server-url.png",
+    )
+    for rel_img in required_screenshots:
+        img_path = REPO_ROOT / rel_img
+        assert img_path.is_file() and img_path.stat().st_size > 0, (
+            f"Missing or empty Gemini step screenshot: {rel_img}"
+        )
+
+    for entry_doc in ("README.md", "README_EN.md", "AGENTS.md"):
+        top30 = "\n".join((REPO_ROOT / entry_doc).read_text(encoding="utf-8").splitlines()[:30])
+        assert "docs/AI_SETUP_GUIDE.md" in top30, (
+            f"{entry_doc} missing docs/AI_SETUP_GUIDE.md entry within first 30 lines"
+        )
