@@ -250,10 +250,9 @@ def test_studio_and_consent_contrast_across_all_style_packs_and_themes(tmp_path:
                 """() => {
                     const st = document.createElement('style');
                     st.id = '__hygiene-no-trans';
-                    st.textContent = '*,*::before,*::after{transition:none!important;animation:none!important;}';
+                    st.textContent = 'html body *, html .btn, button, a, input, *::before, *::after { transition: none !important; transition-duration: 0s !important; animation: none !important; } #first-wake-banner { display: block !important; } #wb-conn-drawer { display: block !important; }';
                     document.head.appendChild(st);
-                    const wb = document.getElementById('first-wake-banner');
-                    if (wb) wb.style.display = 'block';
+                    void document.body.offsetHeight;
                 }"""
             )
 
@@ -266,6 +265,7 @@ def test_studio_and_consent_contrast_across_all_style_packs_and_themes(tmp_path:
                             {_CONTRAST_HELPER_JS}
                             const wb = document.getElementById('first-wake-banner');
                             if (wb) wb.style.display = 'block';
+                            void document.body.offsetHeight;
                             const out = {{}};
                             for (const [k, sel] of [
                                 ['wake_btn', '#copy-wake-prompt-btn'],
@@ -275,6 +275,8 @@ def test_studio_and_consent_contrast_across_all_style_packs_and_themes(tmp_path:
                             ]) {{
                                 const el = document.querySelector(sel);
                                 if (!el) continue;
+                                el.style.transition = 'none';
+                                void el.offsetHeight;
                                 const fg = parseRgb(getComputedStyle(el).color);
                                 const bg = effectiveBg(el);
                                 if (fg && bg) out[k] = contrastRatio(fg, bg);

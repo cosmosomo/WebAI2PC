@@ -2970,7 +2970,7 @@ p, .card-desc, .settings-pane-desc, .setting-row-sub {
 .activity-seg-btn,
 .settings-nav-btn,
 .ws-perm-pill {
-  transition: background-color 140ms var(--v3-ease), color 140ms var(--v3-ease), box-shadow 140ms var(--v3-ease), border-color 140ms var(--v3-ease), transform 110ms var(--v3-ease) !important;
+  transition: background-color 140ms var(--v3-ease), color 140ms var(--v3-ease), box-shadow 140ms var(--v3-ease), border-color 140ms var(--v3-ease), transform 110ms var(--v3-ease);
 }
 
 .btn:active:not(:disabled),

@@ -19,7 +19,7 @@ sys.dont_write_bytecode = True
 if sys.platform == "win32":
     ctypes.windll.kernel32.SetErrorMode(0x8003)
 
-CREATE_NO_WINDOW = 0x08000000
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
