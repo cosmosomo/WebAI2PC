@@ -1008,6 +1008,16 @@ def _mount_l1_capabilities(
             eff_port = 0
         if eff_port <= 0:
             eff_port = int(getattr(policy, "port", 0) or 8096)
+        env_air = (
+            os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+            or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+            or ""
+        ).strip()
+        eff_auto_inject = (
+            parse_bool_flag(env_air, default=True)
+            if env_air
+            else bool(getattr(policy, "auto_inject_project_rules", True))
+        )
         return {
             "port": eff_port,
             "prefix": policy.eff_prefix,
@@ -1018,6 +1028,7 @@ def _mount_l1_capabilities(
             "workspace_roots": [str(p) for p in policy.workspace_roots],
             "readonly_workspace_roots": [str(p) for p in getattr(policy, "readonly_workspace_roots", ())],
             "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
+            "auto_inject_project_rules": eff_auto_inject,
             "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
             "state_root": str(policy.state_root),
             "device_label": policy.device_label,
@@ -1204,7 +1215,7 @@ def _configure_server_file_logging(
 
 
 class _StandaloneRuntimePolicy(LiveRuntimePolicy):
-    """Bridge Studio `'honest'`/`'compat'` labels and sync `readonly_workspace_roots`, `scan_host_global_skills`, `tool_prefix`, `tray_enabled`."""
+    """Bridge Studio `'honest'`/`'compat'` labels and sync `readonly_workspace_roots`, `scan_host_global_skills`, `auto_inject_project_rules`, `tool_prefix`, `tray_enabled`."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._studio_ann_label: str = ""
@@ -1375,6 +1386,7 @@ def create_standalone_app(
     product_root: Optional[Path] = None, state_dir: str = "", public_url: str = "",
     host: str = "127.0.0.1", port: int = 8096, workspace: str = "", workspace_roots: Any = None,
     readonly_workspace_roots: Any = None, scan_host_global_skills: Optional[bool] = None,
+    auto_inject_project_rules: Optional[bool] = None,
     tray_enabled: Optional[bool] = None, tool_prefix: str = "",
     tier: str = "", reset_password: bool = False, prefix: str = "pc", device_label: str = "",
     toolset_profile: str = "", prompt_profile: str = "", enabled_tools: Any = None,
@@ -1430,6 +1442,20 @@ def create_standalone_app(
         if scan_host_global_skills is not None
         else parse_bool_flag(pre_cfg.get("scan_host_global_skills"), default=False)
     )
+    env_air_boot = (
+        os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+        or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+        or ""
+    ).strip()
+    eff_auto_inject_rules = (
+        parse_bool_flag(auto_inject_project_rules, default=True)
+        if auto_inject_project_rules is not None
+        else (
+            parse_bool_flag(env_air_boot, default=True)
+            if env_air_boot
+            else parse_bool_flag(pre_cfg.get("auto_inject_project_rules"), default=True)
+        )
+    )
     eff_tray = (
         parse_bool_flag(tray_enabled, default=True)
         if tray_enabled is not None
@@ -1442,6 +1468,7 @@ def create_standalone_app(
         ("tool_prefix", eff_tool_prefix),
         ("readonly_workspace_roots", eff_ro_roots),
         ("scan_host_global_skills", eff_scan_host),
+        ("auto_inject_project_rules", eff_auto_inject_rules),
         ("tray_enabled", eff_tray),
         ("tunnel_mode", eff_tunnel_mode),
     ):
@@ -1471,6 +1498,7 @@ def create_standalone_app(
         tier_key=eff_tier, workspace=eff_ws, workspace_roots=workspace_roots,
         readonly_workspace_roots=eff_ro_roots,
         scan_host_global_skills=eff_scan_host,
+        auto_inject_project_rules=eff_auto_inject_rules,
         tray_enabled=eff_tray,
         tool_prefix=eff_tool_prefix,
         cfg_path=cfg_path, state_root=state_root, auth_path=Path(creds["auth_path"]),
@@ -1584,6 +1612,7 @@ def create_standalone_app(
         tunnel_mode=eff_tunnel_mode,
     )
     app.state.dispatcher = dispatcher
+    app.state.policy = policy
 
     _, origin_guards, issuer_middlewares = mount_standalone_status_ui(
         app, policy=policy, dispatcher=dispatcher, store=store, provider=provider,
@@ -1753,6 +1782,19 @@ def create_jsonrpc_lite_server(
         tier_key=eff_tier, workspace=eff_ws,
         readonly_workspace_roots=pre_cfg.get("readonly_workspace_roots"),
         scan_host_global_skills=eff_scan_host,
+        auto_inject_project_rules=(
+            parse_bool_flag(
+                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES"),
+                default=True,
+            )
+            if (
+                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+                or ""
+            ).strip()
+            else parse_bool_flag(pre_cfg.get("auto_inject_project_rules"), default=True)
+        ),
         tray_enabled=parse_bool_flag(pre_cfg.get("tray_enabled"), default=True),
         tool_prefix=eff_tool_prefix,
         cfg_path=cfg_path, state_root=state_root,
@@ -1828,6 +1870,19 @@ def run_stdio_mode(
         workspace=eff_ws,
         readonly_workspace_roots=pre_cfg.get("readonly_workspace_roots"),
         scan_host_global_skills=eff_scan_host,
+        auto_inject_project_rules=(
+            parse_bool_flag(
+                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES"),
+                default=True,
+            )
+            if (
+                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+                or ""
+            ).strip()
+            else parse_bool_flag(pre_cfg.get("auto_inject_project_rules"), default=True)
+        ),
         tray_enabled=parse_bool_flag(pre_cfg.get("tray_enabled"), default=True),
         tool_prefix=eff_tool_prefix,
         cfg_path=cfg_path, state_root=state_root, auth_path=state_root / "secrets" / "auth.json",

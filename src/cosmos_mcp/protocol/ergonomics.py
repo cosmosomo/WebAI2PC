@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from cosmos_mcp.core.contracts import ExecutionHook, SafetyBand, ToolCallContext
 from cosmos_mcp.core.fs_io import check_office_or_os_file_lock
@@ -27,6 +27,132 @@ from cosmos_mcp.core.fs_tx import find_office_temp_lock_file
 from cosmos_mcp.core.guard import WorkspaceGuard
 
 MVCC_WINDOW_SEC = 300.0
+PROJECT_RULE_FILENAMES_LOWER: Tuple[str, ...] = ("agents.md", "agent.md", "claude.md")
+PROJECT_RULE_CANONICAL_NAMES: FrozenSet[str] = frozenset({"AGENTS.md", "AGENT.md", "CLAUDE.md"})
+PROJECT_RULE_INLINE_MAX_CHARS = 12288
+PROJECT_RULE_HEAD_SLICE_CHARS = 9216
+_MD_HEADING_RE = re.compile(r"^\s{0,3}(#{1,4})\s+(.+?)\s*$")
+_DEFAULT_WORKSPACE_TARGET_TOOLS: FrozenSet[str] = frozenset(
+    {
+        "find_files",
+        "list_dir",
+        "repo_map",
+        "search_code",
+        "code_intel",
+        "code_outline",
+        "get_symbols_overview",
+        "find_symbol",
+        "find_referencing_symbols",
+        "run_command",
+        "run_python",
+        "batch_probe",
+        "workspace_memory",
+    }
+)
+
+
+def find_directory_rule_doc(
+    dir_path: Path,
+    *,
+    guard: Optional[WorkspaceGuard] = None,
+) -> Optional[Path]:
+    """Discover highest-priority project rules file (`AGENTS.md` > `AGENT.md` > `CLAUDE.md`, case-insensitive) in `dir_path`."""
+    try:
+        if not dir_path.exists() or not dir_path.is_dir():
+            return None
+    except OSError:
+        return None
+
+    by_low: Dict[str, List[Path]] = {}
+    try:
+        with os.scandir(dir_path) as it:
+            for entry in it:
+                low = entry.name.lower()
+                if low in PROJECT_RULE_FILENAMES_LOWER:
+                    by_low.setdefault(low, []).append(dir_path / entry.name)
+    except OSError:
+        return None
+
+    if not by_low:
+        return None
+
+    for prio_low in PROJECT_RULE_FILENAMES_LOWER:
+        cands = by_low.get(prio_low)
+        if not cands:
+            continue
+        ordered = sorted(
+            cands,
+            key=lambda p: (0 if p.name in PROJECT_RULE_CANONICAL_NAMES else 1, p.name),
+        )
+        for cand in ordered:
+            try:
+                if not cand.is_file():
+                    continue
+            except OSError:
+                continue
+            if guard is not None and guard.check_path_access(cand, mode="read") is not None:
+                continue
+            return cand
+    return None
+
+
+def _extract_markdown_heading_outline(text: str) -> List[Dict[str, Any]]:
+    """Extract Markdown `#..####` headings with 1-based line numbers (skipping fenced code blocks)."""
+    outline: List[Dict[str, Any]] = []
+    in_fence = False
+    for line_no, raw_line in enumerate(text.splitlines(), 1):
+        stripped = raw_line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m_hdr = _MD_HEADING_RE.match(raw_line)
+        if m_hdr:
+            outline.append(
+                {
+                    "line": line_no,
+                    "level": len(m_hdr.group(1)),
+                    "title": m_hdr.group(2).strip(),
+                }
+            )
+    return outline
+
+
+def _is_unsafe_climb_boundary(dir_path: Path, explicit_ws_norms: Set[str]) -> bool:
+    """Block climbing into bare drive/FS roots (`C:\\` / `/`) or unmounted `Path.home()` / `~/.dsh`."""
+    try:
+        resolved = dir_path.resolve()
+    except OSError:
+        resolved = dir_path
+    if resolved.parent == resolved:
+        return True
+    d_norm = os.path.normcase(str(resolved)).rstrip("\\/")
+    if not d_norm:
+        return True
+    try:
+        home_p = Path.home().resolve()
+        home_norm = os.path.normcase(str(home_p)).rstrip("\\/")
+        dsh_norm = os.path.normcase(str(home_p / ".dsh")).rstrip("\\/")
+        users_parent_norm = (
+            os.path.normcase(str(home_p.parent)).rstrip("\\/")
+            if home_p.parent != home_p
+            else ""
+        )
+    except Exception:
+        home_norm = ""
+        dsh_norm = ""
+        users_parent_norm = ""
+
+    sep = os.sep
+    if dsh_norm and (d_norm == dsh_norm or d_norm.startswith(dsh_norm + sep)):
+        if not any(w == dsh_norm or w.startswith(dsh_norm + sep) for w in explicit_ws_norms):
+            return True
+    if home_norm and d_norm == home_norm and home_norm not in explicit_ws_norms:
+        return True
+    if users_parent_norm and d_norm == users_parent_norm and users_parent_norm not in explicit_ws_norms:
+        return True
+    return False
 
 ALL_CORE_BASE_TOOLS: FrozenSet[str] = frozenset(
     {
@@ -443,6 +569,7 @@ class SessionSidebandTracker(ExecutionHook):
         self._peer_cursor: Dict[str, int] = {}
         self._error_streaks: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self._dirty_since_last_test: Dict[str, bool] = {}
+        self._session_injected_rules: Dict[str, Dict[str, str]] = {}
 
     @staticmethod
     def resolve_session_key(caller: str = "", session_hint: str = "") -> str:
@@ -697,6 +824,8 @@ class SessionSidebandTracker(ExecutionHook):
             ctx.arguments.get("path")
             or ctx.arguments.get("project_path")
             or ctx.arguments.get("cwd")
+            or ctx.arguments.get("directory")
+            or ctx.arguments.get("root")
             or ""
         ).strip()
 
@@ -978,4 +1107,316 @@ class SessionSidebandTracker(ExecutionHook):
             out["_peer_updates"] = peer_items[:10]
         if loop_warn:
             out["_loop_guard_warning"] = loop_warn
+        if is_ok:
+            proj_instructions = self._collect_project_instructions(
+                ctx=ctx,
+                session_key=session_key,
+                base=base,
+                resolved_path=resolved_path,
+                out=out,
+                prefix=prefix,
+                exposed=exposed,
+            )
+            if proj_instructions:
+                out["_project_instructions"] = proj_instructions
         return out
+
+    def _is_auto_inject_rules_enabled(self) -> Tuple[bool, Dict[str, Any]]:
+        pol_snap: Dict[str, Any] = {}
+        if self._policy_getter is not None:
+            try:
+                raw_p = self._policy_getter()
+                if isinstance(raw_p, dict):
+                    pol_snap = dict(raw_p)
+            except Exception:
+                pol_snap = {}
+
+        env_raw = (
+            os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+            or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+            or ""
+        ).strip()
+        if env_raw:
+            return env_raw.lower() not in ("0", "false", "no", "off"), pol_snap
+
+        if "auto_inject_project_rules" in pol_snap:
+            val = pol_snap["auto_inject_project_rules"]
+            if isinstance(val, bool):
+                return val, pol_snap
+            return str(val).strip().lower() not in ("0", "false", "no", "off"), pol_snap
+
+        eff_pol = self._policy or getattr(self._guard, "policy", None)
+        if eff_pol is not None and hasattr(eff_pol, "auto_inject_project_rules"):
+            return bool(getattr(eff_pol, "auto_inject_project_rules", True)), pol_snap
+
+        return True, pol_snap
+
+    def _configured_workspace_roots(self, pol_snap: Dict[str, Any]) -> Tuple[List[Path], Set[str]]:
+        raw_candidates: List[Any] = []
+        for k in ("workspace_roots", "readonly_workspace_roots"):
+            v = pol_snap.get(k)
+            if isinstance(v, (list, tuple, set)):
+                raw_candidates.extend(v)
+        eff_pol = self._policy or getattr(self._guard, "policy", None)
+        if eff_pol is not None:
+            for attr_n in ("workspace_roots", "readonly_workspace_roots"):
+                v_attr = getattr(eff_pol, attr_n, None)
+                if isinstance(v_attr, (list, tuple, set)):
+                    raw_candidates.extend(v_attr)
+        if self._guard is not None:
+            raw_candidates.extend(getattr(self._guard, "workspace_roots", ()) or ())
+            raw_candidates.extend(getattr(self._guard, "readonly_workspace_roots", ()) or ())
+
+        roots: List[Path] = []
+        norms: Set[str] = set()
+        for item in raw_candidates:
+            s = str(item or "").strip()
+            if not s:
+                continue
+            try:
+                rp = Path(s).expanduser().resolve()
+            except OSError:
+                continue
+            if rp.parent == rp:
+                continue
+            nc = os.path.normcase(str(rp)).rstrip("\\/")
+            if nc and nc not in norms:
+                norms.add(nc)
+                roots.append(rp)
+        return roots, norms
+
+    def _collect_project_instructions(
+        self,
+        *,
+        ctx: ToolCallContext,
+        session_key: str,
+        base: str,
+        resolved_path: str,
+        out: Dict[str, Any],
+        prefix: str,
+        exposed: Optional[Set[str]],
+    ) -> List[Dict[str, Any]]:
+        enabled, pol_snap = self._is_auto_inject_rules_enabled()
+        if not enabled:
+            return []
+
+        ws_roots, explicit_ws_norms = self._configured_workspace_roots(pol_snap)
+        primary_ws: Optional[Path] = ws_roots[0] if ws_roots else None
+
+        cand_raw = ""
+        if base == "get_status":
+            if str(ctx.arguments.get("job_id") or "").strip():
+                return []
+            if primary_ws is not None:
+                cand_raw = str(primary_ws)
+        else:
+            for val in (
+                resolved_path,
+                ctx.arguments.get("path"),
+                ctx.arguments.get("project_path"),
+                ctx.arguments.get("cwd"),
+                ctx.arguments.get("directory"),
+                ctx.arguments.get("root"),
+                out.get("path"),
+                out.get("project_path"),
+                out.get("cwd"),
+                out.get("directory"),
+                out.get("root"),
+            ):
+                s_val = str(val or "").strip()
+                if s_val:
+                    cand_raw = s_val
+                    break
+            if not cand_raw and isinstance(out.get("changes"), list) and out["changes"]:
+                first_ch = out["changes"][0]
+                if isinstance(first_ch, dict) and first_ch.get("path"):
+                    cand_raw = str(first_ch["path"]).strip()
+            if not cand_raw and primary_ws is not None and base in _DEFAULT_WORKSPACE_TARGET_TOOLS:
+                cand_raw = str(primary_ws)
+
+        if not cand_raw:
+            return []
+
+        try:
+            if self._guard is not None:
+                target_p = self._guard.normalize_target_path(cand_raw)
+            else:
+                p_in = Path(cand_raw).expanduser()
+                if not p_in.is_absolute() and primary_ws is not None:
+                    target_p = (primary_ws / p_in).resolve()
+                else:
+                    target_p = p_in.resolve()
+        except Exception:
+            return []
+
+        try:
+            if target_p.exists():
+                target_dir = target_p if target_p.is_dir() else target_p.parent
+            else:
+                cur_anc = target_p.parent
+                while not cur_anc.exists() and cur_anc.parent != cur_anc:
+                    cur_anc = cur_anc.parent
+                if not cur_anc.exists() or not cur_anc.is_dir():
+                    return []
+                target_dir = cur_anc
+            target_dir = target_dir.resolve()
+        except OSError:
+            return []
+
+        td_norm = os.path.normcase(str(target_dir)).rstrip("\\/")
+        sep = os.sep
+        matching_ws_root: Optional[Path] = None
+        best_len = -1
+        for wr in ws_roots:
+            wr_norm = os.path.normcase(str(wr)).rstrip("\\/")
+            if td_norm == wr_norm or td_norm.startswith(wr_norm + sep):
+                if len(wr_norm) > best_len:
+                    best_len = len(wr_norm)
+                    matching_ws_root = wr
+
+        if (
+            self._guard is not None
+            and bool(getattr(self._guard, "restrict_to_workspace", True))
+            and ws_roots
+            and matching_ws_root is None
+        ):
+            return []
+
+        chain_up: List[Path] = []
+        git_boundary: Optional[Path] = None
+        match_ws_norm = (
+            os.path.normcase(str(matching_ws_root)).rstrip("\\/")
+            if matching_ws_root is not None
+            else ""
+        )
+        curr = target_dir
+        for _ in range(64):
+            if _is_unsafe_climb_boundary(curr, explicit_ws_norms):
+                break
+            chain_up.append(curr)
+            try:
+                has_git = (curr / ".git").exists()
+            except OSError:
+                has_git = False
+            if has_git:
+                git_boundary = curr
+                break
+            if match_ws_norm and os.path.normcase(str(curr)).rstrip("\\/") == match_ws_norm:
+                break
+            parent = curr.parent
+            if parent == curr:
+                break
+            curr = parent
+
+        if not chain_up:
+            return []
+
+        dirs_top_down = list(reversed(chain_up))
+        discovered: List[Tuple[Path, Path]] = []
+        for d in dirs_top_down:
+            doc_p = find_directory_rule_doc(d, guard=self._guard)
+            if doc_p is not None:
+                discovered.append((d, doc_p))
+
+        if not discovered:
+            return []
+
+        eff_project_root = git_boundary if git_boundary is not None else discovered[0][0]
+        eff_c = (ctx.caller or "").strip()
+
+        try:
+            rf_start = int(ctx.arguments.get("start_line", 1) or 1)
+        except (TypeError, ValueError):
+            rf_start = 1
+        try:
+            rf_end = int(ctx.arguments.get("end_line", 0) or 0)
+        except (TypeError, ValueError):
+            rf_end = 0
+        rf_sym = str(ctx.arguments.get("symbol") or "").strip()
+        is_full_direct_read = base == "read_file" and rf_start <= 1 and rf_end == 0 and not rf_sym
+        norm_direct_read_target = self._norm_path(str(target_p)) if is_full_direct_read else ""
+
+        injected: List[Dict[str, Any]] = []
+        for _doc_dir, doc_path in discovered:
+            try:
+                raw_bytes = doc_path.read_bytes()
+            except OSError:
+                continue
+            sha256_16 = hashlib.sha256(raw_bytes).hexdigest()[:16]
+            norm_doc = self._norm_path(str(doc_path))
+            if not norm_doc:
+                continue
+
+            if is_full_direct_read and norm_direct_read_target and norm_doc == norm_direct_read_target:
+                with self._lock:
+                    self._session_injected_rules.setdefault(session_key, {})[norm_doc] = sha256_16
+                    if eff_c:
+                        self._session_injected_rules.setdefault(f"caller:{eff_c}", {})[norm_doc] = sha256_16
+                self.record_read(session_key, ctx.caller, str(doc_path))
+                continue
+
+            with self._lock:
+                already_sha = self._session_injected_rules.get(session_key, {}).get(norm_doc)
+                if already_sha is None and eff_c:
+                    already_sha = self._session_injected_rules.get(f"caller:{eff_c}", {}).get(norm_doc)
+                if already_sha == sha256_16:
+                    continue
+
+            raw_text = raw_bytes.decode("utf-8-sig", errors="replace")
+            redacted_text = (
+                self._guard.redact_sensitive_output(raw_text)
+                if self._guard is not None
+                else raw_text
+            )
+
+            if len(redacted_text) <= PROJECT_RULE_INLINE_MAX_CHARS:
+                item: Dict[str, Any] = {
+                    "path": str(doc_path),
+                    "name": doc_path.name,
+                    "project_root": str(eff_project_root),
+                    "sha256": sha256_16,
+                    "truncated": False,
+                    "content": redacted_text,
+                }
+            else:
+                outline = _extract_markdown_heading_outline(redacted_text)
+                head_slice = redacted_text[:PROJECT_RULE_HEAD_SLICE_CHARS]
+                last_nl = head_slice.rfind("\n")
+                if last_nl >= 4096:
+                    head_slice = head_slice[:last_nl]
+                read_hint = sanitize_ghost_tool_mentions(
+                    f"[Truncated `{doc_path.name}` ({len(redacted_text)} chars > {PROJECT_RULE_INLINE_MAX_CHARS}); "
+                    f"read target sections by line numbers via {prefix}_read_file(path='{doc_path}', start_line=..., end_line=...)]",
+                    exposed,
+                    prefix=prefix,
+                )
+                outline_lines = [
+                    f"L{h['line']}: {'#' * int(h['level'])} {h['title']}"
+                    for h in outline[:80]
+                ]
+                outline_block = (
+                    "\nMarkdown Outline:\n" + "\n".join(outline_lines)
+                    if outline_lines
+                    else ""
+                )
+                item = {
+                    "path": str(doc_path),
+                    "name": doc_path.name,
+                    "project_root": str(eff_project_root),
+                    "sha256": sha256_16,
+                    "truncated": True,
+                    "content": f"{head_slice}\n\n{read_hint}{outline_block}",
+                    "outline": outline,
+                }
+
+            with self._lock:
+                self._session_injected_rules.setdefault(session_key, {})[norm_doc] = sha256_16
+                if eff_c:
+                    self._session_injected_rules.setdefault(f"caller:{eff_c}", {})[norm_doc] = sha256_16
+            self.record_read(session_key, ctx.caller, str(doc_path))
+            injected.append(item)
+
+        return injected
+
+
+ErgonomicsMiddleware = SessionSidebandTracker

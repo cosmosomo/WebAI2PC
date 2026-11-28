@@ -1733,6 +1733,7 @@ def _persist_extra_studio_config(
     readonly_workspace_roots: Optional[Sequence[Any]] = None,
     scan_host_global_skills: Optional[bool] = None,
     redact_project_secrets: Optional[bool] = None,
+    auto_inject_project_rules: Optional[bool] = None,
     allow_loopback_dev: Optional[bool] = None,
     protect_dotenv_files: Optional[bool] = None,
     protect_host_credentials: Optional[bool] = None,
@@ -1780,6 +1781,8 @@ def _persist_extra_studio_config(
         persist_kwargs["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
     if redact_project_secrets is not None:
         persist_kwargs["redact_project_secrets"] = parse_bool_flag(redact_project_secrets, default=False)
+    if auto_inject_project_rules is not None:
+        persist_kwargs["auto_inject_project_rules"] = parse_bool_flag(auto_inject_project_rules, default=True)
     if allow_loopback_dev is not None:
         persist_kwargs["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
     if protect_dotenv_files is not None:
@@ -1890,6 +1893,7 @@ _AUTHORITATIVE_POLICY_ONLY_KEYS: frozenset[str] = frozenset(
         "approval_popups",
         "keep_awake",
         "scan_host_global_skills",
+        "auto_inject_project_rules",
         "tray_enabled",
         "tool_prefix",
         "device_label",
@@ -2299,6 +2303,7 @@ def _compute_studio_state_revision(
         "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
         "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
         "redact_project_secrets": bool(getattr(policy, "redact_project_secrets", False)),
+        "auto_inject_project_rules": bool(getattr(policy, "auto_inject_project_rules", True)),
         "allow_loopback_dev": bool(getattr(policy, "allow_loopback_dev", True)),
         "protect_dotenv_files": bool(getattr(policy, "protect_dotenv_files", False)),
         "protect_host_credentials": bool(getattr(policy, "protect_host_credentials", True)),
@@ -3267,6 +3272,7 @@ def _build_studio_state_payload(
     ro_ws_roots = [str(p) for p in getattr(policy, "readonly_workspace_roots", ())]
     scan_host_global = bool(getattr(policy, "scan_host_global_skills", False))
     redact_proj_secrets_val = bool(getattr(policy, "redact_project_secrets", False))
+    auto_inject_rules_val = bool(getattr(policy, "auto_inject_project_rules", True))
     allow_loopback_val = bool(getattr(policy, "allow_loopback_dev", True))
     protect_dotenv_val = bool(getattr(policy, "protect_dotenv_files", False))
     protect_cred_val = bool(getattr(policy, "protect_host_credentials", True))
@@ -3390,6 +3396,7 @@ def _build_studio_state_payload(
         "readonly_workspace_roots": ro_ws_roots,
         "scan_host_global_skills": scan_host_global,
         "redact_project_secrets": redact_proj_secrets_val,
+        "auto_inject_project_rules": auto_inject_rules_val,
         "web_compat_mode": web_compat_mode,
         "last_update_status": last_upd_status,
         "allow_loopback_dev": allow_loopback_val,
@@ -3522,6 +3529,7 @@ def _build_studio_state_payload(
             "web_compat_mode": web_compat_mode,
             "scan_host_global_skills": scan_host_global,
             "redact_project_secrets": redact_proj_secrets_val,
+            "auto_inject_project_rules": auto_inject_rules_val,
             "allow_loopback_dev": allow_loopback_val,
             "protect_dotenv_files": protect_dotenv_val,
             "protect_host_credentials": protect_cred_val,
@@ -4795,6 +4803,12 @@ def mount_standalone_status_ui(
                     f"项目通用密钥字面量脱敏已{'开启' if want_redact else '关闭（仅脱敏本服务自身凭据）'}"
                 )
 
+            if "auto_inject_project_rules" in data:
+                want_auto_rules = parse_bool_flag(data.get("auto_inject_project_rules"), default=True)
+                _persist_extra_studio_config(policy, auto_inject_project_rules=want_auto_rules)
+                messages.append(
+                    f"项目目录规范文件自动注入已{'开启' if want_auto_rules else '关闭（不自动附带 AGENTS.md / CLAUDE.md）'}"
+                )
             if "scan_host_global_skills" in data:
                 want_scan = parse_bool_flag(data.get("scan_host_global_skills"), default=False)
                 _persist_extra_studio_config(policy, scan_host_global_skills=want_scan)

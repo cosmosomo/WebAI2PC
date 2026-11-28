@@ -1,9 +1,12 @@
 """Single-source dynamic SKILL.md and server instruction renderer driven directly by KernelDispatcher & LiveRuntimePolicy."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from cosmos_mcp.protocol.dispatcher import KernelDispatcher, SafetyBand, ToolSpec
+from cosmos_mcp.protocol.ergonomics import find_directory_rule_doc
 from cosmos_mcp.core.config import LiveRuntimePolicy, PRODUCT_VERSION, normalize_prefix
 
 _TIER_NAME_ZH: Dict[str, str] = {
@@ -214,6 +217,25 @@ def build_server_instructions(
         else:
             clauses.append(
                 f"tutorials/Cloudflare/Studio setup & opening local config UI via {p}get_status(guide='cloudflare'|'permissions'|'all', open_page='gateways'|'studio'|'tutorials')"
+            )
+
+    env_air = (
+        os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+        or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+        or ""
+    ).strip()
+    auto_rules_on = (
+        env_air.lower() not in ("0", "false", "no", "off")
+        if env_air
+        else bool(getattr(pol, "auto_inject_project_rules", True))
+    )
+    if auto_rules_on and pol.workspace_roots:
+        primary_ws = Path(pol.workspace_roots[0])
+        guard_obj = getattr(pol, "guard", None)
+        rule_doc = find_directory_rule_doc(primary_ws, guard=guard_obj)
+        if rule_doc is not None:
+            clauses.append(
+                f"project rules ({rule_doc.name}) present in primary workspace and auto-injected once per session"
             )
 
     if not clauses:

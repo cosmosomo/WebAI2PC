@@ -1368,6 +1368,27 @@ def test_auth_pane_and_state_revision_static_invariants() -> None:
         assert contract_tok in js_txt, f"Missing contract token {contract_tok!r} in studio.js"
 
 
+def test_tools_pane_auto_inject_rules_and_i18n_alignment() -> None:
+    """Verify `#settings-pane-tools` includes `#auto-inject-rules-box`, `studio.js` binds it, and `ZH_TO_EN` covers its copy."""
+    index_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "index.html").read_text(encoding="utf-8")
+    js_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "studio.js").read_text(encoding="utf-8")
+    bp_txt = (REPO_ROOT / "src" / "cosmos_mcp" / "studio" / "static" / "brand-packs.js").read_text(encoding="utf-8")
+
+    zh_title = "自动注入项目目录规范文件（AGENTS.md / AGENT.md / CLAUDE.md）"
+    zh_sub = "默认开启，首次访问某项目目录时自动附带其规范文档（同一会话不重复注入）；需纯净无提示环境时可关闭"
+
+    assert 'id="auto-inject-rules-box"' in index_txt
+    assert 'id="chk-auto-inject-rules"' in index_txt
+    assert zh_title in index_txt
+    assert zh_sub in index_txt
+
+    assert "chk-auto-inject-rules" in js_txt
+    assert "auto_inject_project_rules" in js_txt
+
+    assert f'"{zh_title}":' in bp_txt
+    assert f'"{zh_sub}":' in bp_txt
+
+
 def test_settings_auth_pane_live_controls_pat_state_revision_and_env_locks(tmp_path: Path) -> None:
     """Verify `#settings-pane-auth` live pair/verify codes, `reveal_password`/`rotate_password`,
     `rotate_pair_code`, inline PAT mint/revoke, and `pollOnce` `state_revision` + `env_locks` sync.

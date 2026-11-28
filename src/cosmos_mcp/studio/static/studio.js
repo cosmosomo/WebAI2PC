@@ -1306,6 +1306,15 @@
     if ($("chk-redact-project-secrets")) {
       $("chk-redact-project-secrets").checked = redactVal;
     }
+    var autoRulesVal =
+      tc.auto_inject_project_rules !== undefined
+        ? Boolean(tc.auto_inject_project_rules)
+        : state.auto_inject_project_rules !== undefined
+        ? Boolean(state.auto_inject_project_rules)
+        : true;
+    if ($("chk-auto-inject-rules")) {
+      $("chk-auto-inject-rules").checked = autoRulesVal;
+    }
 
     var lbChk = $("chk-allow-loopback-dev");
     var lbBox = $("allow-loopback-dev-box");
@@ -5588,6 +5597,12 @@
     if ($("chk-redact-project-secrets")) {
       $("chk-redact-project-secrets").addEventListener("change", function () {
         pushToolsSafetySwitches({ redact_project_secrets: $("chk-redact-project-secrets").checked });
+      });
+    }
+
+    if ($("chk-auto-inject-rules")) {
+      $("chk-auto-inject-rules").addEventListener("change", function () {
+        pushToolsSafetySwitches({ auto_inject_project_rules: $("chk-auto-inject-rules").checked });
       });
     }
 

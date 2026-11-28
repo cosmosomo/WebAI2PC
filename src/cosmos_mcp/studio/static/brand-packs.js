@@ -2545,6 +2545,8 @@
     "开启时支持网页端授权后顺畅连续读写与运行；关闭后切换为每次写文件或运行命令前请求逐步弹窗确认": "Allows continuous file edits and command runs after OAuth; turn off to prompt before every write/exec",
     "脱敏项目文本中的通用密钥字面量（如 sk-*）": "Redact Generic Secret Literals in Project Text (e.g. sk-*)",
     "默认关闭以保留项目源码与日志原文（本服务自身连接口令与隧道密钥始终脱敏）；开启后额外自动掩码通用 API 密钥格式": "Off by default to preserve raw source/log text (WebAI2PC's own credentials stay redacted); turn on to mask generic API key patterns",
+    "自动注入项目目录规范文件（AGENTS.md / AGENT.md / CLAUDE.md）": "Auto-Inject Project Rule Files (AGENTS.md / AGENT.md / CLAUDE.md)",
+    "默认开启，首次访问某项目目录时自动附带其规范文档（同一会话不重复注入）；需纯净无提示环境时可关闭": "On by default to attach project rule docs on first visit per session (deduplicated); turn off for a clean prompt-free environment",
     "只读模式自动开启": "Auto-enabled in Read-Only mode",
     "扫描本机其他工具全局技能库": "Scan Host Global Skill Libraries",
     "与「工具与扩展」页实时同步；开启后只读发现本机 .claude / .codex 等全局技能目录": "Synced with Tools & Extensions; discovers read-only host .claude / .codex skill directories",

@@ -13,6 +13,7 @@ import asyncio
 import contextvars
 import importlib
 import inspect
+import os
 from pathlib import Path
 import re
 import shutil
@@ -498,6 +499,11 @@ def build_core_tools(
     norm_prof = normalize_core_toolset_profile(toolset_profile) if toolset_profile else ""
 
     def _effective_policy() -> Dict[str, Any]:
+        env_air_pol = (
+            os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+            or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+            or ""
+        ).strip()
         base_pol: Dict[str, Any] = {
             "prefix": g.tool_prefix,
             "tier": normalize_tier(g.tier),
@@ -506,6 +512,9 @@ def build_core_tools(
             "state_root": str(g.effective_state_root()),
             "toolset_profile": norm_prof if norm_prof in CORE_TOOLSET_PROFILES else "standard",
             "exposed_tools": CORE_TOOLSET_PROFILES.get(norm_prof, DEFAULT_CORE_TOOLS),
+            "auto_inject_project_rules": (
+                env_air_pol.lower() not in ("0", "false", "no", "off") if env_air_pol else True
+            ),
         }
         if policy is not None:
             try:
@@ -523,6 +532,8 @@ def build_core_tools(
                     base_pol["python_path"] = str(py_p)
                 if hasattr(policy, "scan_host_global_skills"):
                     base_pol["scan_host_global_skills"] = bool(getattr(policy, "scan_host_global_skills", False))
+                if not env_air_pol and hasattr(policy, "auto_inject_project_rules"):
+                    base_pol["auto_inject_project_rules"] = bool(getattr(policy, "auto_inject_project_rules", True))
             except Exception:
                 pass
         if policy_getter is not None:

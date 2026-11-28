@@ -2143,6 +2143,7 @@ def ensure_initialized(
     python_path: Optional[str] = None,
     scan_host_global_skills: Optional[bool] = None,
     redact_project_secrets: Optional[bool] = None,
+    auto_inject_project_rules: Optional[bool] = None,
     tray_enabled: Optional[bool] = None,
     tunnel_mode: Optional[str] = None,
     public_gateway_base: Optional[str] = None,
@@ -2220,6 +2221,17 @@ def ensure_initialized(
         if redact_project_secrets is not None
         else parse_bool_flag(saved_cfg.get("redact_project_secrets"), default=False)
     )
+    raw_env_auto_rules = (
+        os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+        or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+        or ""
+    ).strip()
+    if auto_inject_project_rules is not None:
+        eff_auto_inject_rules = parse_bool_flag(auto_inject_project_rules, default=True)
+    elif raw_env_auto_rules:
+        eff_auto_inject_rules = parse_bool_flag(raw_env_auto_rules, default=True)
+    else:
+        eff_auto_inject_rules = parse_bool_flag(saved_cfg.get("auto_inject_project_rules"), default=True)
     eff_tray_enabled = (
         bool(tray_enabled)
         if tray_enabled is not None
@@ -2327,6 +2339,7 @@ def ensure_initialized(
             "readonly_workspace_roots": [str(p) for p in ro_roots_tuple],
             "scan_host_global_skills": eff_scan_host_skills,
             "redact_project_secrets": eff_redact_project_secrets,
+            "auto_inject_project_rules": eff_auto_inject_rules,
             "tray_enabled": eff_tray_enabled,
             "enabled_packs": list(eff_packs),
             "keep_awake": eff_awake,
@@ -2479,6 +2492,7 @@ def ensure_initialized(
         "readonly_workspace_roots": [str(p) for p in ro_roots_tuple],
         "scan_host_global_skills": eff_scan_host_skills,
         "redact_project_secrets": eff_redact_project_secrets,
+        "auto_inject_project_rules": eff_auto_inject_rules,
         "tray_enabled": eff_tray_enabled,
         "tunnel_mode": eff_tunnel_mode,
         "public_gateway_base": eff_pg_base,
@@ -2525,6 +2539,7 @@ class LiveRuntimePolicy:
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
         redact_project_secrets: Optional[bool] = None,
+        auto_inject_project_rules: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -2750,6 +2765,15 @@ class LiveRuntimePolicy:
             if redact_project_secrets is not None
             else parse_bool_flag(file_cfg.get("redact_project_secrets"), default=False)
         )
+        env_auto_rules, _ = _env_or_dotenv_with_source(
+            "COSMOS_AUTO_INJECT_PROJECT_RULES", "COSMOS_MCP_AUTO_INJECT_PROJECT_RULES"
+        )
+        if auto_inject_project_rules is not None:
+            self.auto_inject_project_rules: bool = parse_bool_flag(auto_inject_project_rules, default=True)
+        elif env_auto_rules:
+            self.auto_inject_project_rules = parse_bool_flag(env_auto_rules, default=True)
+        else:
+            self.auto_inject_project_rules = parse_bool_flag(file_cfg.get("auto_inject_project_rules"), default=True)
         self.allow_loopback_dev: bool = (
             bool(allow_loopback_dev)
             if allow_loopback_dev is not None
@@ -3042,6 +3066,7 @@ class LiveRuntimePolicy:
                 "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
                 "scan_host_global_skills": self.scan_host_global_skills,
                 "redact_project_secrets": self.redact_project_secrets,
+                "auto_inject_project_rules": self.auto_inject_project_rules,
                 "allow_loopback_dev": self.allow_loopback_dev,
                 "protect_dotenv_files": self.protect_dotenv_files,
                 "protect_host_credentials": self.protect_host_credentials,
@@ -3467,6 +3492,7 @@ class LiveRuntimePolicy:
             "keep_awake": self.keep_awake,
             "scan_host_global_skills": self.scan_host_global_skills,
             "redact_project_secrets": self.redact_project_secrets,
+            "auto_inject_project_rules": self.auto_inject_project_rules,
             "allow_loopback_dev": self.allow_loopback_dev,
             "protect_dotenv_files": self.protect_dotenv_files,
             "protect_host_credentials": self.protect_host_credentials,
@@ -3508,6 +3534,7 @@ class LiveRuntimePolicy:
         self.keep_awake = snap["keep_awake"]
         self.scan_host_global_skills = snap["scan_host_global_skills"]
         self.redact_project_secrets = snap["redact_project_secrets"]
+        self.auto_inject_project_rules = snap["auto_inject_project_rules"]
         self.allow_loopback_dev = snap["allow_loopback_dev"]
         self.protect_dotenv_files = snap["protect_dotenv_files"]
         self.protect_host_credentials = snap["protect_host_credentials"]
@@ -3597,6 +3624,7 @@ class LiveRuntimePolicy:
             "readonly_workspace_roots": [str(p) for p in self.readonly_workspace_roots],
             "scan_host_global_skills": self.scan_host_global_skills,
             "redact_project_secrets": self.redact_project_secrets,
+            "auto_inject_project_rules": self.auto_inject_project_rules,
             "allow_loopback_dev": self.allow_loopback_dev,
             "protect_dotenv_files": self.protect_dotenv_files,
             "protect_host_credentials": self.protect_host_credentials,
@@ -3642,6 +3670,7 @@ class LiveRuntimePolicy:
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
         redact_project_secrets: Optional[bool] = None,
+        auto_inject_project_rules: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -3713,6 +3742,8 @@ class LiveRuntimePolicy:
             plan["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
         if redact_project_secrets is not None:
             plan["redact_project_secrets"] = parse_bool_flag(redact_project_secrets, default=False)
+        if auto_inject_project_rules is not None:
+            plan["auto_inject_project_rules"] = parse_bool_flag(auto_inject_project_rules, default=True)
         if allow_loopback_dev is not None:
             plan["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
         if protect_dotenv_files is not None:
@@ -3891,6 +3922,10 @@ class LiveRuntimePolicy:
                 self.scan_host_global_skills = parse_bool_flag(merged_doc.get("scan_host_global_skills"), default=False)
             if "redact_project_secrets" in merged_doc and "redact_project_secrets" not in plan:
                 self.redact_project_secrets = parse_bool_flag(merged_doc.get("redact_project_secrets"), default=False)
+            if "auto_inject_project_rules" in merged_doc and "auto_inject_project_rules" not in plan:
+                self.auto_inject_project_rules = parse_bool_flag(
+                    merged_doc.get("auto_inject_project_rules"), default=True
+                )
             if "allow_loopback_dev" in merged_doc and "allow_loopback_dev" not in plan:
                 self.allow_loopback_dev = parse_bool_flag(merged_doc.get("allow_loopback_dev"), default=True)
             if "protect_dotenv_files" in merged_doc and "protect_dotenv_files" not in plan:
@@ -4003,6 +4038,8 @@ class LiveRuntimePolicy:
             self.scan_host_global_skills = plan["scan_host_global_skills"]
         if "redact_project_secrets" in plan:
             self.redact_project_secrets = plan["redact_project_secrets"]
+        if "auto_inject_project_rules" in plan:
+            self.auto_inject_project_rules = plan["auto_inject_project_rules"]
         if "allow_loopback_dev" in plan:
             self.allow_loopback_dev = plan["allow_loopback_dev"]
         if "protect_dotenv_files" in plan:
@@ -4099,6 +4136,7 @@ class LiveRuntimePolicy:
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
         redact_project_secrets: Optional[bool] = None,
+        auto_inject_project_rules: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -4135,6 +4173,7 @@ class LiveRuntimePolicy:
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
                 redact_project_secrets=redact_project_secrets,
+                auto_inject_project_rules=auto_inject_project_rules,
                 allow_loopback_dev=allow_loopback_dev,
                 protect_dotenv_files=protect_dotenv_files,
                 protect_host_credentials=protect_host_credentials,
@@ -4195,6 +4234,7 @@ class LiveRuntimePolicy:
         keep_awake: Optional[bool] = None,
         scan_host_global_skills: Optional[bool] = None,
         redact_project_secrets: Optional[bool] = None,
+        auto_inject_project_rules: Optional[bool] = None,
         allow_loopback_dev: Optional[bool] = None,
         protect_dotenv_files: Optional[bool] = None,
         protect_host_credentials: Optional[bool] = None,
@@ -4231,6 +4271,7 @@ class LiveRuntimePolicy:
                 keep_awake=keep_awake,
                 scan_host_global_skills=scan_host_global_skills,
                 redact_project_secrets=redact_project_secrets,
+                auto_inject_project_rules=auto_inject_project_rules,
                 allow_loopback_dev=allow_loopback_dev,
                 protect_dotenv_files=protect_dotenv_files,
                 protect_host_credentials=protect_host_credentials,
@@ -4267,6 +4308,7 @@ class LiveRuntimePolicy:
                     keep_awake=keep_awake,
                     scan_host_global_skills=scan_host_global_skills,
                     redact_project_secrets=redact_project_secrets,
+                    auto_inject_project_rules=auto_inject_project_rules,
                     allow_loopback_dev=allow_loopback_dev,
                     protect_dotenv_files=protect_dotenv_files,
                     protect_host_credentials=protect_host_credentials,
@@ -4379,6 +4421,8 @@ class LiveRuntimePolicy:
                     merged_doc["scan_host_global_skills"] = plan["scan_host_global_skills"]
                 if "redact_project_secrets" in plan:
                     merged_doc["redact_project_secrets"] = plan["redact_project_secrets"]
+                if "auto_inject_project_rules" in plan:
+                    merged_doc["auto_inject_project_rules"] = plan["auto_inject_project_rules"]
                 if "allow_loopback_dev" in plan:
                     merged_doc["allow_loopback_dev"] = plan["allow_loopback_dev"]
                 if "protect_dotenv_files" in plan:
@@ -4547,6 +4591,11 @@ class LiveRuntimePolicy:
             if "redact_project_secrets" in merged and merged["redact_project_secrets"] is not None
             else None
         )
+        auto_inject_val = (
+            parse_bool_flag(merged["auto_inject_project_rules"], default=True)
+            if "auto_inject_project_rules" in merged and merged["auto_inject_project_rules"] is not None
+            else None
+        )
         allow_lb_val = (
             parse_bool_flag(merged["allow_loopback_dev"], default=True)
             if "allow_loopback_dev" in merged and merged["allow_loopback_dev"] is not None
@@ -4634,6 +4683,7 @@ class LiveRuntimePolicy:
             keep_awake=ka_val,
             scan_host_global_skills=scan_sk_val,
             redact_project_secrets=redact_sec_val,
+            auto_inject_project_rules=auto_inject_val,
             allow_loopback_dev=allow_lb_val,
             protect_dotenv_files=prot_env_val,
             protect_host_credentials=prot_cred_val,
@@ -4729,6 +4779,23 @@ class LiveRuntimePolicy:
                             self.scan_host_global_skills = parse_bool_flag(raw_cfg.get("scan_host_global_skills"), default=False)
                         if "redact_project_secrets" in raw_cfg:
                             self.redact_project_secrets = parse_bool_flag(raw_cfg.get("redact_project_secrets"), default=False)
+                        has_env_auto_rules = bool(
+                            (
+                                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES")
+                                or ""
+                            ).strip()
+                        )
+                        if has_env_auto_rules:
+                            self.auto_inject_project_rules = parse_bool_flag(
+                                os.environ.get("COSMOS_AUTO_INJECT_PROJECT_RULES")
+                                or os.environ.get("COSMOS_MCP_AUTO_INJECT_PROJECT_RULES"),
+                                default=True,
+                            )
+                        elif "auto_inject_project_rules" in raw_cfg:
+                            self.auto_inject_project_rules = parse_bool_flag(
+                                raw_cfg.get("auto_inject_project_rules"), default=True
+                            )
                         if "allow_loopback_dev" in raw_cfg:
                             self.allow_loopback_dev = parse_bool_flag(raw_cfg.get("allow_loopback_dev"), default=True)
                         if "protect_dotenv_files" in raw_cfg:
