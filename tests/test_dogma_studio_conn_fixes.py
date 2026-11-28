@@ -563,12 +563,18 @@ def test_fix6_fix7_fix8_ui_csrf_sync_password_redaction_update_and_uninstall(
                     const d = await r.json();
                     document.getElementById('session-pw-input').value = {json.dumps(owner_pw)};
                     document.getElementById('session-unlock-form').dispatchEvent(new Event('submit', {{ cancelable: true }}));
-                    await new Promise(res => setTimeout(res, 250));
-                    return {{ unlockOk: d.ok, updatedMeta: meta.getAttribute('content') }};
+                    return {{ unlockOk: d.ok }};
                 }}"""
             )
             assert synced_meta["unlockOk"] is True
-            assert synced_meta["updatedMeta"] == csrf
+            updated_meta = driver.wait_until(
+                """() => {
+                    const c = document.querySelector('meta[name="studio-csrf"]')?.getAttribute('content') || '';
+                    return (c && c !== 'stale_locked_csrf') ? c : false;
+                }""",
+                description="meta[name='studio-csrf'] refreshed after unlock",
+            )
+            assert updated_meta == csrf
 
             # Toggle `#chk-skills-scan-host` in `#settings-pane-skills` and verify `#chk-scan-host-skills` syncs
             driver.open_settings("skills")

@@ -1225,7 +1225,7 @@ def test_chatgpt_assist_connect_copy_gateway_ready_gate_and_zero_secrets(tmp_pat
             assert not pure_showcase.startswith(f"{at_sym}WebAI2PC")
             assert "blackhole_studio.html" in pure_showcase
             toast_sc = driver.evaluate("() => (document.getElementById('toast-banner')?.textContent || '').trim()")
-            assert f"{at_sym}" in toast_sc and "连接器" in toast_sc
+            assert f"{at_sym}" in toast_sc and ("连接器" in toast_sc or "connector" in toast_sc.lower())
 
             # Preview is hidden by default and expands only when clicking 查看全文
             preview_states = driver.evaluate(

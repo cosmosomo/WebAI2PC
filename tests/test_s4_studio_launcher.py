@@ -215,9 +215,10 @@ def test_studio_e2e_single_password_session_pack_cleanup_and_recovery(tmp_path: 
         policy = app.state.policy
 
         # Track pack shutdown calls to prove the single-pack `browser` cleanup bug fix
+        has_cua_pack = "cua" in dispatcher._packs
         shutdown_calls = {"browser": 0, "cua": 0}
         orig_b_shutdown = dispatcher._packs["browser"].shutdown
-        orig_c_shutdown = dispatcher._packs["cua"].shutdown
+        orig_c_shutdown = dispatcher._packs["cua"].shutdown if has_cua_pack else None
 
         def _spy_b_shutdown(prefix_filter: str = "") -> None:
             shutdown_calls["browser"] += 1
@@ -225,10 +226,12 @@ def test_studio_e2e_single_password_session_pack_cleanup_and_recovery(tmp_path: 
 
         def _spy_c_shutdown(prefix_filter: str = "") -> None:
             shutdown_calls["cua"] += 1
-            orig_c_shutdown(prefix_filter=prefix_filter)
+            if orig_c_shutdown is not None:
+                orig_c_shutdown(prefix_filter=prefix_filter)
 
         dispatcher._packs["browser"].shutdown = _spy_b_shutdown  # type: ignore[method-assign]
-        dispatcher._packs["cua"].shutdown = _spy_c_shutdown  # type: ignore[method-assign]
+        if has_cua_pack:
+            dispatcher._packs["cua"].shutdown = _spy_c_shutdown  # type: ignore[method-assign]
 
         with httpx.Client(base_url=srv.base_url, trust_env=False, timeout=10.0) as client:
             # Verify HTML & separated CSS/JS static assets
@@ -246,7 +249,14 @@ def test_studio_e2e_single_password_session_pack_cleanup_and_recovery(tmp_path: 
             base_skill_count = st0["skills"]["count"]
             assert isinstance(base_skill_count, int) and base_skill_count >= 0
             csrf = st0["csrf_token"]
-            owner_pw = st0["connection"]["connection_password"]
+            assert st0["connection"]["connection_password"] == ""
+            r_rev = client.post(
+                "/api/studio/connection",
+                headers={"X-Studio-Csrf": csrf},
+                json={"action": "reveal_password"},
+            )
+            assert r_rev.status_code == 200
+            owner_pw = r_rev.json()["connection_password"]
             assert owner_pw
 
             # Proxied/non-loopback unauthenticated state is locked and mutation must fail with 403

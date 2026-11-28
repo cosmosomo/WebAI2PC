@@ -58,7 +58,10 @@ cosmos-mcp uninstall --purge -y --json
 # 本地自动化调用身份恢复卡导出 / 导入接口（本机回环携带 Bearer local_api_token 免随机 CSRF 校验）
 # POST http://127.0.0.1:8096/api/studio/identity/export_png  Header: Authorization: Bearer <local_api_token>
 
-# 4. 全仓测试套件与发行包一致性检查（含免装 Python 完整离线包构建）
+# 4a. 日常小改动与并行子任务（默认仅跑本改动直接对应的定向单测，不跑全仓 tests/ 与 build_release.py）
+python -B -m pytest -p no:cacheprovider tests/<受影响测试文件>.py -k "<目标用例关键词>"
+
+# 4b. 全仓测试套件与发行包一致性检查（仅在合流主干或公开发版前由主控统一执行一次，禁止每个小任务/子任务重复跑）
 python -B -m pytest -p no:cacheprovider tests/
 python -B scripts/build_release.py --check
 python -B scripts/build_release.py --embed-python-dir "<官方python-embed目录>" --output dist/Cosmos-MCP-v1.2.1-win64-full.zip --check

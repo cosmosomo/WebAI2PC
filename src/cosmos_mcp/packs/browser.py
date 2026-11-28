@@ -1218,6 +1218,7 @@ class _HeadlessCdpPage:
             "--window-size=1280,800",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-popup-blocking",
             "--disable-background-networking",
             "--disable-sync",
             "--disable-gpu",
@@ -1956,7 +1957,7 @@ class _HeadlessCdpPage:
             js_expr = s
         res = self._cdp_call(
             "Runtime.evaluate",
-            {"expression": js_expr, "returnByValue": True, "awaitPromise": True},
+            {"expression": js_expr, "returnByValue": True, "awaitPromise": True, "userGesture": True},
             timeout=max(2.0, float(timeout_ms) / 1000.0),
         )
         if "exceptionDetails" in res:

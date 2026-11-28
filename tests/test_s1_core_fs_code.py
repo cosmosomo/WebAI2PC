@@ -886,7 +886,7 @@ def test_tier4_full_power_cross_directory_fs_search_patch_undo_and_policy_notice
     assert not wr_err and wr_res["ok"] is True
     assert ext_written.read_text(encoding="utf-8") == "ANSWER = 99\n"
 
-    # Secondary directory previously marked read-only in L3 is also writable in `tier4_full_power`
+    # Secondary directory explicitly marked read-only by the user remains write-protected even in `tier4_full_power`
     ro_w_l4, ro_err_l4 = asyncio.run(
         dispatcher.call_tool_raw(
             "pc_write_file",
@@ -894,7 +894,8 @@ def test_tier4_full_power_cross_directory_fs_search_patch_undo_and_policy_notice
             session_hint="http",
         )
     )
-    assert not ro_err_l4 and ro_w_l4["ok"] is True
+    assert ro_err_l4 is True
+    assert ro_w_l4["ok"] is False and "ERR_READONLY_WORKSPACE" in str(ro_w_l4.get("error", ""))
 
     # Undo & trash/restore work on external directories in `tier4_full_power`
     undo_res, u_err = asyncio.run(

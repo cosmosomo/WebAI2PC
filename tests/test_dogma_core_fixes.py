@@ -640,3 +640,33 @@ def test_07_cua_window_background_zero_focus_never_yields_in_l4_and_reads_policy
         delivery_mode="foreground_physical",
     )
     assert res_fg_ok["ok"] is True, res_fg_ok
+
+
+def test_10_standalone_app_policy_syncs_redact_project_secrets_to_guard(tmp_path: Path) -> None:
+    from cosmos_mcp.launcher.app import create_standalone_app
+
+    st_dir = tmp_path / "st_standalone_redact"
+    ws_dir = tmp_path / "ws_standalone_redact"
+    ws_dir.mkdir(parents=True)
+    app = create_standalone_app(state_dir=str(st_dir), host="127.0.0.1", port=18977, workspace=str(ws_dir))
+    try:
+        pol = app.state.policy
+        guard = pol.guard
+        assert guard is not None
+        assert guard.redact_project_secrets is False
+        pol.persist_changes(redact_project_secrets=True)
+        assert pol.redact_project_secrets is True
+        assert guard.redact_project_secrets is True
+        pol.persist_changes(redact_project_secrets=False)
+        assert pol.redact_project_secrets is False
+        assert guard.redact_project_secrets is False
+    finally:
+        if hasattr(app.state, "watchdog"):
+            app.state.watchdog.stop()
+        if hasattr(app.state, "kill_watchdog"):
+            app.state.kill_watchdog.stop()
+        if hasattr(app.state, "sleep_inhibitor"):
+            app.state.sleep_inhibitor.disable()
+        if hasattr(app.state, "close_srv_log") and callable(app.state.close_srv_log):
+            app.state.close_srv_log()
+

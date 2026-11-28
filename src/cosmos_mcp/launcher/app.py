@@ -871,6 +871,7 @@ def _make_workspace_guard(
     protect_host_credentials: Optional[bool] = None,
     protect_dotenv_files: Optional[bool] = None,
     block_destructive_commands: Optional[bool] = None,
+    redact_project_secrets: Optional[bool] = None,
     restrict_to_workspace: bool = True,
     tier: str = "L3",
     state_root: Optional[Path] = None,
@@ -893,6 +894,7 @@ def _make_workspace_guard(
         ("protect_host_credentials", protect_host_credentials),
         ("protect_dotenv_files", protect_dotenv_files),
         ("block_destructive_commands", block_destructive_commands),
+        ("redact_project_secrets", redact_project_secrets),
     ):
         if opt_v is not None and opt_k in init_params:
             kwargs[opt_k] = bool(opt_v)
@@ -915,6 +917,7 @@ def _sync_guard_workspace_policy(
     protect_host_credentials: Optional[bool] = None,
     protect_dotenv_files: Optional[bool] = None,
     block_destructive_commands: Optional[bool] = None,
+    redact_project_secrets: Optional[bool] = None,
     tool_prefix: str = "",
     state_root: Optional[Path] = None,
     product_root: Optional[Path] = None,
@@ -943,6 +946,7 @@ def _sync_guard_workspace_policy(
         ("protect_host_credentials", protect_host_credentials),
         ("protect_dotenv_files", protect_dotenv_files),
         ("block_destructive_commands", block_destructive_commands),
+        ("redact_project_secrets", redact_project_secrets),
     ):
         if opt_v is not None and opt_k in set_params:
             call_kw[opt_k] = bool(opt_v)
@@ -1257,6 +1261,7 @@ class _StandaloneRuntimePolicy(LiveRuntimePolicy):
             protect_host_credentials=bool(getattr(self, "protect_host_credentials", True)),
             protect_dotenv_files=bool(getattr(self, "protect_dotenv_files", False)),
             block_destructive_commands=bool(getattr(self, "block_destructive_commands", True)),
+            redact_project_secrets=bool(getattr(self, "redact_project_secrets", False)),
             tool_prefix=eff_tp,
             state_root=self.state_root,
             product_root=self._product_root,
@@ -1481,6 +1486,10 @@ def create_standalone_app(
             tier_key=tk,
             readonly_workspace_roots=getattr(policy, "readonly_workspace_roots", ()),
             allow_host_global_skills=bool(getattr(policy, "scan_host_global_skills", False)),
+            protect_host_credentials=bool(getattr(policy, "protect_host_credentials", True)),
+            protect_dotenv_files=bool(getattr(policy, "protect_dotenv_files", False)),
+            block_destructive_commands=bool(getattr(policy, "block_destructive_commands", True)),
+            redact_project_secrets=bool(getattr(policy, "redact_project_secrets", False)),
             tool_prefix=getattr(policy, "tool_prefix", eff_tool_prefix),
             state_root=state_root,
         ),
@@ -1757,6 +1766,10 @@ def create_jsonrpc_lite_server(
             tier_key=tk,
             readonly_workspace_roots=getattr(policy, "readonly_workspace_roots", ()),
             allow_host_global_skills=bool(getattr(policy, "scan_host_global_skills", False)),
+            protect_host_credentials=bool(getattr(policy, "protect_host_credentials", True)),
+            protect_dotenv_files=bool(getattr(policy, "protect_dotenv_files", False)),
+            block_destructive_commands=bool(getattr(policy, "block_destructive_commands", True)),
+            redact_project_secrets=bool(getattr(policy, "redact_project_secrets", False)),
             tool_prefix=getattr(policy, "tool_prefix", eff_tool_prefix),
             state_root=state_root,
         ),
@@ -1830,6 +1843,10 @@ def run_stdio_mode(
             tier_key=tk,
             readonly_workspace_roots=getattr(policy, "readonly_workspace_roots", ()),
             allow_host_global_skills=bool(getattr(policy, "scan_host_global_skills", False)),
+            protect_host_credentials=bool(getattr(policy, "protect_host_credentials", True)),
+            protect_dotenv_files=bool(getattr(policy, "protect_dotenv_files", False)),
+            block_destructive_commands=bool(getattr(policy, "block_destructive_commands", True)),
+            redact_project_secrets=bool(getattr(policy, "redact_project_secrets", False)),
             tool_prefix=getattr(policy, "tool_prefix", eff_tool_prefix),
             state_root=state_root,
         ),

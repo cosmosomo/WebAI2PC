@@ -2058,7 +2058,7 @@ def _shortcut_belongs_to_state_root(
         or "\\.venv\\" in low
         or "\\app_src" in low
         or "\\bin\\uninstall_cosmos_mcp" in low
-        or re.search(r"[a-z]:\\", low)
+        or re.search(r"(?<![a-z0-9])[a-z]:\\", low)
         or re.search(r"\\(?:users|home|tmp|var|private|opt|srv)\\", low)
     )
 

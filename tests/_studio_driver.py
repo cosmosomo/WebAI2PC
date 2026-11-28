@@ -225,12 +225,13 @@ class StudioPageDriver:
             }"""
         )
 
-    def goto(self, url: str, *, wait_studio_ready: bool = True) -> None:
+    def goto(self, url: str, *, wait_studio_ready: bool = True, default_lang: Optional[str] = "zh") -> None:
         self.cdp.goto(url)
         self.wait_until(
-            "() => document.readyState === 'complete'",
+            """() => document.readyState === 'complete' &&
+                Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every(l => Boolean(l.sheet))""",
             timeout_sec=8.0,
-            description="document.readyState === 'complete'",
+            description="document.readyState === 'complete' and stylesheets loaded",
         )
         self.install_runtime_probes()
         if wait_studio_ready:
@@ -243,6 +244,17 @@ class StudioPageDriver:
                 timeout_sec=8.0,
                 description="Studio initial DOM hydration",
             )
+            if default_lang in ("zh", "en"):
+                self.cdp.evaluate(
+                    """(lang) => {
+                        if (window.WebAI2PCI18n && typeof window.WebAI2PCI18n.setLang === 'function') {
+                            if (window.WebAI2PCI18n.getLang() !== lang) {
+                                window.WebAI2PCI18n.setLang(lang);
+                            }
+                        }
+                    }""",
+                    default_lang,
+                )
 
     def trigger_poll(self) -> None:
         self.cdp.evaluate("() => { window.dispatchEvent(new Event('focus')); }")

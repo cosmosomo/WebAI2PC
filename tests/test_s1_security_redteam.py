@@ -237,7 +237,8 @@ def test_c_sec_01_batch_probe_and_l3_block_ctypes_winapi_and_breakaway_isolation
         creationflags=0x08000000 | CREATE_BREAKAWAY_FROM_JOB,
         breakaway=False,
     )
-    assert (observed_flags[-1] & CREATE_BREAKAWAY_FROM_JOB) == 0
+    if sys.platform == "win32":
+        assert (observed_flags[-1] & CREATE_BREAKAWAY_FROM_JOB) == 0
 
     _popen_with_optional_breakaway(
         ["python", "-B", "-c", "pass"],

@@ -297,6 +297,10 @@ def test_browser_pack_hidden_dom_filtering_scroll_select_tabs_download_and_login
         tab_clk = plugin.browser_use(action="click", selector="#open-tab2", wait_ms=400)
         assert tab_clk["ok"] is True, tab_clk
         tabs_info = plugin.browser_use(action="list_tabs")
+        tab_deadline = time.monotonic() + 3.0
+        while time.monotonic() < tab_deadline and int(tabs_info.get("tab_count") or 0) < 2:
+            time.sleep(0.1)
+            tabs_info = plugin.browser_use(action="list_tabs")
         assert tabs_info["ok"] is True, tabs_info
         assert tabs_info["tab_count"] >= 2
 

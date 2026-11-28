@@ -270,7 +270,7 @@ def test_supervisor_singleton_lock_inproc_crossproc_and_env_bypass(
             capture_output=True,
             text=True,
             timeout=10.0,
-            creationflags=CREATE_NO_WINDOW,
+            creationflags=CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         assert sub_res.returncode == 0
         assert json.loads(sub_res.stdout.strip())["acquired"] is False
@@ -454,7 +454,7 @@ def test_supervisor_reclaims_stale_python_port_holder(tmp_path: Path) -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=CREATE_NO_WINDOW,
+        creationflags=CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     )
     try:
         deadline = time.monotonic() + 5.0
