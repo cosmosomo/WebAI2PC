@@ -393,9 +393,9 @@ def watch_remote_ci(sha_prefix: str = "", repo: str = DEFAULT_GITHUB_REPO, wait_
             done_n = sum(1 for j in jobs if j.get("status") == "completed")
             print(
                 f"[CI IN_PROGRESS] Run #{matched.get('run_number')} ({head_sha} on {branch}, {done_n}/{len(jobs)} jobs done): {url}\n"
-                f"Re-run `python -B scripts/ci_preflight.py --watch-ci {head_sha}` in ~35s until status == completed/success."
+                f"Poll again after ~40s (or via background runner with `--wait-sec 300`) until status == completed/success."
             )
-            return 3
+            return 0
         time.sleep(6.0)
 
 

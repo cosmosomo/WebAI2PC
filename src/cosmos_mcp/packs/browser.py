@@ -2385,13 +2385,15 @@ def _stop_managed_login_window_unlocked(key: str) -> bool:
 
 
 def _surface_login_window_noactivate_win32(browser_pid: int, timeout_sec: float = 3.0) -> None:
-    """Restore a `--start-minimized` Chromium window via `SW_SHOWNOACTIVATE (4)` without stealing focus."""
+    """Restore & size a `--start-minimized` Chromium window via `SW_SHOWNOACTIVATE (4)` without stealing focus."""
     if sys.platform != "win32" or browser_pid <= 0:
         return
     try:
         from ctypes import wintypes
 
         u32 = ctypes.WinDLL("user32", use_last_error=True)
+        SWP_NOACTIVATE = 0x0010
+        SWP_NOZORDER = 0x0004
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         deadline = time.monotonic() + max(0.5, timeout_sec)
         surfaced: Set[int] = set()
@@ -2404,6 +2406,7 @@ def _surface_login_window_noactivate_win32(browser_pid: int, timeout_sec: float 
                     u32.GetClassNameW(hwnd, cls_buf, 64)
                     if cls_buf.value == "Chrome_WidgetWin_1" and u32.IsIconic(hwnd):
                         u32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+                        u32.SetWindowPos(hwnd, 0, 120, 80, 1100, 820, SWP_NOACTIVATE | SWP_NOZORDER)
                         surfaced.add(int(hwnd))
                 return True
 
@@ -2436,14 +2439,17 @@ def _launch_managed_login_window_non_activating(
         "--hide-crash-restore-bubble",
         "--disable-sync",
         "--new-window",
-        "--window-size=1100,820",
     ]
     if sys.platform == "win32":
-        # Chromium maps wShowWindow=4 (SW_SHOWNOACTIVATE) to SHOW_STATE_DEFAULT (SW_SHOWNORMAL + SetForegroundWindow),
-        # whereas `--start-minimized` + SW_SHOWMINNOACTIVE (7) strictly suppresses initial foreground activation.
+        # CRITICAL: Do NOT pass `--window-size` or `--window-position` on Windows!
+        # In Chromium `WindowSizer::GetBrowserWindowBoundsAndShowState`, `--window-size` / `--window-position`
+        # overrides `--start-minimized` and `STARTUPINFO.wShowWindow` back to `SHOW_STATE_NORMAL` (`SW_SHOWNORMAL`),
+        # which steals foreground focus on idle/CI Windows desktops. Sizing is applied via `SWP_NOACTIVATE` instead.
         argv.append("--start-minimized")
-    if offscreen:
-        argv.append("--window-position=-32000,-32000")
+    else:
+        argv.append("--window-size=1100,820")
+        if offscreen:
+            argv.append("--window-position=-32000,-32000")
     if proxy_cfg.get("server"):
         argv.append(f"--proxy-server={proxy_cfg['server']}")
         if proxy_cfg.get("bypass_semicolon"):
@@ -2457,6 +2463,8 @@ def _launch_managed_login_window_non_activating(
         "env": clean_env,
     }
     if sys.platform == "win32":
+        with contextlib.suppress(Exception):
+            ctypes.windll.user32.LockSetForegroundWindow(1)  # LSFW_LOCK
         si = subprocess.STARTUPINFO()
         si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
         si.wShowWindow = 7  # SW_SHOWMINNOACTIVE (never steals Win32 foreground focus)
