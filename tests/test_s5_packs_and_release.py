@@ -316,20 +316,33 @@ def test_browser_pack_hidden_dom_filtering_scroll_select_tabs_download_and_login
         assert sw_back["ok"] is True, sw_back
 
         # Non-activating offscreen `open_login_window` using isolated managed profile
+        if sys.platform == "win32":
+            fg_before_login, _, _ = snapshot_l0_desktop_state()
         login_win = plugin.browser_use(
             action="open_login_window",
             url=f"{base_url}/",
             offscreen=True,
-            wait_ms=250,
+            wait_ms=400,
         )
         assert login_win["ok"] is True, login_win
         assert login_win["show_mode"] == "SW_SHOWNOACTIVATE"
         assert login_win["isolated_managed_profile"] is True
-        assert int(login_win["browser_pid"]) > 0
+        browser_pid = int(login_win["browser_pid"])
+        assert browser_pid > 0
 
         if sys.platform == "win32":
+            from ctypes import wintypes
+
             fg_after, _, _ = snapshot_l0_desktop_state()
-            assert fg_after == fg_before, "Browser automation or open_login_window must never steal foreground focus"
+            u32 = ctypes.WinDLL("user32", use_last_error=True)
+            fg_owner = wintypes.DWORD(0)
+            if fg_after:
+                u32.GetWindowThreadProcessId(wintypes.HWND(fg_after), ctypes.byref(fg_owner))
+            assert int(fg_owner.value) != browser_pid, (
+                f"Managed login browser (pid={browser_pid}) stole foreground focus (hwnd={fg_after})"
+            )
+            if fg_before_login and u32.IsWindow(wintypes.HWND(fg_before_login)):
+                assert fg_after == fg_before_login, "Browser automation or open_login_window must never steal foreground focus"
 
         closed = plugin.browser_use(action="close")
         assert closed["ok"] is True

@@ -181,3 +181,19 @@ def test_ci_preflight_catches_py311_fstring_backslash_winreg_and_pwsh_continuati
     wf_errs = pf.check_workflow_yaml_compat(bad_wf, ".github/workflows/ci.yml")
     assert any("[WORKFLOW-PWSH]" in e for e in wf_errs), wf_errs
 
+    # 4) Bad sample: unguarded `creationflags=0x08000000` crashes Linux/macOS `subprocess` with ValueError
+    bad_cflags = "import subprocess\nCREATE_NO_WINDOW = 0x08000000\nsubprocess.Popen(['echo', 'hi'], creationflags=CREATE_NO_WINDOW)\n"
+    cf_errs = pf.check_python_source_compat(bad_cflags, "sample_cflags.py")
+    assert any("[POSIX-CREATIONFLAGS]" in e for e in cf_errs), cf_errs
+
+    ok_cflags = (
+        "import subprocess, sys\n"
+        "CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0\n"
+        "subprocess.Popen(['echo', 'hi'], creationflags=CREATE_NO_WINDOW)\n"
+    )
+    assert pf.check_python_source_compat(ok_cflags, "ok_cflags.py") == []
+
+    # 5) Diff-based impacted pytest selector maps Studio CSS/JS changes to `test_studio_ui_hygiene.py`
+    suites = pf.select_impacted_test_files(["src/cosmos_mcp/studio/static/brand-packs.js"])
+    assert "tests/test_studio_ui_hygiene.py" in suites
+

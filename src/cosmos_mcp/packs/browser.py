@@ -2384,6 +2384,36 @@ def _stop_managed_login_window_unlocked(key: str) -> bool:
     return True
 
 
+def _surface_login_window_noactivate_win32(browser_pid: int, timeout_sec: float = 3.0) -> None:
+    """Restore a `--start-minimized` Chromium window via `SW_SHOWNOACTIVATE (4)` without stealing focus."""
+    if sys.platform != "win32" or browser_pid <= 0:
+        return
+    try:
+        from ctypes import wintypes
+
+        u32 = ctypes.WinDLL("user32", use_last_error=True)
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        deadline = time.monotonic() + max(0.5, timeout_sec)
+        surfaced: Set[int] = set()
+        while time.monotonic() < deadline and not surfaced:
+            def _cb(hwnd: int, _lp: int) -> bool:
+                pid_out = wintypes.DWORD(0)
+                u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_out))
+                if int(pid_out.value) == browser_pid:
+                    cls_buf = ctypes.create_unicode_buffer(64)
+                    u32.GetClassNameW(hwnd, cls_buf, 64)
+                    if cls_buf.value == "Chrome_WidgetWin_1" and u32.IsIconic(hwnd):
+                        u32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+                        surfaced.add(int(hwnd))
+                return True
+
+            u32.EnumWindows(WNDENUMPROC(_cb), 0)
+            if not surfaced:
+                time.sleep(0.08)
+    except Exception:
+        pass
+
+
 def _launch_managed_login_window_non_activating(
     profile_dir: Path,
     browser_exe: str,
@@ -2392,7 +2422,7 @@ def _launch_managed_login_window_non_activating(
     proxy_settings: Optional[Dict[str, str]] = None,
     offscreen: bool = False,
 ) -> Dict[str, Any]:
-    """Launch isolated managed profile in a visible (`SW_SHOWNOACTIVATE`) window without touching personal browsers."""
+    """Launch isolated managed profile in a non-activating window without stealing Win32 foreground focus."""
     prof_res = profile_dir.resolve()
     _mark_managed_profile_dir(prof_res)
     proxy_cfg = dict(proxy_settings or resolve_browser_proxy_settings())
@@ -2403,10 +2433,15 @@ def _launch_managed_login_window_non_activating(
         f"--user-data-dir={prof_res}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--hide-crash-restore-bubble",
         "--disable-sync",
         "--new-window",
         "--window-size=1100,820",
     ]
+    if sys.platform == "win32":
+        # Chromium maps wShowWindow=4 (SW_SHOWNOACTIVATE) to SHOW_STATE_DEFAULT (SW_SHOWNORMAL + SetForegroundWindow),
+        # whereas `--start-minimized` + SW_SHOWMINNOACTIVE (7) strictly suppresses initial foreground activation.
+        argv.append("--start-minimized")
     if offscreen:
         argv.append("--window-position=-32000,-32000")
     if proxy_cfg.get("server"):
@@ -2424,7 +2459,7 @@ def _launch_managed_login_window_non_activating(
     if sys.platform == "win32":
         si = subprocess.STARTUPINFO()
         si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
-        si.wShowWindow = 4  # SW_SHOWNOACTIVATE (zero foreground focus steal)
+        si.wShowWindow = 7  # SW_SHOWMINNOACTIVE (never steals Win32 foreground focus)
         popen_kwargs["startupinfo"] = si
         popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200) | CREATE_NO_WINDOW
         if getattr(subprocess.Popen, "_cosmos_no_window_patched", False):
@@ -2433,6 +2468,13 @@ def _launch_managed_login_window_non_activating(
         popen_kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(argv, **popen_kwargs)
+    if sys.platform == "win32" and not offscreen:
+        threading.Thread(
+            target=_surface_login_window_noactivate_win32,
+            args=(int(proc.pid),),
+            name=f"cosmos-login-noact-{proc.pid}",
+            daemon=True,
+        ).start()
     ctok = get_process_create_token(proc.pid)
     job_h = OwnedJobHandle(assign_win32_job_kill_on_close(proc.pid))
     return {

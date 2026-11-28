@@ -61,8 +61,9 @@ cosmos-mcp uninstall --purge -y --json
 # 4a. 日常小改动与并行子任务（默认仅跑本改动直接对应的定向单测，不跑全仓 tests/ 与 build_release.py）
 python -B -m pytest -p no:cacheprovider tests/<受影响测试文件>.py -k "<目标用例关键词>"
 
-# 4b. 全仓测试套件与发行包一致性检查（仅在合流主干或公开发版前由主控统一执行一次，禁止每个小任务/子任务重复跑）
-python -B -m pytest -p no:cacheprovider tests/
-python -B scripts/build_release.py --check
+# 4b. 全仓测试套件、发行包门禁与受保护主干推送（main 已启用 GitHub CI Gate 保护：禁止未验证直推 main，统一推 ci/main 自动晋升并盯完远端 CI）
+python -B scripts/ci_preflight.py
+git push origin HEAD:ci/main
+python -B scripts/ci_preflight.py --watch-ci
 python -B scripts/build_release.py --embed-python-dir "<官方python-embed目录>" --output dist/Cosmos-MCP-v1.2.1-win64-full.zip --check
 ```
