@@ -2534,7 +2534,6 @@
     "清空自定义域名": "Clear Custom Domain",
     "擦除本地 txt 明文口令文件": "Wipe Local Plaintext Password File",
     "已擦除本地 txt 明文口令": "Plaintext Password File Wiped",
-    "开启直通令牌地址（/c/<token>/mcp）": "Enable One-Click Token Route (/c/<token>/mcp)",
     "已默认关闭（返回 404）": "Disabled by default (404)",
     "已开启（注意防外泄）": "Enabled (keep link private)",
     "开启后持有直通链接即可免 OAuth 确认调用工具（链接一旦外泄将带来免密控机风险）；建议保持默认关闭，统一走标准 OAuth 授权。": "Allows token-bearing /c/ URLs to bypass interactive OAuth consent (leaking the URL grants direct access). Keep disabled by default and use standard OAuth.",

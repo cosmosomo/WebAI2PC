@@ -23,7 +23,7 @@
 | **个人订阅账号（Plus / Pro）** | 点「复制只读配置提示词（发给 Work）」绑定 `https://<域名>/mcp/readonly` | 固定开放 `12` 项只读工具（全部声明 `readOnlyHint=True`），隐藏 `pc_edit_file`、`pc_write_file`、`pc_run_command`、`pc_run_python` 四项写入与执行工具 | 适用于平台策略对自建远程 MCP 仅放行 `read/fetch` 的个人号（若账号已获写工具放行也可试 `/mcp`），权限范围锁定为 `server:read` |
 | **免费个人账号（Free）** | 暂不支持 | 无 | 网页端暂未开放自定义远程 MCP 接入 |
 
-在 `/mcp/readonly` 只读端点下，服务端自动提供 `7` 项纯只读查询工具（`pc_get_status`、`pc_find_files`、`pc_search_code`、`pc_read_file`、`pc_batch_probe`、`pc_web_research`、`pc_skill_hub`），并将 `5` 项复合工具收窄为只读子动作投影：
+在 `/mcp/readonly` 只读端点下，服务端共开放 `12` 项只读工具（`7` 项纯只读查询工具 + `5` 项收窄为只读子动作的复合工具）：其中 `7` 项纯只读查询工具为（`pc_get_status`、`pc_find_files`、`pc_search_code`、`pc_read_file`、`pc_batch_probe`、`pc_web_research`、`pc_skill_hub`），并将 `5` 项复合工具收窄为只读子动作投影：
 1. `pc_code_intel`：保留 `outline`、`overview`、`repo_map`、`symbol`、`refs`、`diagnostics`（隐藏 `rename_symbol`）。
 2. `pc_manage_files`：仅保留 `list` 查看回收箱与快照列表（隐藏移动、重命名、回收箱清理与撤回修改）。
 3. `pc_bg_command`：仅保留 `status` 与 `list` 查看任务进度（隐藏启动与终止任务）。

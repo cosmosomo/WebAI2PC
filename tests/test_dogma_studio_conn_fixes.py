@@ -44,7 +44,6 @@ def test_fix1_policy_fields_four_config_consolidation_and_annotation_modes(tmp_p
         workspace_roots=[str(ws_dir)],
     )
     assert init_res["redact_project_secrets"] is False
-    assert init_res["enable_oneclick_token_route"] is False
 
     # Seed legacy secondary files with stale `public_url` & `workers_custom_domain`
     legacy_svc_cfg = st_root / "config" / "service_config.json"
@@ -65,17 +64,14 @@ def test_fix1_policy_fields_four_config_consolidation_and_annotation_modes(tmp_p
         cfg_path=st_root / "config" / "service.json",
     )
     assert policy.redact_project_secrets is False
-    assert policy.enable_oneclick_token_route is False
 
     # Toggle new boolean policy fields and clear custom domain / public_url
     policy.persist_changes(
         redact_project_secrets=True,
-        enable_oneclick_token_route=True,
         workers_dev_custom_domain="",
         extra_patch={"public_base": ""},
     )
     assert policy.redact_project_secrets is True
-    assert policy.enable_oneclick_token_route is True
     if policy.guard is not None:
         assert getattr(policy.guard, "redact_project_secrets", None) is True
 
@@ -86,7 +82,6 @@ def test_fix1_policy_fields_four_config_consolidation_and_annotation_modes(tmp_p
         assert sec_doc["public_url"] == ""
         assert sec_doc["workers_custom_domain"] == ""
         assert sec_doc["redact_project_secrets"] is True
-        assert sec_doc["enable_oneclick_token_route"] is True
 
     # Even if someone manually pollutes `service_config.json`, `_read_merged_service_config` prioritizes `config/service.json`
     atomic_write_json(
@@ -541,9 +536,9 @@ def test_fix6_fix7_fix8_ui_csrf_sync_password_redaction_update_and_uninstall(
             )
             assert dom_check["metaCsrf"] == csrf
             assert dom_check["hasDupStrip"] is False
-            assert dom_check["hasInstantPolicy"] is True
+            assert dom_check["hasInstantPolicy"] is False
             assert dom_check["hasAuthWipeBtn"] is True
-            assert dom_check["hasOneclickChk"] is True
+            assert dom_check["hasOneclickChk"] is False
             assert dom_check["hasCheckUpdateBtn"] is True
             assert dom_check["hasWebCompatChk"] is True
             assert dom_check["hasRedactChk"] is True

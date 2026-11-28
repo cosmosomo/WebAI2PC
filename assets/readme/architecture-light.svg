@@ -22,7 +22,7 @@
   <rect x="44" y="106" width="212" height="84" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
   <text x="58" y="132" class="t-b">网页版 Google Gemini</text>
   <text x="58" y="152" class="t-s">任务模式 · 含并行子任务</text>
-  <text x="58" y="174" class="t-m">@WebAI2PC 唤醒 · /mcp</text>
+  <text x="58" y="174" class="t-m">@你命名的连接器 唤醒 · /mcp</text>
 
   <rect x="44" y="204" width="212" height="80" rx="12" fill="#F1F5F9" stroke="#CBD5E1"/>
   <text x="58" y="230" class="t-b">手机端 Gemini App</text>

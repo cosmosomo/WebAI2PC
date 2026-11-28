@@ -39,8 +39,8 @@
 1. **下载并完整解压**：前往 [Releases 发布页](https://github.com/cosmosomo/WebAI2PC/releases) 下载发行包（Windows 免装 Python 选 `win64-full.zip`，其余环境选标准 `zip`），完整解压到普通文件夹。
 2. **双击启动并复制地址**：Windows 双击 `一键启动_Cosmos_MCP.bat`（macOS / Linux 运行 `./start_cosmos_mcp.sh`），自动打开本地控制台 `http://127.0.0.1:8096/` 并生成免登录固定地址 `https://<域名>/mcp`（首次双击若弹出 Windows SmartScreen 蓝屏保护提示，点击「更多信息 -> 仍要运行」即可）。
 3. **粘贴到网页端配置栏并点允许**（**注意：不要把 `/mcp` 地址直接粘贴到浏览器地址栏里打开；控制台复制出的连接地址与接入指令仅限填入本人登录的 AI 账号，请勿截图或粘贴发到群聊、公开帖子与 Issue**）：
-   - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`）唤醒；同账号手机端 Gemini App 自动同步可用。
-   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 按标准 OAuth 2.1 自动接入并验证 `WebAI2PC`（若工作区管理员关闭了外部 MCP 插件权限，则需由管理员放开或使用个人账号）。装好后同账号互通：日常在普通 `Chat` 模式输入 `@你在连接器里填写的名称`（默认 `@WebAI2PC`）零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式调用，首次调用 `pc_get_status` 验证。
+   - **网页版 Gemini**：直接打开 [https://gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)（或左下角菜单 `Personal Intelligence -> Connected Apps`），点右上角 `+ Custom`，把 `https://<域名>/mcp` 粘贴到 **`MCP Server URL`** 配置栏点 `Next` 授权，再把 `App actions` 设为 `Always allow`，新对话首句输入 `@你在连接器里填写的名称`（例如 `@你命名的连接器` 或 `@你命名的连接器`）唤醒；同账号手机端 Gemini App 自动同步可用。
+   - **网页版 ChatGPT（`Work` 模式一键配置，日常干活用 `Chat` 省额度）**：在控制台网关就绪后点 **「复制一键配置提示词（发给 Work）」**（个人只读账号点 **「复制只读配置提示词（发给 Work）」**），直接粘贴发给网页版 ChatGPT 的 `Work` 模式即可由 `@Plugin Creator` 按标准 OAuth 2.1 自动接入并验证 `WebAI2PC`（若工作区管理员关闭了外部 MCP 插件权限，则需由管理员放开或使用个人账号）。装好后同账号互通：日常在普通 `Chat` 模式输入 `@你在连接器里填写的名称`（默认 `@你命名的连接器`）零扣 `Work / Codex` 额度，长程多步交付与定时任务用 `Work` 模式调用，首次调用 `pc_get_status` 验证。
 
 ### 懒得自己装？复制一句话发给你的 AI / Agent 帮你配好
 
@@ -70,7 +70,7 @@
 
 <p align="center"><img src="assets/readme/cases-trio-banner-dark.png" alt="WebAI2PC 一句话生成本地离线 3D 案例墙" width="100%" /></p>
 
-连好后无需外部图片、第三方库或 CDN，在网页版 Gemini 或网页版 ChatGPT 普通 `Chat` 模式开头输入 `@你在连接器里填写的名称`（例如 `@WebAI2PC` 或 `@Cosmos`；`$0` 额外 API 费，零消耗 `Work / Codex` 额度），即可在本地工作目录直接生成文件并 60fps 运行（本地控制台首页与 `/tutorials` 第 4 章均支持一键复制）：
+连好后无需外部图片、第三方库或 CDN，在网页版 Gemini 或网页版 ChatGPT 普通 `Chat` 模式开头输入 `@你在连接器里填写的名称`（例如 `@你命名的连接器` 或 `@你命名的连接器`；`$0` 额外 API 费，零消耗 `Work / Codex` 额度），即可在本地工作目录直接生成文件并 60fps 运行（本地控制台首页与 `/tutorials` 第 4 章均支持一键复制）：
 
 | 案例 | 本地生成产物 | 实机运行内容 |
 | :- | :- | :- |
@@ -79,27 +79,27 @@
 | **03 霓虹峡谷 3D 低空飞行** | 5 文件工程 `neon_canyon/` | 自动生成 `index.html`、`styles.css`、`terrain.js`、`audio.js`、`game.js`，含合成波线框峡谷、穿环加速连击、Web Audio 实时合成音效与键鼠切换，离线 60fps |
 
 <details>
-<summary><strong>点击展开 3 个案例的一键复制提示词（Gemini 用 <code>@Cosmos </code> · ChatGPT 普通 Chat 模式用 <code>@WebAI2PC </code>）</strong></summary>
+<summary><strong>点击展开 3 个案例的一键复制提示词（复制后在对话框输入 <code>@</code> 选中你命名的连接器，再粘贴发送）</strong></summary>
 
 **01 黑洞引力透镜仿真 (`blackhole_studio.html`)**
 
 ```text
-@Cosmos 在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。
+在当前工作区写一个纯离线单文件 blackhole_studio.html，用原生 WebGL2（GLSL 300）实时光线步进渲染带发光吸积盘和引力透镜效果的黑洞；加上左键旋转、滚轮缩放，右侧做一个简洁的中文半透明控制面板，支持切换「俯瞰盘面 / 掠过视界 / 穿越光环」三组电影机位，以及黑洞质量、自旋、吸积盘亮度、时间流速四个实时滑块，写完后本地启动检查确认零报错。
 ```
 
 **02 元素全息金属典藏卡 (`gemini_holo_cards.html`)**
 
 ```text
-@Cosmos 在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。
+在当前工作区写一个纯离线单文件 gemini_holo_cards.html，用原生 WebGL2 和程序化 Canvas 做出 3 张带薄膜干涉金属反光的 3D 全息典藏卡，主题为 Gemini 4 的 06 C（Carbon）、01 H（Hydrogen）、10 Ne（Neon）；支持鼠标悬停弹簧 3D 倾角与视差、点击 180° 翻转看背面、顶部切换「一字排开 / 聚焦单卡」以及三档色温环境光，不依赖任何外部图片和 CDN，写完后帮我本地打开验收。
 ```
 
 **03 霓虹峡谷 3D 低空飞行 (`neon_canyon/`)**
 
 ```text
-@Cosmos 在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。
+在当前工作区新建 neon_canyon 目录，按多文件工程结构（index.html、styles.css、terrain.js、audio.js、game.js）写一个纯离线原生 WebGL2 3D 低空飞行游戏「霓虹峡谷低空飞行」：合成波落日与霓虹线框峡谷、穿越空中能量光环触发加速与连击、躲避赤红能量柱与峡谷绝壁，用 Web Audio 实时合成引擎和穿环音效，支持 WASD/方向键与鼠标自动切换、顶部显示得分/最高分/连击/空速/FPS 与暂停重开按钮，写完后本地运行验收无控制台报错。
 ```
 
-> 在网页版 ChatGPT 普通 `Chat` 模式运行时，把开头的 `@Cosmos ` 换成 `@WebAI2PC ` 即可（控制台首页「一句话实机效果」折叠栏支持按当前 Gemini / ChatGPT 页签自动切换前缀复制）。
+> 复制后在网页版 Gemini 或 ChatGPT 对话框输入 `@` 选中你命名的连接器，再粘贴发送即可。
 
 </details>
 
@@ -109,7 +109,7 @@
 | :- | :- | :- |
 | **网页版 Google Gemini & 手机 App** | 年满 18 岁的 Google AI Pro / Ultra 或已开连接器权限的 Workspace 账号 | `https://<域名>/mcp`（全功能） |
 | **网页版 ChatGPT（工作区账号）** | Team / Business / Enterprise / Edu（在控制台点「复制一键配置提示词（发给 Work）」一键安装；装好后日常用 `Chat` 零扣 `Work / Codex` 额度，长程/定时任务用 `Work`） | `https://<域名>/mcp`（全功能） |
-| **网页版 ChatGPT（个人订阅账号）** | 个人 Plus / Pro（平台对自建 MCP 仅开放 `read/fetch` 时绑此地址；装好后 `Chat` 与 `Work` 均可调 `@WebAI2PC`） | `https://<域名>/mcp/readonly`（只读） |
+| **网页版 ChatGPT（个人订阅账号）** | 个人 Plus / Pro（平台对自建 MCP 仅开放 `read/fetch` 时绑此地址；装好后 `Chat` 与 `Work` 均可调 `@你命名的连接器`） | `https://<域名>/mcp/readonly`（只读） |
 
 ## 本地可视化控制台
 

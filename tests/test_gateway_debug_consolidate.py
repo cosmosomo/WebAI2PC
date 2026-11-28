@@ -489,8 +489,6 @@ def test_c_token_mcp_path_disabled_by_default_stealth_404(tmp_path: Path) -> Non
         issuer=public_base,
         state_root=st_dir,
     )
-    minted = provider.get_or_mint_oneclick_capability_token(readonly=False, rotate=False)
-    tok = minted["token"]
     policy = LiveRuntimePolicy(
         state_root=st_dir, workspace_roots=[ws_dir], cfg_path=st_dir / "config" / "service.json"
     )
@@ -504,30 +502,10 @@ def test_c_token_mcp_path_disabled_by_default_stealth_404(tmp_path: Path) -> Non
         port=18947,
     )
     with TestClient(proto_app, base_url=public_base) as client:
-        resp_full = client.post(
-            f"/c/{tok}/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-            headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
-        )
-        assert resp_full.status_code == 404
-        assert resp_full.text.strip() == "404 Not Found"
-
-        # Explicitly opting in via `enable_oneclick_token_route=True` activates the capability route
-        policy.persist_changes(enable_oneclick_token_route=True)
-        resp_enabled = client.post(
-            f"/c/{tok}/mcp",
-            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-            headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
-        )
-        assert resp_enabled.status_code == 200
-        assert "tools" in resp_enabled.json().get("result", {})
-
-        policy.persist_changes(enable_oneclick_token_route=False)
-        assert (
-            client.post(
-                f"/c/{tok}/mcp",
-                json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+        for path in ("/c", "/c/oc_removed_capability_token_123456/mcp", "/c/oc_removed_capability_token_123456/mcp/readonly"):
+            resp = client.post(
+                path,
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 headers={"Host": "perm-test.srv.us", "Accept": "application/json, text/event-stream"},
-            ).status_code
-            == 404
-        )
+            )
+            assert resp.status_code == 404, path

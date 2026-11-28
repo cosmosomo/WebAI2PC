@@ -32,7 +32,7 @@ Follow these step-by-step co-setup rules:
 
 ## 2. Source Checkout & Launching the Local Console (`git clone` Primary · Offline ZIP Fallback)
 
-1. **Primary Method: Clone Latest Source from GitHub (Recommended SSOT)**:
+1. **Primary Method: Clone Latest Source from GitHub (Recommended)**:
    - **With `git` and Python `3.10–3.14` installed (Windows / macOS / Linux)**:
      ```bash
      git clone https://github.com/cosmosomo/WebAI2PC.git
@@ -44,7 +44,7 @@ Follow these step-by-step co-setup rules:
 3. **Launch the Local Console**:
    - **Windows**: Open the repo or extracted folder and double-click `一键启动_Cosmos_MCP.bat`.
    - **macOS / Linux**: Open a terminal in the folder and run `chmod +x start_cosmos_mcp.sh && ./start_cosmos_mcp.sh`.
-   - The server starts silently in the background with zero terminal popups and opens `http://127.0.0.1:8096/` (`WebAI2PC · 本地控制台`).
+   - The server starts silently in the background with zero terminal popups and opens `http://127.0.0.1:8096/` (`WebAI2PC Local Console`).
 
 ## 3. First-Time Registration-Free Connection to Web Gemini / ChatGPT (3 Steps)
 
@@ -52,16 +52,16 @@ No third-party account registration is needed for your first test connection:
 
 1. **Step 1: Copy the Connection URL or 1-Click Setup Prompt from the Local Console**
    - By default, Option 1 ("One-Click Login-Free Direct Connect") is active: it connects first to the login-free fixed URL `https://*.srv.us/mcp` (`10s` startup wait budget, unchanged across reboots) and provides an independent backup toggle inside the card for `https://*.trycloudflare.com/mcp` (can stay online alongside `srv.us`, or serve as backup if outbound port `22` is blocked).
-   - For **Web Gemini**: Keep `网页版 Gemini` (`Web Gemini`) selected at the top and click `复制连接地址` (`Copy Connection URL`).
-   - For **Web ChatGPT**: Switch the top selector to `网页版 ChatGPT` (`Web ChatGPT`; buttons unlock once the public gateway is ready). Click **`复制一键配置提示词（发给 Work）` (Copy 1-Click Setup Prompt for Work)** for Team / Business / Enterprise / Edu workspaces (`/mcp`), or **`复制只读配置提示词（发给 Work）` (Copy Read-Only Setup Prompt for Work)** for Personal Plus / Pro read-only accounts (`/mcp/readonly`), or click `仅复制地址` (`Copy URL Only`).
+   - For **Web Gemini**: Keep `Web Gemini` selected at the top and click `Copy Connection URL`.
+   - For **Web ChatGPT**: Switch the top selector to `Web ChatGPT` (buttons unlock once the public gateway is ready). Click **`Copy 1-Click Setup Prompt (for Work)`** for Team / Business / Enterprise / Edu workspaces (`/mcp`), or **`Copy Read-Only Setup Prompt (for Work)`** for Personal Plus / Pro read-only accounts (`/mcp/readonly`), or click `Copy URL Only`.
 2. **Step 2: Add the Connector in the Web Client & Approve OAuth 2.1**
    - **Web Gemini (requires 18+ Google AI Pro / Ultra or enabled Workspace account)**:
      1. Open [Gemini Connectors](https://gemini.google.com/customize/connectors) directly (or bottom-left menu -> `Personal Intelligence` -> `Connected Apps`, then click top-right `+ Custom`), paste `https://<domain>/mcp` into **`MCP Server URL`** (leave `Additional settings` collapsed, and **never open `/mcp` directly in the browser address bar**), and click `Next`.
-     2. In the browser on the same PC, click **`本机一键允许连接` (`One-Click Local Approve`)** to finish binding.
-     3. Return to `https://gemini.google.com/customize/connectors`, open your newly added connector, and set **`App actions` to `Always allow`** (also click `复制 AI 守则` in the local console and save it into Gemini `Skills`).
+     2. In the browser on the same PC, click **`One-Click Local Approve`** to finish binding.
+     3. Return to `https://gemini.google.com/customize/connectors`, open your newly added connector, and set **`App actions` to `Always allow`** (also click `Copy AI Rules` in the local console and save it into Gemini `Skills`).
    - **Web ChatGPT (`Work` Mode `@Plugin Creator` Standard OAuth 2.1)**:
      1. **Send the 1-Click Prompt in `Work` Mode**: Switch to **`Work` mode** at the top of Web ChatGPT, paste the copied setup prompt, and send it so `@Plugin Creator` connects directly to `/mcp` or `/mcp/readonly` via standard OAuth 2.1 metadata and installs `WebAI2PC` (no manual Client ID / Secret or external relay service is needed; if your workspace admin restricts external custom MCP servers, ask the admin to enable custom MCP access).
-     2. **Approve `/consent`**: When the OAuth consent page opens in your same-machine browser, it hits the `127.0.0.1` loopback and lets you click **`本机一键允许连接` (`One-Click Local Approve`)** directly. If you click `Take over` inside Web `Work` mode's cloud browser to open `/consent`, expand `配对与已连会话` (`Pairing & Active Sessions`) on the local console home page and enter the live `6`-digit dynamic pairing code, then click `Return control`.
+     2. **Approve `/consent`**: When the OAuth consent page opens in your same-machine browser, it hits the `127.0.0.1` loopback and lets you click **`One-Click Local Approve`** directly. If you click `Take over` inside Web `Work` mode's cloud browser to open `/consent`, expand `Pairing & Connected Sessions` on the local console home page and enter the live `6`-digit dynamic pairing code, then click `Return control`.
 3. **Step 3: First-Message Wake-Up & Verify with `pc_get_status`**
    - **Web Gemini**: Start a new chat (Task Mode recommended), type `@<your-connector-name>` (e.g., `@WebAI2PC` or `@Cosmos`), select the popped-up connector chip, and send: `@WebAI2PC call pc_get_status and check what files are in my current workspace`. The same-account Gemini mobile app syncs the connector automatically.
    - **Web ChatGPT (Use `Chat` Daily to Save Quota, `Work` for Long Tasks)**: Once installed, the connector is shared across your account. For daily local coding, Office edits, and running windowless commands/tests, switch back to **`Chat` mode** and invoke `@<your-connector-name>` (default `@WebAI2PC` — fast, uses normal chat limits, zero `Work / Codex` agent quota usage). Switch to **`Work` mode** when combining the cloud browser, cross-app deliverables (email/Slack/Drive), or `Scheduled Tasks`. A successful `pc_get_status` (`get_status`) call returning local status and directories confirms setup is complete. Save the operating rules into native `Skills` (Workspace/Desktop) or `Project Instructions` / Custom Instructions (Web `Chat` and `Work`).
@@ -116,7 +116,7 @@ The connected AI will use these built-in helpers:
 3. **One-click approve does not appear, or the consent page asks for a code/passphrase**:
    - This happens when using `Take over` in Web ChatGPT `Work` mode's cloud browser, binding from a phone/remote device, or when a browser privacy extension blocks the `127.0.0.1` loopback redirect. Expand `Pairing & Active Sessions` on the local console home page and enter the live 6-digit dynamic pairing code (or the 20-character fallback passphrase).
 4. **Personal ChatGPT Plus / Pro write tools are restricted on `/mcp`**:
-   - When OpenAI platform policy limits personal subscriptions to `read/fetch` tools on custom connectors, switch the console top selector to `Web ChatGPT` and click `复制只读配置提示词（发给 Work）` (`Copy Read-Only Setup Prompt for Work`) or copy `https://<domain>/mcp/readonly` to connect in read-only mode.
+   - When OpenAI platform policy limits personal subscriptions to `read/fetch` tools on custom connectors, switch the console top selector to `Web ChatGPT` and click `Copy Read-Only Setup Prompt (for Work)` (`Copy Read-Only Setup Prompt for Work`) or copy `https://<domain>/mcp/readonly` to connect in read-only mode.
 5. **Gemini pops up a confirmation card for every tool call**:
    - Open https://gemini.google.com/customize/connectors (or `Personal Intelligence -> Connected Apps` in Gemini's bottom-left menu), open your connector, and set `App actions` to `Always allow`. Avoid approving individual tool cards in chat (which overrides connector-level auto-approval), and use built-in `pc_web_research` for web lookups inside active connector sessions.
 6. **Keeping the same fixed URL after migrating to a new PC or reinstalling OS**:

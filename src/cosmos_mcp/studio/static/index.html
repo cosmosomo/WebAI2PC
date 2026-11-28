@@ -990,14 +990,6 @@
 
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
-                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                          <label for="instant-policy-select" style="font-size:12.5px;font-weight:600;">第 1 类通道优选策略</label>
-                          <select id="instant-policy-select" aria-label="第 1 类通道优选策略" style="max-width:100%;">
-                            <option value="auto" selected>自动优选固定地址（受阻自动切换临时通道）</option>
-                            <option value="srv_us_only">锁定 srv.us 固定地址（不降级临时通道）</option>
-                            <option value="quick_only">仅使用 trycloudflare 临时通道</option>
-                          </select>
-                        </div>
                         <div class="instant-subchannels-list" id="instant-subchannels-list" style="display:flex;flex-direction:column;gap:10px;">
                           <!-- Subchannel 1: srv.us primary fixed -->
                           <div class="instant-sub-row" id="instant-sub-srvus" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2, rgba(127,127,127,0.05));">
@@ -1461,14 +1453,6 @@
                       <button type="button" class="btn btn-tonal btn-sm" id="auth-rotate-endpoint-secret-btn">开启 / 更换路径</button>
                       <button type="button" class="btn btn-ghost btn-sm" id="auth-disable-endpoint-secret-btn" style="display:none;">关闭并恢复 /mcp</button>
                     </div>
-                  </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border);">
-                    <div style="flex:1 1 240px;min-width:0;">
-                      <strong>免 OAuth 长效直通路径（<code>/c/&lt;token&gt;/mcp</code>）</strong>
-                      <span class="tag tag-muted" id="auth-oneclick-route-pill" style="margin-left:6px;">已默认关闭（返回 404）</span>
-                      <div style="font-size:12px;color:var(--muted);margin-top:3px;">开启后持有直通链接即可免 OAuth 确认调用工具（链接一旦外泄将带来免密控机风险）；建议保持默认关闭，统一走标准 OAuth 授权。</div>
-                    </div>
-                    <input type="checkbox" class="apple-switch" id="chk-enable-oneclick-route" aria-label="开关免 OAuth 长效直通路径">
                   </div>
                 </div>
               </div>

@@ -166,6 +166,10 @@ _INTERNAL_CODENAME_RE = re.compile(
     + r"[-_]?taint)\b",
     re.IGNORECASE,
 )
+_PRIVATE_DEV_DRIVE_RE = re.compile(
+    r"[C-Z]:(?:\\+|/+)" + "program" + r"[0-9_]*(?:\\+|/+|['\"]|$)",
+    re.IGNORECASE,
+)
 _PRIVATE_PAD_PACK_RE = re.compile(
     r"['\"]" + "pad" + r"['\"]\s*:\s*['\"(\[{]|\b" + "pad" + r"_(?:adb|fleet|gui_action|reverse_engineer)\b"
 )
@@ -1262,6 +1266,8 @@ def run_release_checks(
             errors.append(f"Local OS username leaked in repo file `{rel_arc}`")
         if scan_text_forbidden_identifier_hashes(txt):
             errors.append(f"Forbidden sensitive identifier hash matched in repo file `{rel_arc}`")
+        if _PRIVATE_DEV_DRIVE_RE.search(txt) and not rel_arc.startswith("tests/"):
+            errors.append(f"Private local dev drive path leaked in repo file `{rel_arc}`")
         if _PRIVATE_PAD_PACK_RE.search(txt):
             errors.append(f"Private `pad` pack residue found in repo file `{rel_arc}`")
 

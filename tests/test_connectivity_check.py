@@ -70,7 +70,7 @@ def _generate_test_tls_bundle(tmp_dir: Path) -> Tuple[Path, ssl.SSLContext, ssl.
                 [
                     x509.DNSName("localhost"),
                     x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                    x509.DNSName("2lyuajja44kcct3n.srv.us"),
+                    x509.DNSName("demo-node-01.srv.us"),
                     x509.DNSName("cosmos-mcp-demo.sub.workers.dev"),
                     x509.DNSName("mcp.mybox.example.com"),
                 ]
@@ -333,10 +333,10 @@ def test_all_green_e2e_workers_proxy_vs_direct_and_stealth_redaction(
             f"/.well-known/oauth-authorization-server/u/{stealth_sec}",
         ):
             meta = {
-                "issuer": "https://2lyuajja44kcct3n.srv.us",
-                "authorization_endpoint": "https://2lyuajja44kcct3n.srv.us/authorize",
-                "token_endpoint": "https://2lyuajja44kcct3n.srv.us/token",
-                "registration_endpoint": "https://2lyuajja44kcct3n.srv.us/register",
+                "issuer": "https://demo-node-01.srv.us",
+                "authorization_endpoint": "https://demo-node-01.srv.us/authorize",
+                "token_endpoint": "https://demo-node-01.srv.us/token",
+                "registration_endpoint": "https://demo-node-01.srv.us/register",
             }
             return 200, {"Content-Type": "application/json"}, json.dumps(meta).encode("utf-8")
         if method == "POST" and path in ("/mcp", f"/u/{stealth_sec}/mcp"):
@@ -366,7 +366,7 @@ def test_all_green_e2e_workers_proxy_vs_direct_and_stealth_redaction(
             studio_srv.port,
             gateway_id="instant",
             submode="public_gateway",
-            public_url="https://2lyuajja44kcct3n.srv.us",
+            public_url="https://demo-node-01.srv.us",
             endpoint_secret=stealth_sec,
         )
         res = run_connectivity_check(
@@ -385,7 +385,7 @@ def test_all_green_e2e_workers_proxy_vs_direct_and_stealth_redaction(
 
         inst_gw = next(g for g in res["gateways"] if g["gateway_id"] == "instant")
         assert inst_gw["status"] == "ok"
-        assert inst_gw["masked_url"] == "https://2lyu***.srv.us/u/***/mcp"
+        assert inst_gw["masked_url"] == "https://demo***.srv.us/u/***/mcp"
         assert res["mcp_protocol"]["status"] == "ok"
         proto_item = next(p for p in res["mcp_protocol"]["items"] if p["gateway_id"] == "instant")
         assert proto_item["oauth_metadata_ok"] is True
@@ -394,7 +394,7 @@ def test_all_green_e2e_workers_proxy_vs_direct_and_stealth_redaction(
         serialized = json.dumps(res, ensure_ascii=False)
         share_txt = res["redacted_share_text"]
         assert "https://***.srv.us/u/***/mcp" in share_txt
-        for forbidden in ("2lyuajja44kcct3n", stealth_sec, "TopSecretPxPw99", str(state_dir)):
+        for forbidden in ("demo-node-01", stealth_sec, "TopSecretPxPw99", str(state_dir)):
             assert forbidden not in serialized
             assert forbidden not in share_txt
 
@@ -678,9 +678,9 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
             return 200, {"Content-Type": "application/json", **cors}, b'{"status":"ok"}'
         if "/.well-known/oauth-authorization-server" in path:
             meta = {
-                "authorization_endpoint": "https://2lyuajja44kcct3n.srv.us/authorize",
-                "token_endpoint": "https://2lyuajja44kcct3n.srv.us/token",
-                "registration_endpoint": "https://2lyuajja44kcct3n.srv.us/register",
+                "authorization_endpoint": "https://demo-node-01.srv.us/authorize",
+                "token_endpoint": "https://demo-node-01.srv.us/token",
+                "registration_endpoint": "https://demo-node-01.srv.us/register",
             }
             return 200, {"Content-Type": "application/json"}, json.dumps(meta).encode("utf-8")
         return 401, {"WWW-Authenticate": "Bearer"}, b""
@@ -700,7 +700,7 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
             srv.port,
             gateway_id="instant",
             submode="public_gateway",
-            public_url="https://2lyuajja44kcct3n.srv.us",
+            public_url="https://demo-node-01.srv.us",
         )
 
         with StudioPageDriver(tmp_path / "cdp_conn_ui") as driver:
@@ -762,7 +762,7 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
             assert zh_snap["drawerOpen"] is True
             assert "1. 本机回环服务与代理排除" in zh_snap["panelText"]
             assert "5. 当前浏览器授权页直达" in zh_snap["panelText"]
-            assert "2lyuajja44kcct3n" not in zh_snap["panelText"]
+            assert "demo-node-01" not in zh_snap["panelText"]
 
             # Click `#copy-conn-diag-btn` -> verify redacted share text copied & toast shown
             driver.evaluate("() => document.getElementById('copy-conn-diag-btn').click()")
@@ -773,7 +773,7 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
             )
             copied_txt = driver.evaluate("() => window.__copiedHistory[window.__copiedHistory.length - 1]")
             assert "https://***.srv.us/mcp" in copied_txt
-            assert "2lyuajja44kcct3n" not in copied_txt
+            assert "demo-node-01" not in copied_txt
 
             # Toggle language ZH -> EN -> verify button & panel translate cleanly
             driver.evaluate("() => document.getElementById('lang-toggle-btn').click()")
@@ -870,11 +870,11 @@ def test_studio_headless_ui_conn_check_panel_bilingual_and_contrast(
 
 def test_mask_public_url_helper_variants() -> None:
     assert (
-        mask_public_url_for_display("https://2lyuajja44kcct3n.srv.us/mcp", full_subdomain_mask=False)
-        == "https://2lyu***.srv.us/mcp"
+        mask_public_url_for_display("https://demo-node-01.srv.us/mcp", full_subdomain_mask=False)
+        == "https://demo***.srv.us/mcp"
     )
     assert (
-        mask_public_url_for_display("https://2lyuajja44kcct3n.srv.us/u/secret123456/mcp", full_subdomain_mask=True)
+        mask_public_url_for_display("https://demo-node-01.srv.us/u/secret123456/mcp", full_subdomain_mask=True)
         == "https://***.srv.us/u/***/mcp"
     )
     assert (

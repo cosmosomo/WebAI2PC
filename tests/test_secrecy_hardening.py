@@ -909,47 +909,18 @@ def test_chatgpt_oneclick_capability_path_e2e_accept_origin_stealth_and_revocati
         assert d_ro["oneclick_url"] == f"{public_base}/mcp/readonly"
         assert "/c/" not in d_ro["oneclick_url"] and "oc_" not in d_ro["oneclick_url"]
 
-        # 3) Pre-authorized `/c/<tok>/...` capability paths are disabled by default and MUST return Stealth 404
-        minted_full = app.state.provider.get_or_mint_oneclick_capability_token(readonly=False, rotate=False)
-        minted_ro = app.state.provider.get_or_mint_oneclick_capability_token(readonly=True, rotate=False)
-        full_tok = minted_full["token"]
-        ro_tok = minted_ro["token"]
+        # 3) Legacy `/c/<tok>/...` capability paths are permanently removed and MUST return 404
+        fake_tok = "oc_forged_invalid_token_123456789012345"
         for blocked_c_path in (
             "/c",
-            f"/c/{full_tok}/mcp",
-            f"/c/{ro_tok}/mcp/readonly",
-            f"/c/{ro_tok}/mcp",
-            "/c/oc_forged_invalid_token_123456789012345/mcp",
+            f"/c/{fake_tok}/mcp",
+            f"/c/{fake_tok}/mcp/readonly",
         ):
             r_c404 = rem_client.post(blocked_c_path, json=list_req, headers=mcp_hdrs)
             assert r_c404.status_code == 404, blocked_c_path
-            assert "text/plain" in r_c404.headers.get("content-type", "")
-        assert rem_client.get(f"/c/{full_tok}/studio").status_code == 404
-        assert rem_client.get(f"/c/{full_tok}/api/studio/state").status_code == 404
-        assert rem_client.get(f"/c/{full_tok}/oauth/authorize").status_code == 404
-
-        # 3b) Explicitly enabling `enable_oneclick_token_route` unlocks `/c/<tok>/mcp` & `/c/<ro_tok>/mcp/readonly`,
-        #     while turning it back off immediately restores Stealth 404
-        r_en_oc = lb_client.post(
-            "/api/studio/connection",
-            json={"action": "set_oneclick_token_route", "enabled": True, "csrf": csrf},
-            headers={"Origin": f"http://127.0.0.1:{port}"},
-        )
-        assert r_en_oc.status_code == 200
-        assert rem_client.post(f"/c/{full_tok}/mcp", json=list_req, headers=mcp_hdrs).status_code == 200
-        assert rem_client.post(f"/c/{ro_tok}/mcp/readonly", json=list_req, headers=mcp_hdrs).status_code == 200
-        assert rem_client.post("/c/oc_forged_invalid_token_123456789012345/mcp", json=list_req, headers=mcp_hdrs).status_code == 404
-
-        r_dis_oc = lb_client.post(
-            "/api/studio/connection",
-            json={"action": "set_oneclick_token_route", "enabled": False, "csrf": csrf},
-            headers={"Origin": f"http://127.0.0.1:{port}"},
-        )
-        assert r_dis_oc.status_code == 200
-        assert rem_client.post(f"/c/{full_tok}/mcp", json=list_req, headers=mcp_hdrs).status_code == 404
-
-        # Unauthenticated standard `/mcp` requires OAuth 2.1 (`401`)
-        assert rem_client.post("/mcp", json=list_req, headers=mcp_hdrs).status_code == 401
+        assert rem_client.get(f"/c/{fake_tok}/studio").status_code == 404
+        assert rem_client.get(f"/c/{fake_tok}/api/studio/state").status_code == 404
+        assert rem_client.get(f"/c/{fake_tok}/oauth/authorize").status_code == 404
 
         # 4) Rotating endpoint secret enables `/u/<ep_sec>` Stealth 404 on bare `/mcp` and updates oneclick OAuth URL
         r_rot = lb_client.post(

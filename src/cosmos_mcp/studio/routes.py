@@ -1733,7 +1733,6 @@ def _persist_extra_studio_config(
     readonly_workspace_roots: Optional[Sequence[Any]] = None,
     scan_host_global_skills: Optional[bool] = None,
     redact_project_secrets: Optional[bool] = None,
-    enable_oneclick_token_route: Optional[bool] = None,
     allow_loopback_dev: Optional[bool] = None,
     protect_dotenv_files: Optional[bool] = None,
     protect_host_credentials: Optional[bool] = None,
@@ -1781,8 +1780,6 @@ def _persist_extra_studio_config(
         persist_kwargs["scan_host_global_skills"] = parse_bool_flag(scan_host_global_skills, default=False)
     if redact_project_secrets is not None:
         persist_kwargs["redact_project_secrets"] = parse_bool_flag(redact_project_secrets, default=False)
-    if enable_oneclick_token_route is not None:
-        persist_kwargs["enable_oneclick_token_route"] = parse_bool_flag(enable_oneclick_token_route, default=False)
     if allow_loopback_dev is not None:
         persist_kwargs["allow_loopback_dev"] = parse_bool_flag(allow_loopback_dev, default=True)
     if protect_dotenv_files is not None:
@@ -2302,7 +2299,6 @@ def _compute_studio_state_revision(
         "tray_enabled": bool(getattr(policy, "tray_enabled", True)),
         "scan_host_global_skills": bool(getattr(policy, "scan_host_global_skills", False)),
         "redact_project_secrets": bool(getattr(policy, "redact_project_secrets", False)),
-        "enable_oneclick_token_route": bool(getattr(policy, "enable_oneclick_token_route", False)),
         "allow_loopback_dev": bool(getattr(policy, "allow_loopback_dev", True)),
         "protect_dotenv_files": bool(getattr(policy, "protect_dotenv_files", False)),
         "protect_host_credentials": bool(getattr(policy, "protect_host_credentials", True)),
@@ -3271,7 +3267,6 @@ def _build_studio_state_payload(
     ro_ws_roots = [str(p) for p in getattr(policy, "readonly_workspace_roots", ())]
     scan_host_global = bool(getattr(policy, "scan_host_global_skills", False))
     redact_proj_secrets_val = bool(getattr(policy, "redact_project_secrets", False))
-    enable_oneclick_route_val = bool(getattr(policy, "enable_oneclick_token_route", False))
     allow_loopback_val = bool(getattr(policy, "allow_loopback_dev", True))
     protect_dotenv_val = bool(getattr(policy, "protect_dotenv_files", False))
     protect_cred_val = bool(getattr(policy, "protect_host_credentials", True))
@@ -3395,7 +3390,6 @@ def _build_studio_state_payload(
         "readonly_workspace_roots": ro_ws_roots,
         "scan_host_global_skills": scan_host_global,
         "redact_project_secrets": redact_proj_secrets_val,
-        "enable_oneclick_token_route": enable_oneclick_route_val,
         "web_compat_mode": web_compat_mode,
         "last_update_status": last_upd_status,
         "allow_loopback_dev": allow_loopback_val,
@@ -3461,7 +3455,6 @@ def _build_studio_state_payload(
             "has_saved_password": has_saved_pw,
             "endpoint_secret_enabled": bool(ep_sec_cur),
             "endpoint_secret_masked": ep_sec_masked,
-            "enable_oneclick_token_route": enable_oneclick_route_val,
             "plaintext_password_wiped": bool(pw_wiped_flag),
             "pair_code": pair_code,
             "consent_pair_code": pair_code,
@@ -4802,13 +4795,6 @@ def mount_standalone_status_ui(
                     f"项目通用密钥字面量脱敏已{'开启' if want_redact else '关闭（仅脱敏本服务自身凭据）'}"
                 )
 
-            if "enable_oneclick_token_route" in data:
-                want_oc_ts = parse_bool_flag(data.get("enable_oneclick_token_route"), default=False)
-                _persist_extra_studio_config(policy, enable_oneclick_token_route=want_oc_ts)
-                messages.append(
-                    f"免 OAuth 直通路径已{'开启' if want_oc_ts else '关闭（返回 404）'}"
-                )
-
             if "scan_host_global_skills" in data:
                 want_scan = parse_bool_flag(data.get("scan_host_global_skills"), default=False)
                 _persist_extra_studio_config(policy, scan_host_global_skills=want_scan)
@@ -5058,7 +5044,6 @@ def mount_standalone_status_ui(
                     python_path=policy.python_path,
                     scan_host_global_skills=getattr(policy, "scan_host_global_skills", False),
                     redact_project_secrets=getattr(policy, "redact_project_secrets", False),
-                    enable_oneclick_token_route=getattr(policy, "enable_oneclick_token_route", False),
                     tray_enabled=getattr(policy, "tray_enabled", True),
                 )
                 if provider is not None:
@@ -5110,18 +5095,6 @@ def mount_standalone_status_ui(
                 snap["wiped_files"] = wipe_res.get("wiped_files", [])
                 snap["message"] = "已擦除本地文本文件中的明文口令（口令已受本机加密保险箱保护）。"
                 return _json_with_optional_cookie(snap, request, minted)
-            elif sub_act in ("set_oneclick_token_route", "toggle_oneclick_token_route"):
-                want_oc = parse_bool_flag(
-                    data.get("enabled") if "enabled" in data else data.get("enable_oneclick_token_route"),
-                    default=False,
-                )
-                _persist_extra_studio_config(policy, enable_oneclick_token_route=want_oc)
-                policy.refresh(force=True)
-                msg = (
-                    "已开启免 OAuth 直通路径（/c/<token>/mcp）；请勿将直通链接外发。"
-                    if want_oc
-                    else "已关闭免 OAuth 直通路径（/c/<token>/mcp 已恢复返回 404）。"
-                )
             elif sub_act in ("save_workers_custom_domain", "clear_workers_custom_domain"):
                 raw_dom_in = "" if sub_act == "clear_workers_custom_domain" else str(data.get("custom_domain") or "").strip()
                 dom_res = save_workers_custom_domain_local(

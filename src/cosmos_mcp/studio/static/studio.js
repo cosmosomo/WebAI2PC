@@ -1720,13 +1720,6 @@
     }
 
     var cf = subs.trycloudflare || {};
-    var instPolSel = $("instant-policy-select");
-    if (instPolSel && document.activeElement !== instPolSel) {
-      var polVal = String(instant.instant_policy || "auto").trim() || "auto";
-      if (["auto", "srv_us_only", "quick_only"].indexOf(polVal) >= 0) {
-        instPolSel.value = polVal;
-      }
-    }
     var cfEnabled = Boolean(cf.enabled || instant.trycloudflare_backup);
     var cfSt = String(cf.status || (cfEnabled ? "connecting" : "disabled"));
     var cfSw = $("instant-sub-trycf-switch");
@@ -1794,15 +1787,6 @@
     if (wipeBtn) {
       wipeBtn.textContent = pwWiped ? "已擦除本地 txt 明文口令" : "擦除本地 txt 明文口令文件";
       wipeBtn.disabled = pwWiped;
-    }
-    var ocOn = Boolean(
-      doc.enable_oneclick_token_route !== undefined
-        ? doc.enable_oneclick_token_route
-        : conn.enable_oneclick_token_route
-    );
-    var ocChk = $("chk-enable-oneclick-route");
-    if (ocChk) {
-      ocChk.checked = ocOn;
     }
     var ocPill = $("auth-oneclick-route-pill");
     if (ocPill) {
@@ -4965,30 +4949,6 @@
       });
     });
 
-    if ($("instant-policy-select")) {
-      $("instant-policy-select").addEventListener("change", function () {
-        var polSel = $("instant-policy-select");
-        var chosenPol = String(polSel.value || "auto").trim();
-        polSel.disabled = true;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: { action: "set_instant_policy", instant_policy: chosenPol },
-        })
-          .then(function (d) {
-            polSel.disabled = false;
-            if (!d || !d.ok) {
-              showToast((d && (d.error || d.message)) || "切换通道策略失败", true);
-              return;
-            }
-            renderAll(d);
-            showToast(d.message || "第 1 类通道策略已切换", false);
-          })
-          .catch(function (e) {
-            polSel.disabled = false;
-            showToast("切换通道策略失败：" + (e && e.message ? e.message : e), true);
-          });
-      });
-    }
 
     if ($("instant-sub-trycf-switch")) {
       $("instant-sub-trycf-switch").addEventListener("change", function () {
@@ -5228,32 +5188,6 @@
       });
     }
 
-    if ($("chk-enable-oneclick-route")) {
-      $("chk-enable-oneclick-route").addEventListener("change", function () {
-        var ocChk = $("chk-enable-oneclick-route");
-        var wantOc = Boolean(ocChk.checked);
-        ocChk.disabled = true;
-        apiFetch("/api/studio/connection", {
-          method: "POST",
-          body: { action: "set_oneclick_token_route", enabled: wantOc },
-        })
-          .then(function (d) {
-            ocChk.disabled = false;
-            if (!d || !d.ok) {
-              ocChk.checked = !wantOc;
-              showToast((d && (d.error || d.message)) || "切换免 OAuth 直通策略失败", true);
-              return;
-            }
-            renderAll(d);
-            showToast(d.message || (wantOc ? "已开启免 OAuth 直通路径" : "已关闭免 OAuth 直通路径"), false);
-          })
-          .catch(function (e) {
-            ocChk.disabled = false;
-            ocChk.checked = !wantOc;
-            showToast("切换失败：" + (e && e.message ? e.message : e), true);
-          });
-      });
-    }
 
     var pendingUpdateAllowTunnelRestart = false;
     if ($("check-update-btn")) {
