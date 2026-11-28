@@ -28,7 +28,7 @@
   var selectGwReqSeq = 0;
   var GATEWAY_ORDER = ["instant", "workers_dev", "self_hosted"];
   var GATEWAY_SHORT_LABELS = {
-    instant: "免登录直连",
+    instant: "OpenSSH 免登录直连",
     workers_dev: "Cloudflare 网关",
     self_hosted: "自有服务器",
   };
@@ -1094,15 +1094,15 @@
       if (!instEnabled) {
         actBtn1.disabled = false;
         actBtn1.className = "btn btn-tonal";
-        actBtn1.textContent = "开启一键上手网关";
+        actBtn1.textContent = "启用 OpenSSH 直连";
       } else if (isExplicitQuick) {
         actBtn1.disabled = false;
         actBtn1.className = "btn btn-primary";
-        actBtn1.textContent = "恢复免登录固定网址（推荐）";
+        actBtn1.textContent = "恢复 OpenSSH 固定网址（推荐）";
       } else if (autoFallbackActive) {
         actBtn1.disabled = false;
         actBtn1.className = "btn btn-tonal";
-        actBtn1.textContent = "重试连接免登录固定网址";
+        actBtn1.textContent = "重试连接 OpenSSH 固定网址";
       } else {
         actBtn1.disabled = true;
         actBtn1.className = "btn btn-tonal";
@@ -1129,11 +1129,11 @@
       if (isExplicitQuick) {
         fbBox.className = "callout callout-warn";
         fbBox.innerHTML =
-          "当前处于临时快速通道（<code>*.trycloudflare.com</code>，重启会变网址）；点击下方「恢复免登录固定网址（推荐）」可切回固定网址（<code>*.srv.us</code>），或同时开启第 2 类 Cloudflare 网关。";
+          "当前处于临时快速通道（<code>*.trycloudflare.com</code>，重启会变网址）；点击下方「恢复 OpenSSH 固定网址（推荐）」可切回系统 OpenSSH 固定网址（<code>*.srv.us</code>），或同时开启第 2 类 Cloudflare 网关。";
       } else {
         fbBox.className = "callout callout-ok";
         fbBox.innerHTML =
-          "当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上免登录固定网址（<code>*.srv.us</code>）或部署第 2 类 Cloudflare 网关后可导出永久恢复卡。";
+          "当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上系统 OpenSSH 固定网址（<code>*.srv.us</code>）或部署第 2 类 Cloudflare 网关后可导出永久恢复卡。";
       }
     }
     var hasExportableFixedIdentity = Boolean(
@@ -1713,8 +1713,8 @@
       srvUrlEl.textContent =
         srvUrl ||
         (srvSt === "error"
-          ? "srv.us 暂未连通（可点击右侧重连或展开下方排查日志）"
-          : "等待 srv.us 分配固定地址…");
+          ? "系统 OpenSSH 通道暂未连通（可点击右侧重连或展开下方排查日志）"
+          : "等待系统 OpenSSH（srv.us 中继）分配固定地址…");
       srvUrlEl.className = srvUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
     }
     if (srvCopyBtn) {
@@ -1750,7 +1750,7 @@
         cfUrl ||
         (cfEnabled
           ? "正在建立 trycloudflare 临时通道…"
-          : "未开启（需要时打开上方开关即可与 srv.us 同时显示两个 URL）");
+          : "未开启（需要时打开上方开关即可与 OpenSSH 固定通道同时显示两个 URL）");
       cfUrlEl.className = cfUrl ? "gw-card-url-box is-ready" : "gw-card-url-box";
     }
     if (cfCopyBtn) {
@@ -4978,7 +4978,7 @@
             renderAll(d);
             showToast(
               d.message ||
-                (en ? "已开启 trycloudflare 备用通道（与 srv.us 并存）" : "已关闭 trycloudflare 备用通道"),
+                (en ? "已开启 trycloudflare 备用通道（与 OpenSSH 固定通道并存）" : "已关闭 trycloudflare 备用通道"),
               false
             );
           })
@@ -6422,7 +6422,7 @@
       } else if (obState.hasVps) {
         sumTxt.textContent = "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站或绑定自有 HTTPS 域名。";
       } else {
-        sumTxt.textContent = "未勾选额外资源：将使用「免登录直连固定通道」，零注册直接生成连接网址。";
+        sumTxt.textContent = "未勾选额外资源：默认调用系统内置 OpenSSH 免登录直连，零注册直接生成固定连接网址。";
       }
     }
 

@@ -153,6 +153,8 @@ def normalize_instant_policy(
 ) -> str:
     """Normalize 3-state instant gateway policy (`auto` | `srv_us_only` | `quick_only`) with legacy compat."""
     pol = str(raw_policy or "").strip().lower()
+    if pol in ("openssh_only", "openssh_fixed"):
+        return "srv_us_only"
     if pol in ("srv_us_only", "quick_only"):
         return pol
     if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
@@ -234,7 +236,7 @@ class GatewaySlotRuntime:
         cf_err = self.trycloudflare_error[:500] if (cf_en and self.trycloudflare_error) else ""
         return {
             "srv_us": {
-                "label": "srv.us 免登录固定地址",
+                "label": "系统 OpenSSH 固定地址（srv.us 中继）",
                 "role": "primary",
                 "enabled": bool(self.enabled),
                 "status": srv_st,
@@ -1037,7 +1039,7 @@ def detect_running_instance(state_root: Path, prefix: str = "pc") -> Dict[str, A
         pub_url = f"http://127.0.0.1:{port}"
     elif d_doc.get("tunnel_ready") and str(d_doc.get("public_url") or "").startswith("https://"):
         pub_url = str(d_doc["public_url"]).strip().rstrip("/")
-    elif eff_mode == "public_gateway":
+    elif eff_mode in ("public_gateway", "openssh", "srv_us"):
         raw_pg_pub = str(
             d_doc.get("public_url")
             or cfg_doc.get("public_base")
@@ -1285,7 +1287,7 @@ def spawn_detached_daemon(
     while time.monotonic() < deadline:
         live = detect_running_instance(st_root, eff_p)
         if live.get("healthz_ok"):
-            if eff_mode in ("cloudflare", "cloudflare_token", "public_gateway"):
+            if eff_mode in ("cloudflare", "cloudflare_token", "public_gateway", "openssh", "srv_us"):
                 pub_u = str(live.get("public_url") or "")
                 last_err = str(live.get("last_error") or "")
                 if pub_u.startswith("https://") or "tunnel error" in last_err.lower():
@@ -1431,8 +1433,13 @@ class StandaloneSupervisorLoop:
         cfg_doc = self._read_cfg_doc()
         self.tool_prefix = _norm_prefix(tool_prefix or str(cfg_doc.get("tool_prefix") or self.prefix))
         saved_mode = str(cfg_doc.get("tunnel_mode") or "").strip().lower()
-        self._explicit_init_mode = (mode or "").strip().lower()
-        self.mode = (mode or saved_mode or "local").strip().lower()
+        if saved_mode in ("openssh", "srv_us"):
+            saved_mode = "public_gateway"
+        raw_init_m = (mode or "").strip().lower()
+        if raw_init_m in ("openssh", "srv_us"):
+            raw_init_m = "public_gateway"
+        self._explicit_init_mode = raw_init_m
+        self.mode = (raw_init_m or saved_mode or "local").strip().lower()
         saved_pub = str(
             cfg_doc.get("public_base")
             or cfg_doc.get("public_base_url")

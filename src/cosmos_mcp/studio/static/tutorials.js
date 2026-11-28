@@ -13,7 +13,7 @@
 
   var GATEWAY_ORDER = ["instant", "workers_dev", "self_hosted"];
   var GATEWAY_DEFAULT_LABELS = {
-    instant: "方式 1 · 一键上手",
+    instant: "方式 1 · OpenSSH 免登录直连",
     workers_dev: "方式 2 · Cloudflare 固定网关",
     self_hosted: "方式 3 · 自有服务器/域名"
   };

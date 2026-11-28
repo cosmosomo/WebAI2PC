@@ -765,7 +765,7 @@ def _extract_active_gateways_and_grace(
         if raw_tm != "local":
             scalar_candidates = [
                 _clean_public_gateway_url((cfg_doc or {}).get("public_base") or (cfg_doc or {}).get("public_base_url")),
-                _clean_public_gateway_url((cfg_doc or {}).get("public_gateway_url")) if raw_tm in ("public_gateway", "srv_us") else "",
+                _clean_public_gateway_url((cfg_doc or {}).get("public_gateway_url")) if raw_tm in ("public_gateway", "openssh", "srv_us") else "",
                 _clean_public_gateway_url((cfg_doc or {}).get("workers_dev_url")) if raw_tm == "workers_dev" else "",
                 _clean_public_gateway_url((cfg_doc or {}).get("vps_hub_url")) if raw_tm in ("vps_hub", "vps") else "",
                 _clean_public_gateway_url((d_doc or {}).get("public_url")) if d_running else "",

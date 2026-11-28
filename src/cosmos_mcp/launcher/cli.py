@@ -127,6 +127,7 @@ SUPPORTED_TUNNEL_MODES: Tuple[str, ...] = (
     "cf_workers",
     "cloudflare_workers",
     "public_gateway",
+    "openssh",
     "srv_us",
     "vps",
     "vps_hub",
@@ -908,7 +909,7 @@ def ensure_standalone_state(
 
     if explicit_mode == "local":
         eff_pub = ""
-    elif eff_mode == "public_gateway":
+    elif eff_mode in ("public_gateway", "openssh", "srv_us"):
         pg_base = str(
             os.environ.get("COSMOS_PUBLIC_GATEWAY_BASE")
             or cfg_doc.get("public_gateway_base")
@@ -999,7 +1000,7 @@ def ensure_standalone_state(
     }
     if eff_mode == "workers_dev" and eff_pub and not preserved_gw_fields.get("workers_dev_url"):
         preserved_gw_fields["workers_dev_url"] = eff_pub
-    elif eff_mode == "public_gateway" and eff_pub and ".srv.us" not in eff_pub.lower() and not preserved_gw_fields.get("public_gateway_url"):
+    elif eff_mode in ("public_gateway", "openssh", "srv_us") and eff_pub and ".srv.us" not in eff_pub.lower() and not preserved_gw_fields.get("public_gateway_url"):
         preserved_gw_fields["public_gateway_url"] = eff_pub
 
     gws_norm, sel_gw_norm = normalize_gateways_config(cfg_doc)
@@ -1676,6 +1677,8 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
                     "cloudflare_token",
                     "workers_dev",
                     "public_gateway",
+                    "openssh",
+                    "srv_us",
                     "vps",
                     "vps_hub",
                     "reverse_proxy",
@@ -1736,7 +1739,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
                 else:
                     print(f"参数错误: {exc}", file=sys.stderr)
                 return 2
-            if raw_mode_arg in ("cloudflare", "cloudflare_token", "workers_dev", "public_gateway") and prev_mode == "local":
+            if raw_mode_arg in ("cloudflare", "cloudflare_token", "workers_dev", "public_gateway", "openssh", "srv_us") and prev_mode == "local":
                 wait_end = time.monotonic() + 25.0
                 while time.monotonic() < wait_end:
                     live = detect_running_instance(st_root, eff_p)
@@ -1828,7 +1831,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
 
     if is_interactive:
         print("\n=== Cosmos MCP 连接向导 ===")
-        print(" [1] 一键上手免登录通道（优先固定 srv.us 网址，不可达时自动降级 Cloudflare 快速通道；连接网页版 Gemini / ChatGPT）")
+        print(" [1] 系统内置 OpenSSH 免登录直连（调用本机自带 ssh 经 srv.us 中继生成固定 HTTPS 地址，22 端口受阻自动切换 Cloudflare 临时通道）")
         print(" [2] Cloudflare 固定域名通道（粘贴 Named Tunnel 固定 Token，开机自启永久固定域名）")
         print(" [3] 自有云服务器 SSH 反向隧道（自动维护 ssh -R 反向转发）")
         print(" [4] 自有 HTTPS 反代固定域名（外部已配置网关转发）")
@@ -2322,6 +2325,7 @@ def _cmd_agent_setup(args: argparse.Namespace) -> int:
         "version": CLI_VERSION,
         "state_root": str(st_root),
         "recommended_commands": {
+            "agent_setup_openssh": "cosmos-mcp agent-setup --mode openssh --no-browser --json",
             "agent_setup_public_gateway": "cosmos-mcp agent-setup --mode public_gateway --no-browser --json",
             "agent_setup_cloudflare": "cosmos-mcp agent-setup --mode cloudflare --no-browser --json",
             "non_interactive_local_start": "cosmos-mcp agent-setup --mode local --no-browser --json",
@@ -2889,7 +2893,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
             "--mode",
             choices=list(SUPPORTED_TUNNEL_MODES),
             default="",
-            help="连接通道：public_gateway（首次默认） / cloudflare / workers_dev / vps_hub / cloudflare_token / vps / custom / local",
+            help="连接通道：openssh（或 public_gateway，首次默认：调用系统内置 OpenSSH 生成免登录固定地址） / cloudflare / workers_dev / vps_hub / cloudflare_token / vps / custom / local",
         )
         sp.add_argument("--tunnel-token", default=None, help="Cloudflare Named Tunnel 固定域名 Token（配合 --public-url 永久固定域名）")
         sp.add_argument("--port", type=int, default=0, help="本地监听端口（默认沿用已保存端口或 8096）")

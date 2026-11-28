@@ -242,6 +242,23 @@ def test_fix3_fix4_poll_revision_keys_instant_policy_and_tokenless_cf_domain(tmp
             assert pol_doc["gateways"]["instant"]["instant_policy"] == "srv_us_only"
             assert pol_doc["state_revision"] != rev2
 
+            # Verify `openssh_only` alias & `openssh` subchannel reconnect alias work seamlessly
+            r_pol_alias = client.post(
+                "/api/studio/connection",
+                headers={"X-Studio-Csrf": csrf, "Origin": srv.base_url},
+                json={"action": "set_instant_policy", "instant_policy": "openssh_only"},
+            )
+            assert r_pol_alias.status_code == 200
+            assert r_pol_alias.json()["gateways"]["instant"]["instant_policy"] == "srv_us_only"
+
+            r_sub_alias = client.post(
+                "/api/studio/connection",
+                headers={"X-Studio-Csrf": csrf, "Origin": srv.base_url},
+                json={"action": "reconnect_subchannel", "subchannel": "openssh"},
+            )
+            assert r_sub_alias.status_code == 200
+            assert "OpenSSH" in r_sub_alias.json()["message"]
+
             # Seed an already-deployed Cloudflare Worker (tunnel secret present, API token shredded)
             wt_sec_p = cfgw.workers_tunnel_secret_path(st_dir, prefix="pc")
             atomic_write_text(wt_sec_p, "a" * 64 + "\n", mode_override=0o600)

@@ -79,8 +79,26 @@ def test_dotenv_loading_env_tier_lock_and_master_seed_unification(tmp_path: Path
 def test_bootstrap_cli_doctor_and_autostart_guards(tmp_path: Path) -> None:
     assert "websockets" in STRICT_CORE_IMPORTS
     assert "cryptography" in STRICT_CORE_IMPORTS
+    assert "openssh" in SUPPORTED_TUNNEL_MODES
     assert "srv_us" in SUPPORTED_TUNNEL_MODES
     assert "cf_workers" in SUPPORTED_TUNNEL_MODES
+
+    from cosmos_mcp.core.config import mode_to_gateway_slot, normalize_gateways_config
+    from cosmos_mcp.launcher.daemon import normalize_instant_policy
+
+    assert mode_to_gateway_slot("openssh") == ("instant", "public_gateway")
+    gws_openssh, sel_openssh = normalize_gateways_config(
+        {
+            "tunnel_mode": "openssh",
+            "gateways": {"instant": {"enabled": True, "submode": "openssh", "public_url": "https://demo99.srv.us"}},
+        }
+    )
+    assert sel_openssh == "instant"
+    assert gws_openssh["instant"]["enabled"] is True
+    assert gws_openssh["instant"]["submode"] == "public_gateway"
+    assert gws_openssh["instant"]["public_url"] == "https://demo99.srv.us"
+    assert normalize_instant_policy("openssh_only") == "srv_us_only"
+    assert normalize_instant_policy("openssh_fixed") == "srv_us_only"
 
     sample = (
         "tok1=cmcp_AbCdEfGhIjKlMnOpQrStUvWxYz123456 "

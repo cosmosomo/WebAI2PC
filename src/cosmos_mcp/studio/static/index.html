@@ -326,7 +326,7 @@
 
                   <div class="ob-route-summary" id="ob-route-summary">
                     <span class="ob-route-dot"></span>
-                    <span id="ob-route-summary-text">未勾选额外资源：将使用「免登录直连固定通道」，零注册直接生成连接网址。</span>
+                    <span id="ob-route-summary-text">未勾选额外资源：默认调用系统内置 OpenSSH 免登录直连，零注册直接生成固定连接网址。</span>
                   </div>
                 </div>
               </div>
@@ -966,9 +966,9 @@
                       <div class="conn-card-header-main">
                         <div class="conn-card-title-inline">
                           <span class="conn-card-step-num">第 1 类 · 默认免配置</span>
-                          <h3 class="conn-card-title">一键上手免登录直连</h3>
+                          <h3 class="conn-card-title">系统内置 OpenSSH 免登录直连</h3>
                         </div>
-                        <p class="conn-card-sub">零登录、零输入框，开箱即可复制地址连接，支持导出加密 PNG 身份恢复卡。</p>
+                        <p class="conn-card-sub">直接调用系统自带 OpenSSH 建立加密反向隧道，零额外安装、零注册生成固定网址（*.srv.us），支持导出加密 PNG 恢复卡。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-ok" id="card1-status-badge">当前使用中</span>
@@ -996,15 +996,15 @@
                             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
                               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                                 <span class="tag tag-ok">首选 · 固定地址</span>
-                                <strong style="font-size:13px;"><code>srv.us</code> 免登录固定通道</strong>
+                                <strong style="font-size:13px;">系统 <code>OpenSSH</code> 固定地址通道（<code>srv.us</code> 中继）</strong>
                                 <span class="gw-status-pill is-connecting" id="sub-pill-srv_us">连接中</span>
                               </div>
                               <div class="ws-actions">
-                                <button type="button" class="btn btn-sm" id="sub-reconnect-srv_us" data-subchannel-reconnect="srv_us">重连 srv.us</button>
+                                <button type="button" class="btn btn-sm" id="sub-reconnect-srv_us" data-subchannel-reconnect="srv_us">重连 OpenSSH</button>
                               </div>
                             </div>
                             <div class="gw-card-url-row" style="display:flex;margin:0;">
-                              <div class="gw-card-url-box" id="sub-url-srv_us">等待 srv.us 分配固定地址…</div>
+                              <div class="gw-card-url-box" id="sub-url-srv_us">等待系统 OpenSSH（srv.us 中继）分配固定地址…</div>
                               <button type="button" class="btn btn-tonal btn-sm" id="sub-copy-srv_us" data-subchannel-copy="srv_us" disabled>复制地址</button>
                             </div>
                             <div class="gw-card-error" id="sub-err-srv_us" style="display:none;margin-top:6px;"></div>
@@ -1020,7 +1020,7 @@
                               </div>
                               <div class="ws-actions" style="align-items:center;">
                                 <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
-                                  <span>开启备用（可与 srv.us 同时在线）</span>
+                                  <span>开启备用（可与 OpenSSH 固定通道同时在线）</span>
                                   <input type="checkbox" class="apple-switch" role="switch" id="instant-sub-trycf-switch" aria-label="开关 trycloudflare 备用通道">
                                 </label>
                                 <button type="button" class="btn btn-sm" id="sub-reconnect-trycloudflare" data-subchannel-reconnect="trycloudflare">重连备用</button>
@@ -1034,21 +1034,21 @@
                           </div>
                         </div>
                         <div class="gw-dep-note" id="card1-dep-note">
-                          <strong>前置依赖说明：</strong>默认 <code>*.srv.us</code> 依赖系统内置 <code>ssh</code> 客户端与出站 TCP <code>22</code> 端口（国内可免代理直连）；当 <code>22</code> 端口受阻自动切换至 <code>*.trycloudflare.com</code> 临时通道时，依赖 <code>cloudflared</code> 官方客户端组件（未预装时首次自动从 GitHub Releases 下载，重启会换网址，单连接无在线率保障）。
+                          <strong>工作原理与依赖：</strong>默认直接调用操作系统自带的 <code>OpenSSH（ssh）</code> 客户端与出站 TCP <code>22</code> 端口（零额外二进制安装，经开源公共中继 <code>srv.us</code> 分配固定 HTTPS 地址，国内家庭宽带通常可免代理直连）；当 <code>22</code> 端口受阻自动切换至 <code>*.trycloudflare.com</code> 临时通道时，依赖 <code>cloudflared</code> 官方客户端组件（未预装时首次自动从 GitHub Releases 下载，重启会换网址，单连接无在线率保障）。
                         </div>
                         <div id="card1-fixed-gw-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
                           已连接公共固定网关（节点标识：<code id="card1-node-id-text">-</code>），关机重启网址保持不变。
                         </div>
                         <div id="card1-srvus-fixed-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
-                          当前为免登录固定网址（<code>*.srv.us</code>，本机持久密钥锁定，关机重启网址不变），可导出永久恢复卡。
+                          当前为系统 OpenSSH 免登录固定网址（<code>*.srv.us</code>，本机持久密钥锁定，关机重启网址不变），可导出永久恢复卡。
                         </div>
                         <div id="card1-instant-fallback-box" class="callout callout-ok" style="margin:0;padding:8px 11px;font-size:12.5px;">
-                          当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上 <code>*.srv.us</code> 或部署 Cloudflare 网关后可导出永久恢复卡。
+                          当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上系统 OpenSSH 固定网址（<code>*.srv.us</code>）或部署 Cloudflare 网关后可导出永久恢复卡。
                         </div>
                       </div>
                       <div class="ws-actions" style="justify-content:space-between;flex-wrap:wrap;">
                         <div class="ws-actions">
-                          <button type="button" class="btn btn-tonal btn-sm" id="activate-card1-btn">使用一键上手模式</button>
+                          <button type="button" class="btn btn-tonal btn-sm" id="activate-card1-btn">使用 OpenSSH 直连</button>
                           <button type="button" class="btn btn-sm" id="switch-card1-quick-btn" style="display:none;">改用临时快速通道</button>
                         </div>
                         <div class="ws-actions" id="card1-recovery-actions-row">

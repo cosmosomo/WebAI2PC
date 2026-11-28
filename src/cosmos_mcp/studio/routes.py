@@ -396,7 +396,9 @@ SAFETY_MODE_LABELS_ZH: Dict[str, str] = {
 }
 
 TUNNEL_MODE_LABELS_ZH: Dict[str, str] = {
-    "public_gateway": "一键上手默认通道",
+    "public_gateway": "系统内置 OpenSSH 免登录直连",
+    "openssh": "系统内置 OpenSSH 免登录直连",
+    "srv_us": "系统内置 OpenSSH 免登录直连",
     "cloudflare": "免登录快速体验通道",
     "workers_dev": "Cloudflare 固定网关",
     "cloudflare_token": "Cloudflare 固定隧道令牌",
@@ -409,6 +411,8 @@ TUNNEL_MODE_LABELS_ZH: Dict[str, str] = {
 
 ALL_SUPPORTED_TUNNEL_MODES: Tuple[str, ...] = (
     "public_gateway",
+    "openssh",
+    "srv_us",
     "cloudflare",
     "workers_dev",
     "vps_hub",
@@ -420,7 +424,7 @@ ALL_SUPPORTED_TUNNEL_MODES: Tuple[str, ...] = (
 
 STUDIO_GATEWAY_IDS: Tuple[str, ...] = ("instant", "workers_dev", "self_hosted")
 GATEWAY_SLOT_LABELS_ZH: Dict[str, str] = {
-    "instant": "方式 1 · 一键上手",
+    "instant": "方式 1 · OpenSSH 免登录直连",
     "workers_dev": "方式 2 · Cloudflare 固定网关",
     "self_hosted": "方式 3 · 自有服务器/域名",
 }
@@ -439,7 +443,7 @@ def _slot_and_submode_for_tunnel_mode(raw_mode: str) -> Tuple[str, str]:
     m = (raw_mode or "").strip().lower()
     if m in ("", "local", "disabled"):
         return ("", "local")
-    if m in ("public_gateway", "srv_us"):
+    if m in ("public_gateway", "openssh", "srv_us"):
         return ("instant", "public_gateway")
     if m == "cloudflare":
         return ("instant", "cloudflare")
@@ -929,6 +933,8 @@ def _normalize_instant_policy(
     submode: str = "",
 ) -> str:
     pol = str(raw_policy or "").strip().lower()
+    if pol in ("openssh_only", "openssh_fixed"):
+        return "srv_us_only"
     if pol in ("srv_us_only", "quick_only"):
         return pol
     if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
@@ -1231,7 +1237,7 @@ def _resolve_studio_gateways_view(
             )
             instant_subchannels: Dict[str, Dict[str, Any]] = {
                 "srv_us": {
-                    "label": "srv.us 免登录固定地址",
+                    "label": "系统 OpenSSH 固定地址（srv.us 中继）",
                     "role": "primary",
                     "enabled": bool(enabled),
                     "status": srv_st,
@@ -5372,15 +5378,17 @@ def mount_standalone_status_ui(
                 )
                 policy.refresh(force=True)
                 msg = (
-                    "已开启 trycloudflare 备用临时通道（与 srv.us 固定通道同时在线并跑，互不干扰）。"
+                    "已开启 trycloudflare 备用临时通道（与系统 OpenSSH 固定通道同时在线并跑，互不干扰）。"
                     if want_backup
-                    else "已关闭 trycloudflare 备用临时通道（保留 srv.us 首选固定通道）。"
+                    else "已关闭 trycloudflare 备用临时通道（保留系统 OpenSSH 首选固定通道）。"
                 )
             elif sub_act == "reconnect_subchannel":
                 raw_subch = str(data.get("subchannel") or "").strip().lower()
+                if raw_subch == "openssh":
+                    raw_subch = "srv_us"
                 if raw_subch not in ("srv_us", "trycloudflare"):
                     raise ValueError(
-                        f"不支持的子通道：{raw_subch or '(空)'}（仅支持 srv_us 或 trycloudflare）。"
+                        f"不支持的子通道：{raw_subch or '(空)'}（仅支持 openssh / srv_us 或 trycloudflare）。"
                     )
                 now_ts_sc = round(time.time(), 3)
                 _persist_extra_studio_config(
@@ -5389,13 +5397,15 @@ def mount_standalone_status_ui(
                     subchannel_reconnect_requested_at={raw_subch: now_ts_sc},
                 )
                 policy.refresh(force=True)
-                sc_label = "srv.us 免登录固定地址" if raw_subch == "srv_us" else "trycloudflare 备用临时通道"
+                sc_label = "系统 OpenSSH 固定地址（srv.us 中继）" if raw_subch == "srv_us" else "trycloudflare 备用临时通道"
                 msg = f"已触发「{sc_label}」独立重连（不影响另一条子通道与其他网关）。"
             elif sub_act == "set_instant_policy":
                 raw_pol = str(data.get("instant_policy") or "").strip().lower()
+                if raw_pol in ("openssh_only", "openssh_fixed"):
+                    raw_pol = "srv_us_only"
                 if raw_pol not in INSTANT_POLICIES:
                     raise ValueError(
-                        f"不支持的 instant_policy：{raw_pol or '(空)'}（仅支持 auto / srv_us_only / quick_only）。"
+                        f"不支持的 instant_policy：{raw_pol or '(空)'}（仅支持 auto / openssh_only / srv_us_only / quick_only）。"
                     )
                 saved_extra_ip = _read_saved_extra_cfg(policy)
                 cur_slots_ip, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_ip)

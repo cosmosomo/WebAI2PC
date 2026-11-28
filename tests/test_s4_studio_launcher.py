@@ -670,6 +670,28 @@ def test_first_run_default_cloudflare_explicit_local_and_16_core_help(
     assert out_agent["mode"] == "public_gateway"
     assert out_agent["tunnel_mode"] == "public_gateway"
 
+    # 1b) Explicit `--mode openssh` works as a first-class self-documenting alias for Card 1
+    st_openssh = tmp_path / "state_explicit_openssh"
+    rc_openssh = cli.main(
+        [
+            "agent-setup",
+            "--state-dir",
+            str(st_openssh),
+            "--workspace",
+            str(ws_dir),
+            "--mode",
+            "openssh",
+            "--prepare-only",
+            "--json",
+        ]
+    )
+    assert rc_openssh == 0
+    out_openssh = json.loads(capsys.readouterr().out)
+    assert out_openssh["ok"] is True
+    saved_openssh_cfg = json.loads((st_openssh / "config" / "service.json").read_text(encoding="utf-8-sig"))
+    assert saved_openssh_cfg["gateways"]["instant"]["enabled"] is True
+    assert saved_openssh_cfg["gateways"]["instant"]["submode"] == "public_gateway"
+
     # 2) Explicit `--mode local` strictly respects `"local"` and persists `"local"` across subsequent no-arg `start`
     st_local = tmp_path / "state_explicit_local"
     rc_loc1 = cli.main(

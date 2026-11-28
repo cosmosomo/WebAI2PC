@@ -1832,7 +1832,7 @@ def resolve_client_ip_from_headers(
     if eff_mode in ("local", "direct", "loopback", "ssh", "ssh_reverse") and not has_trusted_local_relay:
         return peer, False
 
-    if eff_mode == "srv_us":
+    if eff_mode in ("srv_us", "openssh"):
         ip = _rightmost_header_ip(headers_map, ("x-forwarded-for",))
         if ip:
             return ip, True

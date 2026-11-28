@@ -47,7 +47,7 @@
 首次启动无需注册任何第三方账号即可连上测试：
 
 1. **第 1 步：在本地控制台复制连接地址或一键配置提示词**
-   - 控制台默认开启第 1 类通道「一键上手免登录直连」：首选连接免登录固定网址 `https://*.srv.us/mcp`（启动等待预算 `10` 秒，跨重启不变），卡片内同时提供备用 `https://*.trycloudflare.com/mcp` 独立开关（可与 `srv.us` 同时在线，或在出站 `22` 端口受阻时启用）。
+   - 控制台默认开启第 1 类通道「系统内置 OpenSSH 免登录直连」（命令行等效 `--mode openssh`，兼容 `public_gateway`）：直接调用操作系统自带的 OpenSSH（`ssh`）客户端经 `srv.us` 公共中继生成免登录固定网址 `https://*.srv.us/mcp`（零额外二进制安装，启动等待预算 `10` 秒，跨重启不变），卡片内同时提供备用 `https://*.trycloudflare.com/mcp` 独立开关（可与 OpenSSH 固定通道同时在线，或在出站 `22` 端口受阻时启用）。
    - 若连 **网页版 Gemini**，保持顶部选中 `网页版 Gemini`，点击蓝色按钮 `复制连接地址`。
    - 若连 **网页版 ChatGPT**，点击顶部切换到 `网页版 ChatGPT`（公网网关就绪后按钮自动开放）：Team / Business / Enterprise / Edu 工作区账号点击主按钮 **「复制一键配置提示词（发给 Work）」**（绑定全功能 `/mcp`），个人 Plus / Pro 只读账号点击 **「复制只读配置提示词（发给 Work）」**（绑定只读 `/mcp/readonly`），也可点击旁侧 `仅复制地址` 手动配置。
 2. **第 2 步：添加到网页端并完成 OAuth 2.1 授权**
@@ -78,7 +78,7 @@
 3. **部署后的令牌安全、通道依赖与国内代理边界**：
    - 部署完成瞬间，刚才粘贴的 Cloudflare API 令牌会自动从内存与磁盘清零销毁；点击 `复制此卡地址`（个人版 ChatGPT 点 `复制 Plus/Pro 只读`）更新一次网页端连接器 URL 后即可长期使用，后续拨动卡片右上角开关即可启停。
    - **通道 2（`workers_dev`）依赖与代理要求**：本机采用纯 Python 标准库 `443 WSS` 客户端（**零外部二进制依赖**，免装 `Node.js`、`wrangler` 或 `cloudflared`），受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘默认 `125` 秒反代读超时约束。**中国大陆网络特别注意**：`*.workers.dev` 在国内存在全量 DNS 污染（裸连 `100%` 超时），若未绑定自定义域名，**本机运行期间必须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**（若设 `NO_PROXY` 须保留 `127.0.0.1,localhost,::1`）；绑定同账号下自定义域名（Active Zone）后可实现国内免代理直连。
-   - **与通道 1 / 通道 3 的依赖对照**：通道 1 首选 `*.srv.us` 仅依赖系统自带 `ssh` 与出站 TCP `22` 端口（启动等待预算 `10` 秒，国内家庭宽带通常免代理直连）；卡片内配独立开关并存的备用 `*.trycloudflare.com` 及通道 3 子项 `--mode cloudflare_token` 均依赖 `cloudflared` 二进制（未装时首次从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` 自动下载至 `bin/`；其中 `*.trycloudflare.com` 重启必换域名、无 SLA、单控制流重连有 `4–21s` 空窗返 `530`/`1033` 且限 `200` 并发，`cloudflare_token` 额外需 Zero Trust 指向 `http://127.0.0.1:8096` 的转发并关闭自定义域 `Bot Fight Mode`）；通道 3 `自有云服务器 24h 主站`（`vps_hub` / `vps`）仅依赖开放 `80`/`443` 的 Linux 服务器与本机 `ssh`，零 Cloudflare 依赖、零日请求上限与 `125s` 超时限制，国内或港新机房全程免代理直连。
+   - **与通道 1 / 通道 3 的依赖对照**：通道 1 首选「系统内置 OpenSSH 免登录直连」（`*.srv.us`）仅依赖系统自带 `ssh` 与出站 TCP `22` 端口（启动等待预算 `10` 秒，国内家庭宽带通常免代理直连）；卡片内配独立开关并存的备用 `*.trycloudflare.com` 及通道 3 子项 `--mode cloudflare_token` 均依赖 `cloudflared` 二进制（未装时首次从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` 自动下载至 `bin/`；其中 `*.trycloudflare.com` 重启必换域名、无 SLA、单控制流重连有 `4–21s` 空窗返 `530`/`1033` 且限 `200` 并发，`cloudflare_token` 额外需 Zero Trust 指向 `http://127.0.0.1:8096` 的转发并关闭自定义域 `Bot Fight Mode`）；通道 3 `自有云服务器 24h 主站`（`vps_hub` / `vps`）仅依赖开放 `80`/`443` 的 Linux 服务器与本机 `ssh`，零 Cloudflare 依赖、零日请求上限与 `125s` 超时限制，国内或港新机房全程免代理直连。
 
 ## 五、4 档安全权限与父目录只读分层
 

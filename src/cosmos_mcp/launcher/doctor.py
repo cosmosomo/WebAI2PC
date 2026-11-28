@@ -377,13 +377,13 @@ def _assess_gateway_health(
 
 
 _GATEWAY_LABELS_ZH: Dict[str, str] = {
-    "instant": "第 1 类 · 免登录直连",
+    "instant": "第 1 类 · OpenSSH 免登录直连",
     "workers_dev": "第 2 类 · Cloudflare 固定网关",
     "self_hosted": "第 3 类 · 自有服务器 / 域名",
 }
 
 _GATEWAY_LABELS_EN: Dict[str, str] = {
-    "instant": "Channel 1 · Direct Tunnel",
+    "instant": "Channel 1 · Built-in OpenSSH Direct",
     "workers_dev": "Channel 2 · Cloudflare Gateway",
     "self_hosted": "Channel 3 · Custom Server / Domain",
 }
@@ -518,7 +518,7 @@ def _discover_gateway_slots_for_probe(
     legacy_mode = str(d_doc.get("mode") or cfg_doc.get("tunnel_mode") or "local").strip().lower()
 
     def _legacy_slot_for_mode(m: str) -> Tuple[str, str]:
-        if m in ("public_gateway", "srv_us", "cloudflare"):
+        if m in ("public_gateway", "openssh", "srv_us", "cloudflare"):
             return "instant", ("cloudflare" if m == "cloudflare" else "public_gateway")
         if m in ("workers_dev", "cf_workers", "cloudflare_workers"):
             return "workers_dev", "workers_dev"

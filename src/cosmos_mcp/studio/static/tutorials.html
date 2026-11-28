@@ -652,7 +652,7 @@
             <button type="button" class="pain-option-btn active" id="pain-btn-1" role="tab" aria-selected="true" data-channel-pick="1">
               <span class="tag tag-ok">对应通道 1 · 默认免配置</span>
               <span class="pain-option-title">我想零注册马上试用</span>
-              <span class="pain-option-sub">不注册云账号、不买域名，双击启动立即获得可用 HTTPS 地址。</span>
+              <span class="pain-option-sub">直接调用电脑系统自带 OpenSSH，零注册、零额外安装生成固定 HTTPS 地址。</span>
             </button>
             <button type="button" class="pain-option-btn" id="pain-btn-2" role="tab" aria-selected="false" data-channel-pick="2">
               <span class="tag tag-info">对应通道 2 · 终身固定推荐</span>
@@ -678,7 +678,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>通道 1 首选：<code>*.srv.us</code></strong></td>
+                  <td><strong>通道 1 首选：系统内置 <code>OpenSSH</code> 免登录直连</strong>（<code>*.srv.us</code>）</td>
                   <td>系统自带 OpenSSH（<code>ssh</code>）+ 出站 TCP <code>22</code>，零额外二进制</td>
                   <td>免注册，启动等待预算 <code>10s</code>，重启网址固定不变</td>
                   <td>国内家庭宽带通常<strong>免代理直连</strong>；可与备用 <code>trycloudflare</code> 独立开关并存</td>
@@ -714,12 +714,12 @@
           <div class="channel-guide-pane active" id="channel-pane-1">
             <div class="tut-workbench-grid">
               <div>
-                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：一键上手免登录直连（首选 <code>*.srv.us</code> 10 秒固定通道 + 备用 <code>trycloudflare</code> 独立开关并存）</h3>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：系统内置 OpenSSH 免登录直连（经 <code>srv.us</code> 中继生成固定地址 + 备用 <code>trycloudflare</code> 独立开关并存）</h3>
                 <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary);">
-                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：优先通过系统自带 OpenSSH（<code>ssh</code>）连接免登录固定网址 <code>https://*.srv.us/mcp</code>（启动等待预算 <code>10</code> 秒，关机重启网址不变，国内家庭宽带通常免代理直连）；卡片内同时提供「开启备用（可与 srv.us 同时在线）」独立开关，可随时开启 <code>https://*.trycloudflare.com</code> 备用通道（校园网或企业网封禁出站 <code>22</code> 端口或超过 <code>10</code> 秒未连通时亦可直接启用，首次自动从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 下载 <code>cloudflared</code> 至 <code>bin/</code>；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上免登录固定网址后，可在卡片内点击「导出身份恢复卡 PNG」备份密钥。
+                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：直接调用电脑操作系统自带的 OpenSSH（<code>ssh</code>）客户端建立加密反向隧道（无需额外下载安装第三方程序，无需注册云账号），基于本机持久密钥经开源公共中继分配固定网址 <code>https://*.srv.us/mcp</code>（启动等待预算 <code>10</code> 秒，关机重启网址不变，国内家庭宽带通常免代理直连）；卡片内同时提供「开启备用（可与 OpenSSH 固定通道同时在线）」独立开关，可随时开启 <code>https://*.trycloudflare.com</code> 备用通道（校园网或企业网封禁出站 <code>22</code> 端口或超过 <code>10</code> 秒未连通时亦可直接启用，首次自动从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 下载 <code>cloudflared</code> 至 <code>bin/</code>；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上 OpenSSH 固定网址后，可在卡片内点击「导出身份恢复卡 PNG」备份密钥。
                 </p>
                 <div class="callout callout-info" style="margin-bottom:0;">
-                  在主控台「连接与网关 -&gt; 第 1 类」可通过卡片右上角总开关与内部「开启备用（可与 srv.us 同时在线）」独立开关控制两条子通道，也可与通道 2、通道 3 同时开启并存互不中断。
+                  在主控台「连接与网关 -&gt; 第 1 类」可通过卡片右上角总开关与内部「开启备用（可与 OpenSSH 固定通道同时在线）」独立开关控制两条子通道，也可与通道 2、通道 3 同时开启并存互不中断。
                 </div>
               </div>
               <div class="tut-terminal-box" data-pose-trigger="terminal">
@@ -727,9 +727,9 @@
                   <div class="tut-term-dots" aria-hidden="true"><span></span><span></span><span></span></div>
                   <span class="tut-term-label">通道 1 · 命令行等效启动</span>
                 </div>
-                <pre class="tut-term-pre">cosmos-mcp start --workspace D:\Projects\my-app</pre>
+                <pre class="tut-term-pre">cosmos-mcp start --mode openssh --workspace D:\Projects\my-app</pre>
                 <div>
-                  <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="cosmos-mcp start --workspace D:\Projects\my-app">复制启动命令</button>
+                  <button type="button" class="btn btn-primary btn-sm" data-copy-prompt="cosmos-mcp start --mode openssh --workspace D:\Projects\my-app">复制启动命令</button>
                 </div>
               </div>
             </div>

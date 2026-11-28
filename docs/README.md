@@ -13,7 +13,7 @@
 | [01. 网页版 Gemini 与手机远程连接教程](01_网页版Gemini与手机远程连接教程.md) | 零命令行解压启动、3 类网关独立开关、Gemini 任务模式 `Always allow` 设置与同号手机端同步控机 |
 | [02. 网页版 ChatGPT 工作区与个人只读接入教程](02_网页版ChatGPT工作区与个人只读接入教程.md) | `Work` 模式首次代连与 `Chat` 模式零智能体额度日常控机分工，及工作区 `/mcp` 与个人只读 `/mcp/readonly` 配置步骤 |
 | [03. 本地控制台面板与扩展包指南](03_Cosmos_Studio面板与扩展包指南.md) | 本地控制台五大功能页、4 档安全模式、父只读 / 子读写目录分层、受管浏览器与桌面扩展包、Docker 与 Windows Sandbox |
-| [04. 三大连接通道选型与网络排障手册](04_三大连接通道选型与网络排障手册.md) | 免登录固定通道（`srv.us` / `trycloudflare`）、Cloudflare 3 秒终身固定网关、自有 VPS 主站部署与排障 |
+| [04. 三大连接通道选型与网络排障手册](04_三大连接通道选型与网络排障手册.md) | 系统内置 OpenSSH 免登录固定直连（`srv.us` 中继 / `trycloudflare` 备用）、Cloudflare 3 秒终身固定网关、自有 VPS 主站部署与排障 |
 | [05. 多智能体并行子任务与实战工作流教程](05_多智能体并行子任务与实战工作流教程.md) | 宿主 Skills 守则导入、Gemini 并行子任务分工、Office 安全修订与后台长任务轮询 |
 | [AI 陪配单文件教程（AI_SETUP_GUIDE.md）](AI_SETUP_GUIDE.md) | 专供网页版 Gemini / ChatGPT 直接读取的完整陪配步骤 |
 

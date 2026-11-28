@@ -12,8 +12,8 @@ Cosmos MCP 面向 **网页版 Google Gemini（任务模式，含同账号手机�
 
 本项目维护者不自建集中式业务中转服务器留存用户流量。控制台提供 3 类远程 HTTPS 加密网关，支持按需单开或多路网关独立开关同时并存，也可关闭全部公网网关仅在本机回环自检：
 
-1. **方式 1：`srv.us` 免登录固定通道与快速回退（首次启动默认开启，`--mode public_gateway` 及 `--mode cloudflare`）**：
-   - 默认优先使用本机生成的 Ed25519 持久密钥（`<状态目录>/secrets/srvus_ed25519`）向公共 SSH 反向隧道服务 `srv.us:22` 发起远程端口转发，获取跨关机重启不变的 `https://xxxxx.srv.us` 固定 HTTPS 地址；若当前网络限制 22 端口，4 秒内自动切换至本机 `cloudflared` 客户端建立 Cloudflare Quick Tunnel（`https://*.trycloudflare.com`）。
+1. **方式 1：系统内置 OpenSSH 免登录直连与快速回退（首次启动默认开启，`--mode openssh` / `--mode public_gateway` 及 `--mode cloudflare`）**：
+   - 默认直接调用操作系统自带的 OpenSSH（`ssh`）客户端，使用本机生成的 Ed25519 持久密钥（`<状态目录>/secrets/srvus_ed25519`）向公共 SSH 反向隧道中继 `srv.us:22` 发起远程端口转发，获取跨关机重启不变的 `https://xxxxx.srv.us` 固定 HTTPS 地址；若当前网络限制 22 端口，10 秒内自动切换至本机 `cloudflared` 客户端建立 Cloudflare Quick Tunnel（`https://*.trycloudflare.com`）。
    - 该通道用于免注册接通网页版 Google Gemini 与网页版 ChatGPT，TLS 流量经所选隧道转发至本机监听端口，并由本机执行 OAuth 2.1 与 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 资源受众校验。
 2. **方式 2：`Cloudflare Workers` 专属固定网关（`--mode workers_dev`）**：
    - 使用用户本人一次性提供的最小权限 Cloudflare API 令牌，在用户自有 Cloudflare 账号下部署免费 SQLite Durable Object 休眠中继网关（如 `https://your-worker.your-subdomain.workers.dev` 或同账号自定义域名）；部署完成后 API 令牌立即在内存与临时缓存中全零覆写销毁，本机磁盘零明文 API Token 留存。日常运行通过出站 443 WebSocket 直连用户自有网关，可与方式 1 或方式 3 同时在线并存。

@@ -20,10 +20,10 @@ Windows users double-click `一键启动_Cosmos_MCP.bat`; macOS and Linux users 
 
 Because Web AI runs in cloud data centers, it reaches your local service over a standard HTTPS port 443 URL. All 3 connection cards in the console have independent toggles in their top-right corners, allowing single or concurrent multi-gateway operation without disconnecting one another. The top connection bar automatically displays the active ready gateway URL:
 
-### Tier 1: One-Click Zero-Login Direct Connect (Out-of-the-Box)
+### Tier 1: Built-in OpenSSH Direct Connect (Zero-Config Out-of-the-Box)
 
-Ideal for first-time trials and quick same-machine verification without registering any cloud account or domain:
-- On launch, it prioritizes a persistent local key to connect to a zero-login fixed URL (e.g., `https://xxxxx.srv.us/mcp`, `10`-second startup wait budget, unchanged across reboots), while providing an independent backup switch inside Card 1 for the built-in quick tunnel (`https://*.trycloudflare.com`) that can run concurrently alongside `srv.us` or serve as backup when outbound port `22` is blocked.
+Ideal for first-time trials and quick same-machine verification without registering any cloud account, buying a domain, or installing extra tunnel binaries:
+- On launch, it invokes your OS built-in OpenSSH (`ssh`) client (`--mode openssh`) with a persistent local key via the public `srv.us` relay to assign a login-free fixed URL (e.g., `https://xxxxx.srv.us/mcp`, `10`-second startup wait budget, unchanged across reboots), while providing an independent backup switch inside Card 1 for the built-in quick tunnel (`https://*.trycloudflare.com`) that can run concurrently alongside OpenSSH or serve as backup when outbound port `22` is blocked.
 - When redirected from Web Gemini or ChatGPT to the consent page in a browser on the **same PC**, the system verifies same-machine identity via a local top-level loopback bridge—simply click **"1-Click Local Allow (No Passcode Required)"** to finish binding without copy-pasting any secret. If you open the consent page via `Take over` inside Web ChatGPT `Work` mode's cloud controlled browser, or on a phone or another computer, enter the 6-digit dynamic pairing code shown in the local console (or paste the backup passcode).
 - If the active tunnel is on a temporary `*.trycloudflare.com` URL, the domain changes after a reboot; you can click the card button to retry/restore the zero-login fixed URL, or switch to Tier 2 or Tier 3.
 

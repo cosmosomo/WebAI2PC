@@ -1836,7 +1836,7 @@ def mode_to_gateway_slot(tunnel_mode: str) -> Tuple[str, str]:
         return ("", "local")
     if tm == "cloudflare":
         return ("instant", "cloudflare")
-    if tm in ("public_gateway", "srv_us"):
+    if tm in ("public_gateway", "openssh", "srv_us"):
         return ("instant", "public_gateway")
     if tm in ("workers_dev", "cf_workers", "cloudflare_workers"):
         return ("workers_dev", "workers_dev")
@@ -2046,8 +2046,11 @@ def normalize_gateways_config(cfg_doc: Mapping[str, Any]) -> Tuple[Dict[str, Dic
                 if "enabled" in in_slot:
                     dst["enabled"] = parse_bool_flag(in_slot.get("enabled"), default=False)
                 raw_sub = str(in_slot.get("submode") or "").strip().lower()
-                if gid == "instant" and raw_sub in INSTANT_SUBMODES:
-                    dst["submode"] = raw_sub
+                if gid == "instant":
+                    if raw_sub in ("openssh", "srv_us"):
+                        dst["submode"] = "public_gateway"
+                    elif raw_sub in INSTANT_SUBMODES:
+                        dst["submode"] = raw_sub
                 elif gid == "workers_dev":
                     dst["submode"] = "workers_dev"
                 elif gid == "self_hosted":
@@ -2308,7 +2311,7 @@ def ensure_initialized(
     if public_url and public_url.strip():
         cand_pub = public_url.strip().rstrip("/")
         cand_host = (urlsplit(cand_pub if "://" in cand_pub else f"https://{cand_pub}").hostname or "").strip().lower()
-        if eff_tunnel_mode == "public_gateway" and cand_host in (
+        if eff_tunnel_mode in ("public_gateway", "openssh", "srv_us") and cand_host in (
             "127.0.0.1",
             "localhost",
             "::1",
@@ -2319,7 +2322,7 @@ def ensure_initialized(
             eff_public_base = cand_pub
     elif saved_pub_clean:
         eff_public_base = saved_pub_clean
-    elif eff_tunnel_mode == "public_gateway":
+    elif eff_tunnel_mode in ("public_gateway", "openssh", "srv_us"):
         eff_public_base = f"{eff_pg_base}/u/{eff_pg_node_id}" if eff_pg_base else ""
     else:
         eff_public_base = ""

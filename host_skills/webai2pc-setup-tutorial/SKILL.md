@@ -46,9 +46,9 @@ description: WebAI2PC (Cosmos MCP) 本地控制台配置、Cloudflare 免费固�
 
 点击顶栏 `设置`（或顶部连接卡右上角 `配置连接通道 ▸`）进入 `连接与网关`（可调用 `pc_get_status(guide="cloudflare", open_page="gateways")` 直接打开）。3 张网关卡片右上角均带独立开关，**支持多路网关同时开启在线**，测试新网关时不会断开当前已连会话。
 
-### （1）第 1 类 · 默认免配置：`一键上手免登录直连`
-- **首选 `*.srv.us` 免登录固定通道（10 秒启动等待预算）**：仅依赖操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制、零注册，启动等待预算 `10` 秒），跨关机重启网址保持不变，中国大陆家庭宽带通常可**免代理直连**。
-- **备用 `*.trycloudflare.com` 临时通道（独立开关并存 / `--mode cloudflare`）**：在卡片展开区配有独立开关 `开启备用（可与 srv.us 同时在线）`，既可与 `srv.us` 同时在线热备，也可在校园网/企业网拦截 `22` 端口或 `srv.us` 超过 `10` 秒未连通时启用。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时需开系统代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求且受边缘 `125` 秒读超时约束，跨境高丢包建议开系统 HTTP 代理。
+### （1）第 1 类 · 默认免配置：`系统内置 OpenSSH 免登录直连`（`--mode openssh`，兼容 `public_gateway`）
+- **首选系统 OpenSSH 固定地址通道（`*.srv.us` 中继，10 秒启动等待预算）**：直接调用操作系统自带 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口建立加密反向隧道（零额外二进制、零注册，启动等待预算 `10` 秒），基于本机持久密钥经开源公共中继 `srv.us` 分配跨关机重启不变的固定 HTTPS 地址，中国大陆家庭宽带通常可**免代理直连**。
+- **备用 `*.trycloudflare.com` 临时通道（独立开关并存 / `--mode cloudflare`）**：在卡片展开区配有独立开关 `开启备用（可与 OpenSSH 固定通道同时在线）`，既可与 OpenSSH 固定通道同时在线热备，也可在校园网/企业网拦截 `22` 端口导致 `srv.us` 超过 `10` 秒未连通时启用。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 GitHub Releases 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时需开系统代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求且受边缘 `125` 秒读超时约束，跨境高丢包建议开系统 HTTP 代理。
 
 ### （2）第 2 类 · 无服务器固定网址：`Cloudflare 专属固定网关`（`workers_dev`）
 本通道采用纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`），受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘默认反代读取超时 `125` 秒约束。引导用户点击第 2 张卡片右侧 `配置 ▾` 展开面板，按三步完成部署：
