@@ -399,13 +399,16 @@ TUNNEL_MODE_LABELS_ZH: Dict[str, str] = {
     "public_gateway": "系统内置 OpenSSH 免登录直连",
     "openssh": "系统内置 OpenSSH 免登录直连",
     "srv_us": "系统内置 OpenSSH 免登录直连",
-    "cloudflare": "免登录快速体验通道",
-    "workers_dev": "Cloudflare 固定网关",
-    "cloudflare_token": "Cloudflare 固定隧道令牌",
-    "vps_hub": "自有服务器 24h 主站",
-    "vps": "自有服务器反向隧道",
-    "custom": "自有固定域名接入",
-    "reverse_proxy": "自有固定域名接入",
+    "cloudflare": "Cloudflare 临时加密通道（trycloudflare 备用）",
+    "trycloudflare": "Cloudflare 临时加密通道（trycloudflare 备用）",
+    "workers_dev": "Cloudflare 专属固定网关",
+    "cf_workers": "Cloudflare 专属固定网关",
+    "cloudflare_workers": "Cloudflare 专属固定网关",
+    "cloudflare_token": "Cloudflare Named Tunnel 固定域名",
+    "vps_hub": "自有云服务器 24h 主站",
+    "vps": "自有云服务器 SSH 反向隧道",
+    "custom": "自有固定域名 HTTPS 反代",
+    "reverse_proxy": "自有固定域名 HTTPS 反代",
     "local": "本机回环调试（未开公网通道）",
 }
 
@@ -414,11 +417,15 @@ ALL_SUPPORTED_TUNNEL_MODES: Tuple[str, ...] = (
     "openssh",
     "srv_us",
     "cloudflare",
+    "trycloudflare",
     "workers_dev",
+    "cf_workers",
+    "cloudflare_workers",
     "vps_hub",
     "vps",
     "cloudflare_token",
     "custom",
+    "reverse_proxy",
     "local",
 )
 
@@ -445,9 +452,9 @@ def _slot_and_submode_for_tunnel_mode(raw_mode: str) -> Tuple[str, str]:
         return ("", "local")
     if m in ("public_gateway", "openssh", "srv_us"):
         return ("instant", "public_gateway")
-    if m == "cloudflare":
+    if m in ("cloudflare", "trycloudflare"):
         return ("instant", "cloudflare")
-    if m in ("workers_dev", "cf_workers"):
+    if m in ("workers_dev", "cf_workers", "cloudflare_workers"):
         return ("workers_dev", "workers_dev")
     if m == "vps_hub":
         return ("self_hosted", "vps_hub")
@@ -551,6 +558,10 @@ def _normalize_studio_gateways_cfg(
     if isinstance(raw_gws, dict):
         g_inst = raw_gws.get("instant") if isinstance(raw_gws.get("instant"), dict) else {}
         inst_sub = str(g_inst.get("submode") or "public_gateway").strip().lower()
+        if inst_sub in ("openssh", "srv_us"):
+            inst_sub = "public_gateway"
+        elif inst_sub == "trycloudflare":
+            inst_sub = "cloudflare"
         if inst_sub not in ("public_gateway", "cloudflare"):
             inst_sub = "public_gateway"
         inst_pub = _clean_https_candidate(g_inst.get("public_url"))
@@ -935,9 +946,11 @@ def _normalize_instant_policy(
     pol = str(raw_policy or "").strip().lower()
     if pol in ("openssh_only", "openssh_fixed"):
         return "srv_us_only"
+    if pol == "trycloudflare_only":
+        return "quick_only"
     if pol in ("srv_us_only", "quick_only"):
         return pol
-    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
+    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() in ("cloudflare", "trycloudflare"):
         return "quick_only"
     if pol in INSTANT_POLICIES:
         return pol
@@ -1247,7 +1260,7 @@ def _resolve_studio_gateways_view(
                     "last_error": srv_err if enabled else "",
                 },
                 "trycloudflare": {
-                    "label": "trycloudflare 备用临时通道（重启会变）",
+                    "label": "Cloudflare 临时加密通道（trycloudflare 备用，重启换址）",
                     "role": "backup",
                     "enabled": cf_enabled,
                     "status": cf_st,
@@ -5403,9 +5416,11 @@ def mount_standalone_status_ui(
                 raw_pol = str(data.get("instant_policy") or "").strip().lower()
                 if raw_pol in ("openssh_only", "openssh_fixed"):
                     raw_pol = "srv_us_only"
+                elif raw_pol == "trycloudflare_only":
+                    raw_pol = "quick_only"
                 if raw_pol not in INSTANT_POLICIES:
                     raise ValueError(
-                        f"不支持的 instant_policy：{raw_pol or '(空)'}（仅支持 auto / openssh_only / srv_us_only / quick_only）。"
+                        f"不支持的 instant_policy：{raw_pol or '(空)'}（仅支持 auto / openssh_only / srv_us_only / trycloudflare_only / quick_only）。"
                     )
                 saved_extra_ip = _read_saved_extra_cfg(policy)
                 cur_slots_ip, _, _ = _normalize_studio_gateways_cfg(policy, saved_extra_ip)
@@ -5493,6 +5508,10 @@ def mount_standalone_status_ui(
                     eff_slot_pub: Optional[str] = None
                     extra_fields: Dict[str, Any] = {}
                     if gw_id == "instant":
+                        if req_sub in ("openssh", "srv_us"):
+                            req_sub = "public_gateway"
+                        elif req_sub == "trycloudflare":
+                            req_sub = "cloudflare"
                         if req_sub not in ("public_gateway", "cloudflare"):
                             req_sub = "public_gateway"
                         if req_sub == "public_gateway":
@@ -5592,6 +5611,12 @@ def mount_standalone_status_ui(
                 raw_sub = str(data.get("submode") or data.get("tunnel_mode") or "").strip().lower()
                 if raw_sub == "reverse_proxy":
                     raw_sub = "custom"
+                elif raw_sub == "trycloudflare":
+                    raw_sub = "cloudflare"
+                elif raw_sub in ("openssh", "srv_us"):
+                    raw_sub = "public_gateway"
+                elif raw_sub in ("cf_workers", "cloudflare_workers"):
+                    raw_sub = "workers_dev"
                 if gw_id not in STUDIO_GATEWAY_IDS:
                     gw_id, mapped_sub = _slot_and_submode_for_tunnel_mode(raw_sub or "public_gateway")
                     if not gw_id:
@@ -5796,10 +5821,16 @@ def mount_standalone_status_ui(
                 policy.refresh(force=True)
             else:
                 new_mode = str(data.get("tunnel_mode") or "public_gateway").strip().lower()
-                if new_mode == "reverse_proxy":
-                    new_mode = "custom"
                 if new_mode not in ALL_SUPPORTED_TUNNEL_MODES:
                     raise ValueError(f"不支持的连接通道类型：{new_mode}")
+                if new_mode in ("openssh", "srv_us"):
+                    new_mode = "public_gateway"
+                elif new_mode == "trycloudflare":
+                    new_mode = "cloudflare"
+                elif new_mode in ("cf_workers", "cloudflare_workers"):
+                    new_mode = "workers_dev"
+                elif new_mode == "reverse_proxy":
+                    new_mode = "custom"
                 raw_tok = str(data.get("tunnel_token") or "").strip()
                 raw_pub = str(data.get("public_url") or "").strip().rstrip("/")
 
@@ -7478,7 +7509,7 @@ def mount_standalone_status_ui(
         sh_restored_slot = restored_gws.get("self_hosted") if isinstance(restored_gws.get("self_hosted"), dict) else {}
 
         if (restored_dom or restored_wurl) and (
-            restored_tm == "workers_dev"
+            restored_tm in ("workers_dev", "cf_workers", "cloudflare_workers")
             or restored_sel == "workers_dev"
             or bool(wd_restored_slot.get("enabled"))
         ):

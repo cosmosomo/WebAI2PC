@@ -518,8 +518,8 @@ def _discover_gateway_slots_for_probe(
     legacy_mode = str(d_doc.get("mode") or cfg_doc.get("tunnel_mode") or "local").strip().lower()
 
     def _legacy_slot_for_mode(m: str) -> Tuple[str, str]:
-        if m in ("public_gateway", "openssh", "srv_us", "cloudflare"):
-            return "instant", ("cloudflare" if m == "cloudflare" else "public_gateway")
+        if m in ("public_gateway", "openssh", "srv_us", "cloudflare", "trycloudflare"):
+            return "instant", ("cloudflare" if m in ("cloudflare", "trycloudflare") else "public_gateway")
         if m in ("workers_dev", "cf_workers", "cloudflare_workers"):
             return "workers_dev", "workers_dev"
         if m in ("vps_hub", "vps", "cloudflare_token", "custom", "reverse_proxy"):
@@ -540,6 +540,14 @@ def _discover_gateway_slots_for_probe(
         if isinstance(c_slot, dict):
             enabled = bool(c_slot.get("enabled", False))
             submode = str(c_slot.get("submode") or default_sub).strip().lower()
+            if submode == "trycloudflare":
+                submode = "cloudflare"
+            elif submode in ("openssh", "srv_us"):
+                submode = "public_gateway"
+            elif submode in ("cf_workers", "cloudflare_workers"):
+                submode = "workers_dev"
+            elif submode == "reverse_proxy":
+                submode = "custom"
             cfg_u = str(c_slot.get("public_url") or "").strip()
             custom_dom = str(c_slot.get("custom_domain") or cfg_doc.get("workers_dev_custom_domain") or "").strip()
         else:

@@ -732,3 +732,78 @@ def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
     bp_js = (REPO_ROOT / "src/cosmos_mcp/studio/static/brand-packs.js").read_text(encoding="utf-8")
     assert "加密方式与前置依赖：" in bp_js and "Encryption & dependencies:" in bp_js
 
+
+def test_all_gateway_channels_crypto_and_svg_boundaries_aligned() -> None:
+    """Verify Channels 1-backup, 2, 3A, and 3B encryption details & SVG card geometry stay aligned across docs."""
+    import xml.etree.ElementTree as ET
+
+    bilingual_core_docs = (
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "README_EN.md",
+        REPO_ROOT / "PRIVACY.md",
+        REPO_ROOT / "PRIVACY_EN.md",
+        REPO_ROOT / "AGENTS.md",
+        REPO_ROOT / "docs/04_三大连接通道选型与网络排障手册.md",
+        REPO_ROOT / "docs/en/04_gateways_and_troubleshooting.md",
+        REPO_ROOT / "docs/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "docs/en/AI_SETUP_GUIDE.md",
+    )
+    required_channel_tokens = (
+        # Channel 1 backup (trycloudflare)
+        "trycloudflare",
+        "SHA-256",
+        "HTTP/2",
+        # Channel 2 (Cloudflare Dedicated Fixed Gateway)
+        "443 WSS",
+        "256-bit",
+        "workers_tunnel_secret",
+        "shred_cloudflare_api_token",
+        # Channel 3A (24h Cloud Server Hub & SSHv2 reverse tunnel)
+        "Caddy",
+        "TLS",
+        "vps_id_ed25519",
+        "vps_node_secret",
+        "SSHv2",
+        # Channel 3B (Cloudflare Named Tunnel & Generic HTTPS Reverse Proxy)
+        "cloudflare_token",
+        "[REDACTED_TUNNEL_TOKEN]",
+        "421",
+        # Shared OAuth 2.1 + RFC 8707 & recovery card encryption
+        "PKCE",
+        "8707",
+        "AES-256-GCM",
+    )
+    for doc_p in bilingual_core_docs:
+        txt = doc_p.read_text(encoding="utf-8")
+        rel = doc_p.relative_to(REPO_ROOT).as_posix()
+        for tok in required_channel_tokens:
+            assert tok in txt, f"{rel} missing multi-channel encryption/boundary detail `{tok}`"
+
+    secondary_docs = (
+        REPO_ROOT / "docs/README.md",
+        REPO_ROOT / "docs/en/README.md",
+        REPO_ROOT / "docs/01_网页版Gemini与手机远程连接教程.md",
+        REPO_ROOT / "docs/en/01_web_gemini_and_mobile.md",
+        REPO_ROOT / "docs/03_Cosmos_Studio面板与扩展包指南.md",
+        REPO_ROOT / "docs/en/03_studio_console_and_extensions.md",
+    )
+    for sec_p in secondary_docs:
+        s_txt = sec_p.read_text(encoding="utf-8")
+        s_rel = sec_p.relative_to(REPO_ROOT).as_posix()
+        for s_tok in ("443 WSS", "256-bit", "Caddy", "TLS", "SSHv2"):
+            assert s_tok in s_txt, f"{s_rel} missing Channel 2/3 encryption summary `{s_tok}`"
+
+    for svg_rel in ("assets/readme/architecture-dark.svg", "assets/readme/architecture-light.svg"):
+        svg_p = REPO_ROOT / svg_rel
+        svg_txt = svg_p.read_text(encoding="utf-8")
+        root = ET.fromstring(svg_txt)
+        for svg_tok in ("443 WSS", "256-bit", "令牌即毁", "Caddy TLS 1.3", "自有终结"):
+            assert svg_tok in svg_txt, f"{svg_rel} missing gateway card encryption badge `{svg_tok}`"
+        # Ensure Column 2 (`x="352"` inside `width="220"` rect) text strings stay concise and never overflow
+        for elem in root.iter():
+            if elem.tag.endswith("text") and elem.attrib.get("x") == "352":
+                label = (elem.text or "").strip()
+                est_units = sum(1.9 if ord(ch) > 127 else 1.0 for ch in label)
+                assert est_units <= 34.0, f"{svg_rel} Column 2 text too wide ({est_units:.1f}u): {label!r}"
+
+

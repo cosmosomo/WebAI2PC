@@ -90,13 +90,19 @@ _GUIDE_ALIASES: Dict[str, str] = {
     "cloudflare": "cloudflare",
     "workers": "cloudflare",
     "workers_dev": "cloudflare",
+    "cf_workers": "cloudflare",
+    "cloudflare_workers": "cloudflare",
     "cf": "cloudflare",
     "gateways": "gateways",
     "gateway": "gateways",
+    "trycloudflare": "gateways",
     "vps": "gateways",
     "vps_hub": "gateways",
     "srv_us": "gateways",
     "openssh": "gateways",
+    "cloudflare_token": "gateways",
+    "custom": "gateways",
+    "reverse_proxy": "gateways",
     "self_hosted": "gateways",
     "tunnels": "gateways",
     "permissions": "permissions",
@@ -187,37 +193,37 @@ def _build_topic_templates(port_placeholder: str) -> Dict[str, Dict[str, Any]]:
         },
         "cloudflare": {
             "topic": "cloudflare",
-            "title": "配置第 2 类 Cloudflare 免费终身固定网址与代理依赖说明",
-            "aliases": ("cloudflare", "workers", "workers_dev", "cf"),
+            "title": "配置第 2 类 Cloudflare 专属固定网关（加密鉴权、边缘终结与代理依赖说明）",
+            "aliases": ("cloudflare", "workers", "workers_dev", "cf_workers", "cloudflare_workers", "cf"),
             "recommended_page": "cloudflare",
             "markdown": (
-                "### 配置第 2 类：Cloudflare 专属固定网关（免费终身固定网址与依赖边界）\n\n"
-                f"1. **打开连接与网关设置页**：在本地浏览器打开 `{base}/#settings/gateways`（或在主控首页点击右上 `设置` -> `连接与网关`，或点击连接卡右上 `配置连接通道 ▸`），找到第 2 类卡片 **「Cloudflare 专属固定网关」**，点击卡片右侧 `配置 ▾` 展开详情。\n"
-                "2. **生成 Cloudflare API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`（跳转到 `https://dash.cloudflare.com/profile/api-tokens`），登录免费 Cloudflare 账号（无需绑信用卡），按页面预填的 Workers 脚本与账号读取权限生成并复制一次性 API Token。\n"
-                "3. **一键部署固定网关（约 3 秒 · 零外部二进制依赖）**：回到本地控制台，将令牌粘贴到 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框（多账户时在下拉框选择目标账户），点击 `一键部署并开启（约 3 秒）`。\n"
-                "   - **本机环境与配额依赖**：采用纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`），自动生成形如 `https://cosmos-mcp-xxxx.<子域>.workers.dev/mcp` 的终身固定地址；受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）及边缘默认反代读取超时 `125` 秒约束。\n"
-                "   - **令牌即刻清零销毁**：部署完成后本机立即清零销毁所填 API Token，不留存明文令牌；后续只需拨动卡片右上角开关即可启停，且可与第 1 类或第 3 类通道同时在线。\n"
+                "### 配置第 2 类：Cloudflare 专属固定网关（免费终身固定网址、加密链路与依赖边界）\n\n"
+                f"1. **打开连接与网关设置页**：在本地浏览器打开 `{base}/#settings/gateways`（或在主控首页点击右上 `设置` -> `连接与网关`，或点击连接卡右上 `配置连接通道 ▸`），找到第 2 类卡片 **「Cloudflare 专属固定网关」**（命令行 `--mode workers_dev`，兼容 `cf_workers` / `cloudflare_workers`），点击卡片右侧 `配置 ▾` 展开详情。\n"
+                "2. **生成一次性最小权限 API 令牌**：点击卡片内的 `第 1 步：打开 Cloudflare 预填权限页（支持 Google 快捷登录）`（跳转到 `https://dash.cloudflare.com/profile/api-tokens`），登录免费 Cloudflare 账号（无需绑信用卡），按页面预填的 Workers 脚本与账号读取权限生成并复制一次性 API Token。\n"
+                "3. **一键部署固定网关（约 3 秒 · 零外部二进制依赖 · 真实加密与边缘终结边界）**：回到本地控制台，将令牌粘贴到 `第 2 步：粘贴 API 令牌（部署后立即销毁）` 输入框（多账户时在下拉框选择目标账户），点击 `一键部署并开启（约 3 秒）`。\n"
+                "   - **纯 Python `443 WSS` 与 `256-bit` 隧道密钥鉴权**：采用纯 Python 标准库 `ssl.create_default_context()` 校验证书链，建立出站 **`443 WSS`（`TLS 1.2/1.3` 加密 WebSocket）** 多路复用长连接，**零外部二进制依赖**（无需安装 `Node.js`、`wrangler` 或 `cloudflared`）；本机以当前用户独占权限（Windows `icacls` / Unix `0600`）自动生成 **`256-bit`（64 位十六进制）`workers_tunnel_secret`**，Worker 端 `/_cosmos_tunnel` 采用常量时间比对（`constantTimeEqual`）防伪造挂载；自动生成形如 `https://cosmos-mcp-xxxx.<子域>.workers.dev/mcp` 的终身固定地址，受 Cloudflare Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）及边缘默认反代读取超时 `125` 秒（`125s`）约束。\n"
+                "   - **边缘终结边界、令牌即刻全零销毁与恢复卡**：公网 **`HTTPS / TLS`** 在**您自己名下的 Cloudflare 账号边缘（Worker + SQLite Hibernation Durable Object，路由白名单仅放行 OAuth 与 `/mcp*`）**终结，回源后本机拦截 `/studio` 等管理路径并强制执行 **`OAuth 2.1 + PKCE（SHA-256）`** 与 RFC `8707` 读写/只读受众隔离（访问令牌仅存 `SHA-256` 摘要）。一次性 Cloudflare API Token 在部署完成后**立即全零覆写销毁**（`shred_cloudflare_api_token`，磁盘零明文留存），并支持导出 **`scrypt + AES-256-GCM`** 加密恢复卡 PNG；后续只需拨动卡片右上角开关即可启停，且可与第 1 类或第 3 类通道同时在线。\n"
                 "4. **中国大陆默认 `*.workers.dev` 常驻代理要求（重点）**：`*.workers.dev` 在国内运营商与公共 DNS 下存在全量 DNS 污染（无代理裸连 `100%` 超时）。若未绑定自定义域名，**本机运行期间必须保持系统 HTTP/HTTPS 代理（如 Clash / Mihomo / v2rayN，或环境变量 `HTTPS_PROXY` / `WSS_PROXY`）常开且分流规则覆盖 `*.workers.dev`**，以维持本机后台到边缘的 `443 WSS` 隧道；首次在浏览器打开 `/consent` 授权页时同样需走代理访问 `*.workers.dev`（若分流规则漏掉 `*.workers.dev` 可临时切全局完成首次授权，但切回规则模式后日常后台运行仍须保持代理规则覆盖 `*.workers.dev`）；若设置了 `NO_PROXY`，必须保留 `127.0.0.1,localhost,::1`。\n"
                 "5. **国内免代理方案（绑定 Active Zone 自定义域名）**：在 `选填：自定义域名（Active Zone，国内免切代理）` 填入同一 Cloudflare 账号下已激活托管的域名（如 `mcp.yourdomain.dpdns.org`）保存部署，即可走未受 `workers.dev` 污染的边缘节点实现免代理直连（自定义域名请在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询；或直接改用第 1 类默认 `*.srv.us` / 第 3 类自有云服务器）。"
             ),
         },
         "gateways": {
             "topic": "gateways",
-            "title": "3 类连接通道依赖对比、独立开关并存与自有云服务器 24h 主站",
-            "aliases": ("gateways", "vps", "vps_hub", "srv_us", "openssh"),
+            "title": "3 类连接通道加密鉴权、边缘终结对比、独立开关并存与自有云服务器 24h 主站",
+            "aliases": ("gateways", "trycloudflare", "vps", "vps_hub", "srv_us", "openssh", "cloudflare_token", "custom", "reverse_proxy"),
             "recommended_page": "gateways",
             "markdown": (
-                "### 3 类连接通道前置依赖对比与多网关并存说明\n\n"
+                "### 3 类连接通道加密方式、边缘终结边界与多网关并存说明\n\n"
                 f"打开 `{base}/#settings/gateways` 可管理全部 3 类连接通道；每张卡片右上角均有独立开关，支持多条通道同时在线，主控首页顶部可一键切换当前复制的网关地址：\n\n"
-                "1. **第 1 类 · 默认免配置「系统内置 OpenSSH 免登录直连」（`--mode openssh`，兼容 `public_gateway`）**：\n"
-                "   - **首选系统 OpenSSH 固定地址通道（`*.srv.us` 中继，10 秒启动等待预算）**：直接调用 Windows 10/11、macOS、Linux 系统自带的 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制下载、零云账号注册，启动等待预算 `10` 秒），采用四重加密与鉴权链路：本机持久 `Ed25519` 非对称密钥认证（私钥留存本机不上传）+ OpenSSH `SSHv2` 加密反向隧道（优先协商 `ChaCha20-Poly1305` 或 `AES-256-GCM` 对称认证加密与 `curve25519-sha256` 密钥交换）+ 公网 `HTTPS/TLS` 传输（在开源公共中继 `srv.us` 边缘终结后经 `SSHv2` 加密隧道回源）+ 本机回环隔离垫片与 `OAuth 2.1 + PKCE S256` 二次鉴权，分配跨关机重启不变的固定 HTTPS 地址，国内家庭宽带通常可**免代理直连**；支持通过 `导出身份恢复卡 PNG` / `导入恢复卡 PNG`（采用 `scrypt + AES-256-GCM` 加密）备份迁移本机固定节点身份。（与第 3 类连接自有 Linux 云服务器不同，本通道使用公共免注册中继，无需自备服务器。）\n"
-                "   - **备用 `*.trycloudflare.com` 临时通道（独立开关并存 / `--mode cloudflare`）**：在卡片展开区配有独立开关 `开启备用（可与 OpenSSH 固定通道同时在线）`，既可与 OpenSSH 固定通道同时在线热备，也可在校园网/企业网封禁出站 `22` 端口或 `srv.us` 超过 `10` 秒未连通时启用。依赖官方 `cloudflared` 客户端二进制（系统 `PATH` 未预装时首次自动从 `https://github.com/cloudflare/cloudflared/releases/latest` 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像校验下载至状态目录 `bin/`；国内无代理拉取 GitHub 慢时可开代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）。注意该通道每次重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求与 `125` 秒边缘读超时，跨境高丢包环境建议开启系统 HTTP 代理。\n"
-                "2. **第 2 类 · 无服务器固定网址「Cloudflare 专属固定网关」（`workers_dev`）**：\n"
-                "   - 纯 Python 标准库 `443 WSS` 客户端，**零外部二进制依赖**（无需 `Node.js`、`wrangler` 或 `cloudflared`）；依赖免费 Cloudflare 账号与一次性 API Token（部署后即刻清零销毁），受 Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘 `125` 秒读超时约束。\n"
+                "1. **第 1 类 · 默认免配置「系统内置 OpenSSH 免登录直连」（`--mode openssh`，兼容 `public_gateway` / `srv_us`）**：\n"
+                "   - **首选系统 OpenSSH 固定地址通道（`*.srv.us` 中继，10 秒启动等待预算）**：直接调用 Windows 10/11、macOS、Linux 系统自带的 OpenSSH（`ssh`）客户端与出站 TCP `22` 端口（零额外二进制下载、零云账号注册，启动等待预算 `10` 秒），采用四重加密与鉴权链路：本机持久 `Ed25519` 非对称密钥认证（私钥留存本机不上传）+ OpenSSH `SSHv2` 加密反向隧道（优先协商 `ChaCha20-Poly1305` 或 `AES-256-GCM` 对称认证加密与 `curve25519-sha256` 密钥交换）+ 公网 `HTTPS/TLS` 传输（在开源公共中继 `srv.us` 边缘终结后经 `SSHv2` 加密隧道回源）+ 本机回环隔离垫片与 `OAuth 2.1 + PKCE S256` 二次鉴权及 RFC `8707` 受众隔离，分配跨关机重启不变的固定 HTTPS 地址，国内家庭宽带通常可**免代理直连**；支持通过 `导出身份恢复卡 PNG` / `导入恢复卡 PNG`（采用 `scrypt + AES-256-GCM` 加密）备份迁移本机固定节点身份。（与第 3 类连接自有 Linux 云服务器不同，本通道使用公共免注册中继，无需自备服务器。）\n"
+                "   - **备用「Cloudflare 临时加密通道（trycloudflare 备用）」（独立开关并存 / `--mode cloudflare`，兼容别名 `--mode trycloudflare`）**：在卡片展开区配有独立开关 `开启备用（可与 OpenSSH 固定通道同时在线）`，既可与 OpenSSH 固定通道同时在线热备，也可在校园网/企业网封禁出站 `22` 端口或 `srv.us` 超过 `10` 秒未连通时启用。官方 `cloudflared` 客户端首次从 `https://github.com/cloudflare/cloudflared/releases/latest` 或 `COSMOS_CLOUDFLARED_MIRROR` HTTPS 镜像下载时强制通过 **`SHA-256`** 校验和核验（存至状态目录 `bin/`；国内无代理拉取 GitHub 慢时可开代理、设 `COSMOS_CLOUDFLARED_MIRROR` 或预装 `cloudflared`）；通过出站 `443` 端口建立 **`TLS + HTTP/2`**（`--protocol http2`）加密隧道，公网 **`HTTPS / TLS`** 在 Cloudflare 边缘终结后经出站 TLS 隧道回源本机 `127.0.0.1`（非端到端零知识盲转），本机 `GatewayContextASGI` 识别 `Cf-Ray` / `X-Forwarded-*` 阻断公网访问 `/studio` 管理面，强制执行本地 **`OAuth 2.1 + PKCE（SHA-256）`** 与 RFC `8707` 读写/只读受众隔离。注意该通道每次重启必换域名、无在线率 SLA、单控制流（`ha-connections:1`）重连有 `4–21` 秒空窗（返 HTTP `530`/`1033`）、限 `200` 并发在途请求与 `125` 秒（`125s`）边缘读超时，跨境高丢包环境建议开启系统 HTTP 代理。\n"
+                "2. **第 2 类 · 无服务器固定网址「Cloudflare 专属固定网关」（`--mode workers_dev`，兼容 `cf_workers` / `cloudflare_workers`）**：\n"
+                "   - **加密链路与边缘边界**：纯 Python 标准库 `ssl.create_default_context()` 校验证书链，建立出站 **`443 WSS`（`TLS 1.2/1.3` 加密 WebSocket）** 多路复用长连接，**零外部二进制依赖**（无需 `Node.js`、`wrangler` 或 `cloudflared`）；本机自动生成用户独占权限的 **`256-bit` `workers_tunnel_secret`**，Worker 端 `/_cosmos_tunnel` 采用常量时间比对校验密钥；一次性 Cloudflare API Token 在部署完成后**立即全零覆写销毁**（`shred_cloudflare_api_token`，零明文落盘），支持导出 **`scrypt + AES-256-GCM`** 加密恢复卡 PNG。公网 **`HTTPS / TLS`** 在**用户本人名下的 Cloudflare 账号边缘（Worker + SQLite Hibernation Durable Object，白名单仅放行 OAuth 与 `/mcp*`）**终结，回源后本机阻断 `/studio` 并执行 **`OAuth 2.1 + PKCE（SHA-256）`** 与 RFC `8707` 受众隔离；受 Workers Free 每日 `100,000` 次请求上限（超限返 `1027`）与边缘 `125` 秒（`125s`）读超时约束。\n"
                 "   - **国内代理边界**：默认 `*.workers.dev` 在中国大陆遭全量 DNS 污染，未绑自定义域名时运行期间须保持系统 HTTP/HTTPS 代理常开且规则覆盖 `*.workers.dev`；绑定同账号 Active Zone 自定义域名后可国内免代理直连。\n"
-                "3. **第 3 类 · 自有资产合一「自有云服务器 24h 主站 或 自有固定域名」**：\n"
-                "   - **子页签 A `自有服务器建 24h 主站`（`vps_hub` / `vps`）**：依赖一台开放 `80`/`443` 端口的 Linux 服务器与本机 `ssh` 客户端，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，国内（配已备案域名）或港新服务器全程免代理直连；填写 `服务器公网 IP（必填）` 与 SSH 密码或密钥点击 `一键部署 24h 主站并开启`，工具调用支持 `target=\"auto\"` 跨机路由，本地电脑关机时云服务器主站仍保持 24 小时在线。\n"
-                "   - **子页签 B `自有固定域名 / 通用 HTTPS 反代`**：支持通用反向代理（Caddy / Nginx / FRP）或 `Cloudflare Named Tunnel`（`--mode cloudflare_token`）。其中 `cloudflare_token` 依赖官方 `cloudflared` 二进制（同第 1 类支持首次自动下载或 `COSMOS_CLOUDFLARED_MIRROR`）、Cloudflare Zero Trust 账号、Active Zone 域名及后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发，且须在 Cloudflare 后台关闭 `Bot Fight Mode` 并对 `/mcp*` 与 OAuth 路径跳过托管质询。"
+                "3. **第 3 类 · 自有资产合一「自有云服务器 24h 主站 或 自有固定域名」（`self_hosted`）**：\n"
+                "   - **子页签 A `自有服务器建 24h 主站`（`--mode vps_hub`）与 `SSH 反向隧道`（`--mode vps`）**：依赖一台开放 `80`/`443` 端口的 Linux 服务器与本机 `ssh` 客户端，**零 Cloudflare 依赖、零单日请求上限、零 `125s` 边缘超时限制**，国内（配已备案域名）或港新服务器全程免代理直连。一键在**用户自有 Linux 云服务器**部署 **Caddy v2.11+**，自动签发续期 **`TLS 1.2/1.3` ACME 证书**（有域名签 Let's Encrypt 证书，无域名自动签公网 IP 短期 ACME 证书 + `sslip.io` 备用证书），**公网 TLS 完全在用户自有服务器上终结，零第三方云平台过境解密**；部署优先使用本机独立生成的 **`Ed25519`** 密钥对（`secrets/vps_id_ed25519`，`0600` / 用户独占权限），首次填写的 SSH 密码**仅当次内存握手使用、绝不落盘**；`vps_hub` 模式下本机经 CA 校验的出站 **`443 WSS`（`TLS 1.2/1.3`）** 挂载 `/_cosmos_node` 并通过 **`256-bit` `vps_node_secret`**（`hmac.compare_digest` 常量时间比对）双向防伪，Caddy 拦截外网访问 `/studio` 与非 WebSocket `/_cosmos_node` 且云端自动剥离 `local_api_token`；`vps` 模式下通过系统内置 OpenSSH 建立 **`SSHv2`**（`ChaCha20-Poly1305 / AES-256-GCM`）`-R` 加密反向隧道；全程强制 **`OAuth 2.1 + PKCE（SHA-256）`** 与 RFC `8707`，支持 `target=\"auto\"` 跨机路由，本地电脑关机时云服务器主站仍 24 小时在线。\n"
+                "   - **子页签 B `自有固定域名 / Cloudflare Named Tunnel / 通用 HTTPS 反代`（`--mode cloudflare_token` / `--mode custom` / `--mode reverse_proxy`）**：`cloudflare_token` 经 **`SHA-256`** 校验的官方 `cloudflared`（支持首次自动下载或 `COSMOS_CLOUDFLARED_MIRROR`）建立出站 `443` **`TLS + HTTP/2`** 隧道，令牌按用户独占权限存于 `secrets/` 并在日志脱敏为 `[REDACTED_TUNNEL_TOKEN]`，公网 TLS 在用户本人的 Cloudflare Zero Trust 边缘终结（需 Active Zone 域名、后台指向 `http://127.0.0.1:8096` 的 Public Hostname 转发，并在 Cloudflare 后台关闭 `Bot Fight Mode` 及对 `/mcp*` 与 OAuth 路径跳过托管质询）；`custom` / `reverse_proxy` 模式下公网 **`HTTPS / TLS 1.2/1.3`** 在用户自控的 Caddy / Nginx 反代终结（或经 FRP TLS SNI 透传），本机校验受信任 `Host` 白名单（未知域名返 `421`）、阻断 `/studio` 并执行 **`OAuth 2.1 + PKCE（SHA-256）`** 与 RFC `8707`。"
             ),
         },
         "permissions": {

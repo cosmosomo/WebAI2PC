@@ -81,12 +81,29 @@ def test_bootstrap_cli_doctor_and_autostart_guards(tmp_path: Path) -> None:
     assert "cryptography" in STRICT_CORE_IMPORTS
     assert "openssh" in SUPPORTED_TUNNEL_MODES
     assert "srv_us" in SUPPORTED_TUNNEL_MODES
+    assert "trycloudflare" in SUPPORTED_TUNNEL_MODES
     assert "cf_workers" in SUPPORTED_TUNNEL_MODES
+    assert "cloudflare_workers" in SUPPORTED_TUNNEL_MODES
+    assert "reverse_proxy" in SUPPORTED_TUNNEL_MODES
 
     from cosmos_mcp.core.config import mode_to_gateway_slot, normalize_gateways_config
-    from cosmos_mcp.launcher.daemon import normalize_instant_policy
+    from cosmos_mcp.launcher.cli import ensure_standalone_state
+    from cosmos_mcp.launcher.daemon import StandaloneSupervisorLoop, normalize_instant_policy
+    from cosmos_mcp.launcher.doctor import _discover_gateway_slots_for_probe
+    from cosmos_mcp.studio.routes import (
+        ALL_SUPPORTED_TUNNEL_MODES,
+        TUNNEL_MODE_LABELS_ZH,
+        _normalize_instant_policy,
+        _normalize_studio_gateways_cfg,
+        _slot_and_submode_for_tunnel_mode,
+    )
 
     assert mode_to_gateway_slot("openssh") == ("instant", "public_gateway")
+    assert mode_to_gateway_slot("trycloudflare") == ("instant", "cloudflare")
+    assert mode_to_gateway_slot("cf_workers") == ("workers_dev", "workers_dev")
+    assert mode_to_gateway_slot("cloudflare_workers") == ("workers_dev", "workers_dev")
+    assert mode_to_gateway_slot("reverse_proxy") == ("self_hosted", "custom")
+
     gws_openssh, sel_openssh = normalize_gateways_config(
         {
             "tunnel_mode": "openssh",
@@ -99,6 +116,103 @@ def test_bootstrap_cli_doctor_and_autostart_guards(tmp_path: Path) -> None:
     assert gws_openssh["instant"]["public_url"] == "https://demo99.srv.us"
     assert normalize_instant_policy("openssh_only") == "srv_us_only"
     assert normalize_instant_policy("openssh_fixed") == "srv_us_only"
+
+    # Symmetric normalization for `trycloudflare`, `trycloudflare_only`, `cf_workers`, `cloudflare_workers`, `reverse_proxy`
+    gws_trycf, sel_trycf = normalize_gateways_config(
+        {
+            "tunnel_mode": "trycloudflare",
+            "instant_policy": "trycloudflare_only",
+            "gateways": {"instant": {"enabled": True, "submode": "trycloudflare"}},
+        }
+    )
+    assert sel_trycf == "instant"
+    assert gws_trycf["instant"]["enabled"] is True
+    assert gws_trycf["instant"]["submode"] == "cloudflare"
+    assert gws_trycf["instant"]["instant_policy"] == "quick_only"
+    assert normalize_instant_policy("trycloudflare_only") == "quick_only"
+    assert normalize_instant_policy("", submode="trycloudflare") == "quick_only"
+    assert _normalize_instant_policy("trycloudflare_only") == "quick_only"
+    assert _normalize_instant_policy("", submode="trycloudflare") == "quick_only"
+
+    alias_state = tmp_path / "state_trycf"
+    alias_ws = tmp_path / "ws_trycf"
+    alias_ws.mkdir(parents=True, exist_ok=True)
+    ensure_initialized(product_root=alias_state, port=18821, cli_state_dir=str(alias_state))
+    pol_probe = LiveRuntimePolicy(workspace=str(alias_ws), state_root=alias_state, product_root=alias_state)
+    pol_probe.gateways = {}
+
+    for alias_mode, expected_slot_sub in (
+        ("trycloudflare", ("instant", "cloudflare")),
+        ("cf_workers", ("workers_dev", "workers_dev")),
+        ("cloudflare_workers", ("workers_dev", "workers_dev")),
+        ("reverse_proxy", ("self_hosted", "custom")),
+    ):
+        assert alias_mode in ALL_SUPPORTED_TUNNEL_MODES
+        assert alias_mode in TUNNEL_MODE_LABELS_ZH
+        assert _slot_and_submode_for_tunnel_mode(alias_mode) == expected_slot_sub
+        doc_slots = {
+            s["gateway_id"]: s
+            for s in _discover_gateway_slots_for_probe(tmp_path, "pc", {"tunnel_mode": alias_mode}, {})
+        }
+        assert doc_slots[expected_slot_sub[0]]["enabled"] is True
+        assert doc_slots[expected_slot_sub[0]]["submode"] == expected_slot_sub[1]
+        gws_alias, sel_alias = normalize_gateways_config({"tunnel_mode": alias_mode})
+        assert sel_alias == expected_slot_sub[0]
+        assert gws_alias[expected_slot_sub[0]]["submode"] == expected_slot_sub[1]
+        st_gws, st_sel, _ = _normalize_studio_gateways_cfg(pol_probe, {"tunnel_mode": alias_mode})
+        assert st_sel == expected_slot_sub[0]
+        assert st_gws[expected_slot_sub[0]]["submode"] == expected_slot_sub[1]
+
+    # Verify CLI `ensure_standalone_state`, `update_gateway_slot`, and `StandaloneSupervisorLoop` normalize aliases cleanly
+    import sys
+
+    ensure_standalone_state(
+        alias_state,
+        port=18821,
+        workspace_roots=[str(alias_ws)],
+        tunnel_mode="trycloudflare",
+        prefix="pc",
+    )
+    svc_doc = json.loads((alias_state / "config" / "service.json").read_text(encoding="utf-8"))
+    assert svc_doc["tunnel_mode"] == "cloudflare"
+    assert svc_doc["gateways"]["instant"]["submode"] == "cloudflare"
+
+    for cli_alias, canon_tm in (("cf_workers", "workers_dev"), ("cloudflare_workers", "workers_dev")):
+        ensure_standalone_state(
+            alias_state,
+            port=18821,
+            workspace_roots=[str(alias_ws)],
+            tunnel_mode=cli_alias,
+            public_url="https://demo-fixed.sub.workers.dev",
+            prefix="pc",
+        )
+        svc_cf = json.loads((alias_state / "config" / "service.json").read_text(encoding="utf-8"))
+        assert svc_cf["tunnel_mode"] == canon_tm
+        assert svc_cf["gateways"]["workers_dev"]["submode"] == "workers_dev"
+
+    pol_alias = LiveRuntimePolicy(workspace=str(alias_ws), state_root=alias_state, product_root=alias_state)
+    pol_alias.update_gateway_slot("instant", enabled=True, submode="trycloudflare", select=True)
+    assert pol_alias.gateways["instant"]["submode"] == "cloudflare"
+    assert pol_alias.tunnel_mode == "cloudflare"
+
+    sup_trycf = StandaloneSupervisorLoop(
+        state_root=alias_state,
+        runtime_python=sys.executable,
+        port=18821,
+        mode="trycloudflare",
+        no_tray=True,
+        enforce_singleton=False,
+    )
+    assert sup_trycf.mode == "cloudflare"
+    sup_cfw = StandaloneSupervisorLoop(
+        state_root=alias_state,
+        runtime_python=sys.executable,
+        port=18821,
+        mode="cf_workers",
+        no_tray=True,
+        enforce_singleton=False,
+    )
+    assert sup_cfw.mode == "workers_dev"
 
     sample = (
         "tok1=cmcp_AbCdEfGhIjKlMnOpQrStUvWxYz123456 "

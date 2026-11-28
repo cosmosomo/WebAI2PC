@@ -185,9 +185,9 @@
       };
     }
     var m = String(conn.tunnel_mode || state.tunnel_mode || "public_gateway");
-    var eff = m === "reverse_proxy" ? "custom" : m;
+    var eff = m === "reverse_proxy" ? "custom" : m === "trycloudflare" ? "cloudflare" : (m === "cf_workers" || m === "cloudflare_workers") ? "workers_dev" : m;
     return {
-      1: ["public_gateway", "srv_us", "cloudflare"].indexOf(eff) >= 0,
+      1: ["public_gateway", "openssh", "srv_us", "cloudflare"].indexOf(eff) >= 0,
       2: eff === "workers_dev",
       3: ["vps_hub", "vps", "cloudflare_token", "custom"].indexOf(eff) >= 0,
     };
@@ -6416,11 +6416,11 @@
     var sumTxt = $("ob-route-summary-text");
     if (sumTxt) {
       if (obState.hasCf && obState.hasVps) {
-        sumTxt.textContent = "已勾选两项资源：下一步默认优先使用更省心的「Cloudflare 3 秒固定网关」，也可一键切到自有服务器。";
+        sumTxt.textContent = "已勾选两项资源：下一步默认优先使用更省心的「Cloudflare 3 秒固定网关」（443 WSS TLS + 256-bit 隧道密钥 + API 令牌即刻销毁），也可一键切到自有服务器（Caddy TLS 1.3 自有终结）。";
       } else if (obState.hasCf) {
-        sumTxt.textContent = "已选 Cloudflare 账号：下一步将引导你 3 秒自动部署终身固定网址（*.workers.dev）。";
+        sumTxt.textContent = "已选 Cloudflare 账号：下一步将引导你 3 秒自动部署终身固定网址（*.workers.dev，443 WSS TLS + 256-bit 隧道密钥 + API 令牌即刻销毁）。";
       } else if (obState.hasVps) {
-        sumTxt.textContent = "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站或绑定自有 HTTPS 域名。";
+        sumTxt.textContent = "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站（Caddy TLS 1.3 自有终结 + 256-bit WSS / SSHv2）或绑定自有 HTTPS 域名。";
       } else {
         sumTxt.textContent = "未勾选额外资源：默认调用系统内置 OpenSSH 免登录直连（本机 Ed25519 密钥 + SSHv2 / HTTPS 加密），零注册直接生成固定连接网址。";
       }

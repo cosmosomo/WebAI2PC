@@ -122,6 +122,7 @@ _ = (TIER_NUMERIC_LEVEL, TIER_ORDER)
 SUPPORTED_TUNNEL_MODES: Tuple[str, ...] = (
     "local",
     "cloudflare",
+    "trycloudflare",
     "cloudflare_token",
     "workers_dev",
     "cf_workers",
@@ -902,6 +903,12 @@ def ensure_standalone_state(
 
     if eff_mode not in SUPPORTED_TUNNEL_MODES:
         eff_mode = "public_gateway"
+    eff_mode = {
+        "trycloudflare": "cloudflare",
+        "cf_workers": "workers_dev",
+        "cloudflare_workers": "workers_dev",
+        "reverse_proxy": "custom",
+    }.get(eff_mode, eff_mode)
 
     pg_online_flag: Optional[bool] = None
     instant_fb_flag: Optional[bool] = None
@@ -1676,6 +1683,8 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
                 if saved_tm in (
                     "cloudflare_token",
                     "workers_dev",
+                    "cf_workers",
+                    "cloudflare_workers",
                     "public_gateway",
                     "openssh",
                     "srv_us",
@@ -1684,6 +1693,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
                     "reverse_proxy",
                     "custom",
                     "cloudflare",
+                    "trycloudflare",
                 )
                 else "public_gateway"
             )
@@ -1739,7 +1749,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
                 else:
                     print(f"参数错误: {exc}", file=sys.stderr)
                 return 2
-            if raw_mode_arg in ("cloudflare", "cloudflare_token", "workers_dev", "public_gateway", "openssh", "srv_us") and prev_mode == "local":
+            if raw_mode_arg in ("cloudflare", "trycloudflare", "cloudflare_token", "workers_dev", "cf_workers", "cloudflare_workers", "public_gateway", "openssh", "srv_us") and prev_mode == "local":
                 wait_end = time.monotonic() + 25.0
                 while time.monotonic() < wait_end:
                     live = detect_running_instance(st_root, eff_p)
@@ -1832,9 +1842,9 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
     if is_interactive:
         print("\n=== Cosmos MCP 连接向导 ===")
         print(" [1] 系统内置 OpenSSH 免登录直连（本机 Ed25519 密钥 + SSHv2/TLS 加密，经 srv.us 生成固定 HTTPS 地址，22 端口受阻自动切换 Cloudflare 临时通道）")
-        print(" [2] Cloudflare 固定域名通道（粘贴 Named Tunnel 固定 Token，开机自启永久固定域名）")
-        print(" [3] 自有云服务器 SSH 反向隧道（自动维护 ssh -R 反向转发）")
-        print(" [4] 自有 HTTPS 反代固定域名（外部已配置网关转发）")
+        print(" [2] Cloudflare Named Tunnel 固定域名通道（粘贴固定令牌，SHA-256 校验 cloudflared 建立出站 443 TLS/HTTP2 隧道，用户自有 Cloudflare 边缘终结 TLS + 本地 OAuth 2.1 PKCE）")
+        print(" [3] 自有云服务器 SSH 反向隧道（调用系统内置 OpenSSH 建立 SSHv2 ChaCha20-Poly1305 / AES-256-GCM 加密 -R 转发，用户自有服务器终结 TLS + 本地 OAuth 2.1 PKCE）")
+        print(" [4] 自有固定域名 HTTPS 反代（用户自控 Caddy / Nginx / FRP TLS 1.2/1.3 网关 + 本机受信任 Host 白名单与 OAuth 2.1 PKCE）")
         print(" [5] 仅本机回环调试（不开启公网 HTTPS 通道）")
         m_sel = (input("请选择连接方式 [1-5] (默认 1): ") or "1").strip()
         mode = {
@@ -2327,6 +2337,7 @@ def _cmd_agent_setup(args: argparse.Namespace) -> int:
         "recommended_commands": {
             "agent_setup_openssh": "cosmos-mcp agent-setup --mode openssh --no-browser --json",
             "agent_setup_public_gateway": "cosmos-mcp agent-setup --mode public_gateway --no-browser --json",
+            "agent_setup_trycloudflare": "cosmos-mcp agent-setup --mode trycloudflare --no-browser --json",
             "agent_setup_cloudflare": "cosmos-mcp agent-setup --mode cloudflare --no-browser --json",
             "non_interactive_local_start": "cosmos-mcp agent-setup --mode local --no-browser --json",
             "non_interactive_named_tunnel": "cosmos-mcp agent-setup --mode cloudflare_token --tunnel-token <TOKEN> --public-url https://<DOMAIN> --no-browser --json",
@@ -2893,7 +2904,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
             "--mode",
             choices=list(SUPPORTED_TUNNEL_MODES),
             default="",
-            help="连接通道：openssh（或 public_gateway，首次默认：调用系统内置 OpenSSH 以 Ed25519 + SSHv2/TLS 加密生成免登录固定地址） / cloudflare / workers_dev / vps_hub / cloudflare_token / vps / custom / local",
+            help="连接通道：openssh（兼容 public_gateway，首次默认：系统内置 OpenSSH Ed25519 + SSHv2/TLS 固定直连） / trycloudflare（兼容 cloudflare：SHA-256 校验 cloudflared 出站 443 TLS/HTTP2 临时加密通道） / workers_dev（兼容 cf_workers / cloudflare_workers：纯 Python 443 WSS + 256-bit 隧道密钥专属固定网关） / vps_hub（自有服务器 Caddy TLS 1.3 + 443 WSS 24h 主站） / vps（自有服务器 OpenSSH SSHv2 反向隧道） / cloudflare_token（Named Tunnel 443 TLS/HTTP2 固定域名） / custom（兼容 reverse_proxy：自有固定域名 HTTPS 反代） / local（仅本机回环调试）",
         )
         sp.add_argument("--tunnel-token", default=None, help="Cloudflare Named Tunnel 固定域名 Token（配合 --public-url 永久固定域名）")
         sp.add_argument("--port", type=int, default=0, help="本地监听端口（默认沿用已保存端口或 8096）")

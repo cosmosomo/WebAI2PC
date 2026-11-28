@@ -657,12 +657,12 @@
             <button type="button" class="pain-option-btn" id="pain-btn-2" role="tab" aria-selected="false" data-channel-pick="2">
               <span class="tag tag-info">对应通道 2 · 终身固定推荐</span>
               <span class="pain-option-title">我想要终身免费固定域名不掉线</span>
-              <span class="pain-option-sub">用 Google 快捷登录 Cloudflare 贴一次令牌，3 秒部署休眠网关，重启不换址。</span>
+              <span class="pain-option-sub">用 Google 快捷登录贴一次令牌（部署后清零销毁），纯 Python 443 WSS TLS + 256-bit 隧道密钥，3 秒生成终身固定网址。</span>
             </button>
             <button type="button" class="pain-option-btn" id="pain-btn-3" role="tab" aria-selected="false" data-channel-pick="3">
               <span class="tag">对应通道 3 · 自有资产组网</span>
               <span class="pain-option-title">我有自己的云服务器想多电脑组网</span>
-              <span class="pain-option-sub">一键部署 24 小时常驻主站同时管云端与多台电脑，或接入自有固定域名。</span>
+              <span class="pain-option-sub">一键部署 Caddy TLS 1.3 自有终结 24h 主站（443 WSS / SSHv2 加密），或接入 Named Tunnel / 自有反代域名。</span>
             </button>
           </div>
 
@@ -671,41 +671,41 @@
               <thead>
                 <tr>
                   <th>通道方案</th>
-                  <th>本机组件依赖</th>
+                  <th>加密方式与组件依赖</th>
                   <th>配额与超时边界</th>
                   <th>网络与代理要求（含国内边界）</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>通道 1 首选：系统内置 <code>OpenSSH</code> 免登录直连</strong>（<code>*.srv.us</code>）</td>
-                  <td>系统自带 OpenSSH（<code>ssh</code>）+ 出站 TCP <code>22</code>，零额外二进制；本机 <code>Ed25519</code> 密钥 + <code>SSHv2</code>（<code>ChaCha20-Poly1305</code> / <code>AES-256-GCM</code>）+ <code>HTTPS/TLS</code> + <code>OAuth 2.1 PKCE S256</code></td>
+                  <td><strong>通道 1 首选：系统内置 <code>OpenSSH</code> 免登录直连</strong>（<code>*.srv.us</code> / <code>--mode openssh</code>）</td>
+                  <td>系统自带 OpenSSH（<code>ssh</code>）+ 出站 TCP <code>22</code>，零额外二进制；本机 <code>Ed25519</code> 密钥 + <code>SSHv2</code>（<code>ChaCha20-Poly1305</code> / <code>AES-256-GCM</code>）+ <code>HTTPS/TLS</code>（<code>srv.us</code> 边缘终结后经 <code>SSHv2</code> 回源）+ <code>OAuth 2.1 PKCE S256</code></td>
                   <td>免注册，启动等待预算 <code>10s</code>，重启网址固定不变</td>
                   <td>国内家庭宽带通常<strong>免代理直连</strong>；可与备用 <code>trycloudflare</code> 独立开关并存</td>
                 </tr>
                 <tr>
-                  <td><strong>通道 1 备用：<code>*.trycloudflare.com</code></strong>（独立开关）</td>
-                  <td>官方 <code>cloudflared</code>（未装时首次从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 自动下载至 <code>bin/</code>）</td>
+                  <td><strong>通道 1 备用：Cloudflare 临时加密通道</strong>（<code>*.trycloudflare.com</code> / <code>--mode trycloudflare</code>）</td>
+                  <td><code>SHA-256</code> 校验官方 <code>cloudflared</code>（未装时首次从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 自动下载至 <code>bin/</code>）+ 出站 <code>443</code> <code>TLS + HTTP/2</code> 加密隧道；公网 <code>HTTPS/TLS</code> 在 Cloudflare 边缘终结后回源本机（非端到端盲转），阻断 <code>/studio</code> 并强制 <code>OAuth 2.1 PKCE S256</code> 与 RFC <code>8707</code></td>
                   <td>重启必换域名，无 SLA，单流 <code>ha-connections:1</code> 重连空窗 <code>4–21s</code>（返 <code>530</code>/<code>1033</code>），限 <code>200</code> 并发与 <code>125s</code> 读超时</td>
                   <td>国内无代理拉取 GitHub 慢时需开代理、设 <code>COSMOS_CLOUDFLARED_MIRROR</code> 或预装；高丢包建议开 HTTP 代理</td>
                 </tr>
                 <tr>
-                  <td><strong>通道 2：<code>Cloudflare 专属固定网关</code></strong>（<code>workers_dev</code>）</td>
-                  <td>纯 Python 标准库 <code>443 WSS</code>，<strong>零外部二进制依赖</strong>（免装 <code>Node.js</code> / <code>wrangler</code> / <code>cloudflared</code>）</td>
+                  <td><strong>通道 2：<code>Cloudflare 专属固定网关</code></strong>（<code>workers_dev</code> / <code>cf_workers</code>）</td>
+                  <td>纯 Python 标准库出站 <code>443 WSS</code>（<code>TLS 1.2/1.3</code>），<strong>零外部二进制依赖</strong>（免装 <code>Node.js</code> / <code>wrangler</code> / <code>cloudflared</code>）；本机独占 <code>256-bit</code> <code>workers_tunnel_secret</code> 常量时间鉴权 + API 令牌部署后全零覆写销毁（<code>shred_cloudflare_api_token</code>）+ <code>scrypt + AES-256-GCM</code> 恢复卡；公网 <code>HTTPS/TLS</code> 在本人 Cloudflare 账号边缘终结，本机阻断 <code>/studio</code> 并执行 <code>OAuth 2.1 PKCE S256</code> 与 RFC <code>8707</code></td>
                   <td>Workers Free 每日 <code>100,000</code> 次请求上限（超限返 <code>1027</code>），边缘默认反代读超时 <code>125s</code></td>
                   <td><strong>国内默认 <code>*.workers.dev</code> 遭全量 DNS 污染（裸连 <code>100%</code> 超时），运行期间须保持系统 HTTP/HTTPS 代理常开且规则覆盖 <code>*.workers.dev</code></strong>（<code>NO_PROXY</code> 保留 <code>127.0.0.1,localhost,::1</code>）；绑同账号 Active Zone 自定义域名可免代理直连</td>
                 </tr>
                 <tr>
-                  <td><strong>通道 3 主推：自有服务器 24h 主站</strong>（<code>vps_hub</code> / <code>vps</code>）</td>
-                  <td>本机 <code>ssh</code> 客户端 + 开放 <code>80</code>/<code>443</code> 端口的 Linux 服务器</td>
+                  <td><strong>通道 3A 主推：自有云服务器 24h 主站</strong>（<code>vps_hub</code> / <code>vps</code>）</td>
+                  <td>本机 <code>ssh</code>（独立 <code>Ed25519</code> 密钥 <code>vps_id_ed25519</code>，首次密码仅内存握手零落盘）+ 自有 Linux 服务器一键部署 <code>Caddy</code> 自动签发续期 <code>TLS 1.2/1.3</code> ACME 证书（<strong>公网 TLS 完全在自有服务器终结、零第三方云平台解密</strong>）；<code>vps_hub</code> 走 <code>443 WSS</code> + <code>256-bit</code> <code>vps_node_secret</code> 常量时间双向鉴权，<code>vps</code> 走 OpenSSH <code>SSHv2</code>（<code>ChaCha20-Poly1305</code> / <code>AES-256-GCM</code>）反向隧道，全程强制 <code>OAuth 2.1 PKCE S256</code> 与 RFC <code>8707</code></td>
                   <td>零 Cloudflare 依赖、零单日请求上限、零 <code>125s</code> 边缘超时，关机主站仍在线</td>
                   <td>国内（配已备案域名）或港新服务器<strong>全程免代理直连</strong></td>
                 </tr>
                 <tr>
-                  <td><strong>通道 3 子项：<code>Cloudflare Named Tunnel</code></strong>（<code>cloudflare_token</code>）</td>
-                  <td>官方 <code>cloudflared</code>（同上自动下载或 <code>COSMOS_CLOUDFLARED_MIRROR</code>）</td>
-                  <td>需 Zero Trust 账号 + Active Zone 域名 + 转发至 <code>http://127.0.0.1:8096</code>，边缘读超时 <code>125s</code></td>
-                  <td>自定义域名免受 <code>workers.dev</code> 污染；须在后台关闭 <code>Bot Fight Mode</code> 并对 <code>/mcp*</code> 与 OAuth 路径跳过托管质询</td>
+                  <td><strong>通道 3B 子项：自有固定域名 / <code>Cloudflare Named Tunnel</code> / 通用反代</strong>（<code>cloudflare_token</code> / <code>custom</code> / <code>reverse_proxy</code>）</td>
+                  <td><code>cloudflare_token</code> 经 <code>SHA-256</code> 校验官方 <code>cloudflared</code>（自动下载或 <code>COSMOS_CLOUDFLARED_MIRROR</code>）建出站 <code>443</code> <code>TLS + HTTP/2</code> 隧道（令牌独占存储且日志脱敏为 <code>[REDACTED_TUNNEL_TOKEN]</code>，TLS 在本人 Zero Trust 边缘终结）；<code>custom</code> / <code>reverse_proxy</code> 在自控 Caddy / Nginx 终结 <code>HTTPS / TLS 1.2/1.3</code>（或 FRP TLS SNI 透传），本机校验 <code>Host</code> 白名单（未知返 <code>421</code>）、阻断 <code>/studio</code> 并执行 <code>OAuth 2.1 PKCE S256</code></td>
+                  <td>Named Tunnel 需 Zero Trust 账号 + Active Zone 域名 + 转发至 <code>http://127.0.0.1:8096</code>（边缘读超时 <code>125s</code>）；自建反代无单日配额限制</td>
+                  <td>自定义域名免受 <code>workers.dev</code> 污染；Named Tunnel 须在后台关闭 <code>Bot Fight Mode</code> 并对 <code>/mcp*</code> 与 OAuth 路径跳过托管质询</td>
                 </tr>
               </tbody>
             </table>
@@ -714,9 +714,9 @@
           <div class="channel-guide-pane active" id="channel-pane-1">
             <div class="tut-workbench-grid">
               <div>
-                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：系统内置 OpenSSH 免登录直连（经 <code>srv.us</code> 中继生成固定地址 · <code>Ed25519 + SSHv2/TLS + PKCE</code> 加密鉴权）</h3>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ①：系统内置 OpenSSH 免登录直连（经 <code>srv.us</code> 中继生成固定地址 · <code>Ed25519 + SSHv2/TLS + PKCE</code> 加密鉴权）与 <code>trycloudflare</code> 临时加密备用</h3>
                 <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary);">
-                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：调用电脑操作系统自带的 OpenSSH（<code>ssh</code>）客户端与本机生成的持久 <code>Ed25519</code> 非对称密钥（私钥留存本机不上传），建立 <code>SSHv2</code> 加密反向隧道（优先协商 <code>ChaCha20-Poly1305</code> 或 <code>AES-256-GCM</code>），经开源公共中继分配固定网址 <code>https://*.srv.us/mcp</code>（公网入站走标准 <code>HTTPS/TLS</code>，回源本机后经隔离垫片拦截后台管理路径并强制校验 <code>OAuth 2.1 + PKCE S256</code> 二次鉴权；启动等待预算 <code>10</code> 秒，关机重启网址不变，国内家庭宽带通常免代理直连）。卡片内同时提供「开启备用（可与 OpenSSH 固定通道同时在线）」独立开关，可随时开启 <code>https://*.trycloudflare.com</code> 备用通道（校园网或企业网封禁出站 <code>22</code> 端口或超过 <code>10</code> 秒未连通时亦可直接启用，首次自动从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 下载 <code>cloudflared</code> 至 <code>bin/</code>；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上 OpenSSH 固定网址后，可在卡片内点击「导出身份恢复卡 PNG」（<code>scrypt + AES-256-GCM</code> 加密）备份密钥。
+                  双击 <code>一键启动_Cosmos_MCP.bat</code>（macOS / Linux 运行 <code>./start_cosmos_mcp.sh</code>）后默认启用：调用电脑操作系统自带的 OpenSSH（<code>ssh</code>）客户端与本机生成的持久 <code>Ed25519</code> 非对称密钥（私钥留存本机不上传），建立 <code>SSHv2</code> 加密反向隧道（优先协商 <code>ChaCha20-Poly1305</code> 或 <code>AES-256-GCM</code>），经开源公共中继分配固定网址 <code>https://*.srv.us/mcp</code>（公网入站走标准 <code>HTTPS/TLS</code>，回源本机后经隔离垫片拦截后台管理路径并强制校验 <code>OAuth 2.1 + PKCE S256</code> 二次鉴权；启动等待预算 <code>10</code> 秒，关机重启网址不变，国内家庭宽带通常免代理直连）。卡片内同时提供「开启备用（可与 OpenSSH 固定通道同时在线）」独立开关，可随时开启 <code>https://*.trycloudflare.com</code> 备用通道（<code>--mode cloudflare</code> 或兼容别名 <code>--mode trycloudflare</code>；校园网或企业网封禁出站 <code>22</code> 端口或超过 <code>10</code> 秒未连通时亦可直接启用，首次经 <code>SHA-256</code> 校验从 GitHub Releases 或 <code>COSMOS_CLOUDFLARED_MIRROR</code> 自动下载官方 <code>cloudflared</code> 至 <code>bin/</code>，通过出站 <code>443</code> 端口建立 <code>TLS + HTTP/2</code> 加密隧道，公网 <code>HTTPS/TLS</code> 在 Cloudflare 边缘终结后回源本机并阻断 <code>/studio</code> 管理面、强制本地 <code>OAuth 2.1 + PKCE S256</code> 与 RFC <code>8707</code> 受众隔离；注意该临时通道每次重启必换域名、无 SLA、单流重连有 <code>4–21</code> 秒空窗返 <code>530</code>/<code>1033</code> 且限 <code>200</code> 并发）。连上 OpenSSH 固定网址后，可在卡片内点击「导出身份恢复卡 PNG」（<code>scrypt + AES-256-GCM</code> 加密）备份密钥。
                 </p>
                 <div class="callout callout-info" style="margin-bottom:0;">
                   在主控台「连接与网关 -&gt; 第 1 类」可通过卡片右上角总开关与内部「开启备用（可与 OpenSSH 固定通道同时在线）」独立开关控制两条子通道，也可与通道 2、通道 3 同时开启并存互不中断。
@@ -738,11 +738,11 @@
           <div class="channel-guide-pane" id="channel-pane-2">
             <div class="tut-workbench-grid">
               <div>
-                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ②：Cloudflare 免费固定网关（纯 Python 零外部二进制 · 令牌即刻清零）</h3>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ②：Cloudflare 专属固定网关（纯 Python 443 WSS TLS + 256-bit 隧道密钥 · 令牌即刻全零销毁）</h3>
                 <ol style="margin:0 0 8px;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.6;">
-                  <li>在 Studio 展开「通道 2：Cloudflare 专属固定网关」（本机纯 Python <code>443 WSS</code> 实现，无需装 <code>Node.js</code>、<code>wrangler</code> 或 <code>cloudflared</code>），点击「<strong>第 1 步：点此打开 Cloudflare 预填权限页（支持 Google 快捷登录）</strong>」生成最小权限 API 令牌。</li>
+                  <li>在 Studio 展开「通道 2：Cloudflare 专属固定网关」（<code>--mode workers_dev</code>，兼容 <code>cf_workers</code> / <code>cloudflare_workers</code>；本机纯 Python 标准库校验证书链建立出站 <code>443 WSS</code> 即 <code>TLS 1.2/1.3</code> 加密 WebSocket 长连接，无需装 <code>Node.js</code>、<code>wrangler</code> 或 <code>cloudflared</code>），点击「<strong>第 1 步：点此打开 Cloudflare 预填权限页（支持 Google 快捷登录）</strong>」生成最小权限 API 令牌。</li>
                   <li>将令牌粘贴回「第 2 步：粘贴 API 令牌」（国内若想免代理直连，请选填同一 Cloudflare 账号下已激活的自定义域名 Active Zone，如 <code>mcp.yourdomain.dpdns.org</code>），点击「<strong>一键部署并开启（约 3 秒）</strong>」。</li>
-                  <li>后台约 3 秒自动认领 <code>*.workers.dev</code> 子域并部署免费休眠中继网关（受 Workers Free 每日 <code>100,000</code> 次请求上限与边缘 <code>125s</code> 读超时约束）；<strong>部署完成后本机立即清零销毁 API 令牌，磁盘零明文留存</strong>。</li>
+                  <li>后台约 3 秒在您本人名下的 Cloudflare 账号自动部署专属休眠中继网关（Worker + SQLite Hibernation Durable Object 路由白名单仅放行 OAuth 与 <code>/mcp*</code>，公网 <code>HTTPS/TLS</code> 在本人 Cloudflare 账号边缘终结；本机以用户独占权限生成 <code>256-bit</code> <code>workers_tunnel_secret</code> 并在 <code>/_cosmos_tunnel</code> 执行常量时间鉴权，回源后拦截 <code>/studio</code> 并执行 <code>OAuth 2.1 + PKCE S256</code> 与 RFC <code>8707</code> 受众隔离，受 Workers Free 每日 <code>100,000</code> 次请求上限与边缘 <code>125s</code> 读超时约束）；<strong>部署完成后本机立即全零覆写销毁 API 令牌（<code>shred_cloudflare_api_token</code>），磁盘零明文留存</strong>，并支持导出 <code>scrypt + AES-256-GCM</code> 加密 PNG 恢复卡。</li>
                   <li><strong>中国大陆代理依赖边界</strong>：<code>*.workers.dev</code> 在国内存在全量 DNS 污染（裸连 <code>100%</code> 超时）。未绑定自定义域名时，<strong>本机运行期间须保持系统 HTTP/HTTPS 代理（Clash / Mihomo / v2rayN 或 <code>HTTPS_PROXY</code> / <code>WSS_PROXY</code>）常开且分流规则覆盖 <code>*.workers.dev</code></strong>（首次浏览器打开 <code>/consent</code> 亦需代理，<code>NO_PROXY</code> 须保留 <code>127.0.0.1,localhost,::1</code>）；绑定同账号自定义域名后可免代理直连。</li>
                 </ol>
               </div>
@@ -763,10 +763,10 @@
           <div class="channel-guide-pane" id="channel-pane-3">
             <div class="tut-workbench-grid">
               <div>
-                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ③：自有云服务器 24 小时常驻主站 与 Named Tunnel / 自有反代</h3>
+                <h3 style="margin:0 0 6px;font-size:15px;">推荐方案 ③：自有云服务器 24 小时常驻主站（Caddy TLS 自有终结）与 Named Tunnel / 自有反代</h3>
                 <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.6;">
-                  <li><strong>自有服务器建 24h 主站（免代理 · 零配额限制）</strong>：依赖开放 <code>80</code>/<code>443</code> 端口的 Linux 服务器与本机 <code>ssh</code> 客户端（零 Cloudflare 依赖、零单日请求上限、零 <code>125s</code> 边缘超时，国内或港新服务器全程免代理直连）。填入公网 IP 与 SSH 密码或密钥点击「<strong>一键部署 24h 主站并开启</strong>」，电脑关机时仍可操作服务器目录（离线电脑路径返回 <code>ERR_NODE_OFFLINE</code>），在线时支持 <code>target="auto"</code> 跨机路由。</li>
-                  <li><strong>自有固定域名 / Named Tunnel / 自有反代</strong>：切换到「自有固定域名 / 通用 HTTPS 反代」填入 <code>https://mcp.example.com</code> 及选填 Named Tunnel 令牌（<code>--mode cloudflare_token</code> 依赖 <code>cloudflared</code> 二进制、Zero Trust 账号及后台指向 <code>http://127.0.0.1:8096</code> 的 Public Hostname 转发，并须关闭自定义域名的 <code>Bot Fight Mode</code> 与跳过 <code>/mcp*</code>、OAuth 路径托管质询）或 SSH 反向映射端口（默认 <code>18096</code>），点击「<strong>保存并开启此网关</strong>」。</li>
+                  <li><strong>自有服务器建 24h 主站（<code>--mode vps_hub</code> / <code>--mode vps</code> · 公网 TLS 自有终结 · 零第三方云解密）</strong>：依赖开放 <code>80</code>/<code>443</code> 端口的 Linux 服务器与本机 <code>ssh</code> 客户端（零 Cloudflare 依赖、零单日请求上限、零 <code>125s</code> 边缘超时，国内或港新服务器全程免代理直连）。优先使用本机独立生成的 <code>Ed25519</code> 密钥对（<code>vps_id_ed25519</code>，用户独占权限），首次填写的 SSH 密码仅当次内存握手使用、绝不落盘；一键在自有服务器部署 <code>Caddy</code> v2.11+ 自动签发续期 <code>TLS 1.2/1.3</code> ACME 证书（有域名签 Let's Encrypt 证书，无域名自动签公网 IP 短期 ACME 证书与 <code>sslip.io</code> 备用证书），<strong>公网 TLS 完全在自有服务器终结</strong>。<code>vps_hub</code> 模式通过 CA 校验的出站 <code>443 WSS</code>（<code>TLS 1.2/1.3</code>）挂载 <code>/_cosmos_node</code> 并经 <code>256-bit</code> <code>vps_node_secret</code> 常量时间双向鉴权（Caddy 拦截外网访问 <code>/studio</code>，云端剥离 <code>local_api_token</code>）；<code>vps</code> 模式通过系统 OpenSSH 建立 <code>SSHv2</code>（<code>ChaCha20-Poly1305</code> / <code>AES-256-GCM</code>）加密反向隧道；全程强制 <code>OAuth 2.1 + PKCE S256</code> 与 RFC <code>8707</code>。电脑关机时仍可操作服务器目录（离线电脑路径返回 <code>ERR_NODE_OFFLINE</code>），在线时支持 <code>target="auto"</code> 跨机路由。</li>
+                  <li><strong>自有固定域名 / Named Tunnel / 通用 HTTPS 反代（<code>--mode cloudflare_token</code> / <code>--mode custom</code> / <code>--mode reverse_proxy</code>）</strong>：切换到「自有固定域名 / 通用 HTTPS 反代」填入 <code>https://mcp.example.com</code>。选填 Named Tunnel 令牌时（<code>--mode cloudflare_token</code>），经 <code>SHA-256</code> 校验的官方 <code>cloudflared</code> 建立出站 <code>443</code> <code>TLS + HTTP/2</code> 加密隧道，令牌按用户独占权限保存并在日志脱敏为 <code>[REDACTED_TUNNEL_TOKEN]</code>，公网 TLS 在本人 Cloudflare Zero Trust 边缘终结（需后台指向 <code>http://127.0.0.1:8096</code> 的 Public Hostname 转发，并关闭自定义域名的 <code>Bot Fight Mode</code> 与跳过 <code>/mcp*</code>、OAuth 路径托管质询）；使用自建 Caddy / Nginx / FRP 反代时（<code>--mode custom</code> 或 <code>--mode reverse_proxy</code>），公网 <code>HTTPS / TLS 1.2/1.3</code> 在您自控反代终结（或经 FRP TLS SNI 透传），本机校验受信任 <code>Host</code> 白名单（未知域名返 <code>421</code>）、阻断 <code>/studio</code> 并执行 <code>OAuth 2.1 + PKCE S256</code> 与 RFC <code>8707</code>，点击「<strong>保存并开启此网关</strong>」。</li>
                 </ul>
               </div>
               <div class="tut-terminal-box" data-pose-trigger="terminal">

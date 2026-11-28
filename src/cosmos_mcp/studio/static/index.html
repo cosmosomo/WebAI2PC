@@ -309,7 +309,7 @@
                           <span class="ob-check-title">我有 Cloudflare 账号（或愿用 Google 快捷登录）</span>
                           <span class="ob-rec-tag">终身固定推荐</span>
                         </div>
-                        <div class="ob-check-desc">粘贴一次令牌，3 秒自动部署免费专属网关（<code>*.workers.dev</code>），关机重启永不变址。</div>
+                        <div class="ob-check-desc">粘贴一次令牌（部署后即刻清零销毁），3 秒自动部署免费专属网关（<code>*.workers.dev</code>，出站 443 WSS TLS + 256-bit 隧道密钥），关机重启网址不变。</div>
                       </div>
                     </label>
 
@@ -319,7 +319,7 @@
                         <div class="ob-check-title-row">
                           <span class="ob-check-title">我有自己的云服务器（VPS）或自有固定域名</span>
                         </div>
-                        <div class="ob-check-desc">一键在云服务器部署 24 小时常驻主站，或接入已有 HTTPS 反代与隧道域名。</div>
+                        <div class="ob-check-desc">一键在自有服务器部署 24 小时常驻主站（Caddy TLS 1.3 自有终结 + 256-bit WSS / SSHv2），或接入已有 HTTPS 反代与隧道域名。</div>
                       </div>
                     </label>
                   </div>
@@ -1015,7 +1015,7 @@
                             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
                               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                                 <span class="tag tag-muted">备用 · 重启会变</span>
-                                <strong style="font-size:13px;"><code>trycloudflare</code> 临时备用通道</strong>
+                                <strong style="font-size:13px;">Cloudflare 临时加密通道（trycloudflare 备用 · SHA-256 校验 cloudflared + 出站 443 TLS/HTTP2）</strong>
                                 <span class="gw-status-pill is-disabled" id="sub-pill-trycloudflare">未开启</span>
                               </div>
                               <div class="ws-actions" style="align-items:center;">
@@ -1034,7 +1034,7 @@
                           </div>
                         </div>
                         <div class="gw-dep-note" id="card1-dep-note">
-                          <strong>加密方式与前置依赖：</strong><span>采用本机持久 Ed25519 密钥认证（私钥留存本机）+ 系统自带 OpenSSH SSHv2 加密反向隧道（ChaCha20-Poly1305 / AES-256-GCM，出站 TCP 22，零额外二进制安装）+ 公网 HTTPS/TLS 传输（在 srv.us 边缘终结后经 SSHv2 隧道回源）+ 本地隔离垫片与 OAuth 2.1 PKCE（SHA-256）二次鉴权，恢复卡 PNG 采用 scrypt + AES-256-GCM 加密；国内家庭宽带通常可免代理直连。当 22 端口受阻切换至 *.trycloudflare.com 临时通道时，依赖官方 cloudflared 组件（未预装时首次从 GitHub Releases 自动下载，重启会换网址，单连接无在线率保障）。</span>
+                          <strong>加密方式与前置依赖：</strong><span>采用本机持久 Ed25519 密钥认证（私钥留存本机）+ 系统自带 OpenSSH SSHv2 加密反向隧道（ChaCha20-Poly1305 / AES-256-GCM，出站 TCP 22，零额外二进制安装）+ 公网 HTTPS/TLS 传输（在 srv.us 边缘终结后经 SSHv2 隧道回源）+ 本地隔离垫片与 OAuth 2.1 PKCE（SHA-256）二次鉴权，恢复卡 PNG 采用 scrypt + AES-256-GCM 加密；国内家庭宽带通常可免代理直连。备用 *.trycloudflare.com 临时通道使用经 SHA-256 校验的官方 cloudflared 组件（未预装时首次从 GitHub Releases 或 COSMOS_CLOUDFLARED_MIRROR 自动下载）建立出站 443 TLS/HTTP2 加密隧道，公网 HTTPS/TLS 在 Cloudflare 边缘终结后经 TLS 隧道回源本机并阻断 /studio 管理面、执行本地 OAuth 2.1 PKCE（SHA-256）鉴权（重启会换网址，单连接无在线率保障）。</span>
                         </div>
                         <div id="card1-fixed-gw-box" class="callout callout-ok" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
                           已连接公共固定网关（节点标识：<code id="card1-node-id-text">-</code>），关机重启网址保持不变。
@@ -1097,7 +1097,7 @@
                           <span class="conn-card-step-num">第 2 类 · 无服务器固定网址</span>
                           <h3 class="conn-card-title">Cloudflare 专属固定网关</h3>
                         </div>
-                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次 API 令牌 3 秒部署专属休眠网关，终身固定地址。</p>
+                        <p class="conn-card-sub">支持 Google 快捷登录，粘贴一次令牌 3 秒部署您本人 Cloudflare 账号下的专属网关（纯 Python 出站 443 WSS TLS 1.2/1.3 + 本机 256-bit 隧道密钥常量时间鉴权 + API 令牌部署后即刻全零销毁 + 本地 OAuth 2.1 PKCE），生成终身固定网址并支持 scrypt + AES-256-GCM 加密 PNG 恢复卡。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-info" id="card2-status-badge">终身固定推荐</span>
@@ -1120,8 +1120,8 @@
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
                         <div class="gw-dep-note gw-dep-note-warn" id="card2-dep-note">
-                          <div><strong>组件与账号依赖：</strong>纯 Python 标准库 <code>443 WSS</code> 长连接（无需安装 <code>Node.js</code>、<code>wrangler</code> 或 <code>cloudflared</code>），依赖免费 Cloudflare 账号（Workers Free 每日免费 <code>100,000</code> 次请求，默认反代读超时 <code>125</code> 秒）。</div>
-                          <div style="margin-top:4px;"><strong>网络与代理依赖（国内必看）：</strong>默认 <code>*.workers.dev</code> 域名在中国大陆受 DNS 污染影响（裸连超时），<strong>未绑定自定义域名时本机使用期间需保持系统 HTTP/HTTPS 代理（如 Clash / Mihomo / v2rayN）常开</strong>以维持后台 <code>443 WSS</code> 隧道，且首次打开 <code>/consent</code> 授权页需浏览器代理覆盖 <code>*.workers.dev</code>（若配了 <code>NO_PROXY</code> 必须保留 <code>127.0.0.1,localhost,::1</code>）；若希望<strong>国内免代理直连</strong>，请在右侧选填同账号下的 Cloudflare 自定义域名（Active Zone）。</div>
+                          <div><strong>加密方式与组件依赖：</strong><span>纯 Python 标准库校验系统 CA 证书链建立出站 443 WSS（TLS 1.2/1.3 加密 WebSocket）多路复用长连接（零外部二进制依赖，免装 Node.js、wrangler 或 cloudflared）；本机以当前用户独占权限自动生成 256-bit 隧道密钥（workers_tunnel_secret），Worker 端 /_cosmos_tunnel 采用常量时间比对鉴权防伪造挂载；一次性最小权限 Cloudflare API 令牌在部署完成后立即全零覆写销毁（零明文落盘），支持导出 scrypt + AES-256-GCM 加密 PNG 恢复卡。公网 HTTPS/TLS 在您本人 Cloudflare 账号边缘（Worker + SQLite Hibernation Durable Object，白名单仅放行 OAuth 与 /mcp*）终结，回源后本机拦截 /studio 管理路径并执行 OAuth 2.1 + PKCE（SHA-256）及 RFC 8707 受众隔离（Workers Free 每日免费 100,000 次请求，超限返 1027，边缘默认反代读超时 125 秒）。</span></div>
+                          <div style="margin-top:4px;"><strong>网络与代理依赖（国内必看）：</strong><span>默认 *.workers.dev 域名在中国大陆受全量 DNS 污染影响（裸连超时），未绑定自定义域名时本机使用期间需保持系统 HTTP/HTTPS 代理（如 Clash / Mihomo / v2rayN）常开且分流规则覆盖 *.workers.dev 以维持后台 443 WSS 隧道，且首次打开 /consent 授权页需浏览器代理覆盖 *.workers.dev（若配了 NO_PROXY 必须保留 127.0.0.1,localhost,::1）；若希望国内免代理直连，请在下方选填同账号下的 Cloudflare 自定义域名（Active Zone）。</span></div>
                         </div>
                         <div id="cf-saved-hint-box" class="callout callout-info" style="display:none;margin:0;padding:8px 11px;font-size:12.5px;">
                           已保存固定网关网址，直接打开右上角开关即可连接，无需重填令牌。
@@ -1198,7 +1198,7 @@
                           <span class="conn-card-step-num">第 3 类 · 自有资产合一</span>
                           <h3 class="conn-card-title">自有云服务器 24h 主站 或 自有固定域名</h3>
                         </div>
-                        <p class="conn-card-sub">一键在云服务器建 24h 主站，或接入已有 Cloudflare Tunnel / Caddy / Nginx / FRP 域名。</p>
+                        <p class="conn-card-sub">一键在自有 Linux 云服务器部署 Caddy TLS 1.2/1.3 常驻 24h 主站（公网 TLS 在自有服务器终结、零第三方云平台解密，443 WSS + 256-bit 节点密钥或 OpenSSH SSHv2 隧道），或接入 Cloudflare Named Tunnel 及 Caddy / Nginx / FRP 自有 HTTPS 域名。</p>
                       </div>
                       <div class="conn-card-header-right gw-card-ctrl-group">
                         <span class="tag tag-muted" id="card3-status-badge">服务器 / 域名</span>
@@ -1221,7 +1221,8 @@
                     <div class="conn-card-detail-pane">
                       <div class="conn-card-body">
                         <div class="gw-dep-note" id="card3-dep-note">
-                          <strong>前置依赖说明：</strong>「自有服务器建 24h 主站」无 Cloudflare 依赖、无单日请求配额限制，国内或近岸服务器可免代理直连；若在第二子页签填入 <code>Cloudflare Named Tunnel</code> 令牌，则依赖本机 <code>cloudflared</code> 客户端、Cloudflare 托管域名及后台指向 <code>http://127.0.0.1:8096</code> 的转发规则。
+                          <div><strong>加密方式与前置依赖：</strong><span>子页签 A「自有服务器建 24h 主站」依赖开放 80/443 端口的 Linux 服务器与本机 ssh 客户端，无 Cloudflare 依赖、无单日配额与 125 秒超时限制，国内或近岸服务器可免代理直连；一键部署 Caddy v2.11+ 自动签发续期 TLS 1.2/1.3 ACME 证书（有域名签 Let's Encrypt 证书，无域名自动签公网 IP 短期证书与 sslip.io 备用证书），公网 TLS 完全在自有服务器终结、零第三方云平台过境解密，优先使用本机独立生成的 Ed25519 密钥（用户独占权限）且首次输入的 SSH 密码仅当次内存握手使用零落盘，通过出站 443 WSS（TLS 1.2/1.3）+ 256-bit 节点密钥常量时间双向鉴权（拦截外网 /studio 并剥离云端 local_api_token）或 OpenSSH SSHv2（ChaCha20-Poly1305 / AES-256-GCM）反向隧道回源，强制 OAuth 2.1 PKCE S256。</span></div>
+                          <div style="margin-top:4px;"><strong>子页签 B（自有固定域名 / 反代）：</strong><span>填入 Cloudflare Named Tunnel 令牌时，经 SHA-256 校验的官方 cloudflared 建立出站 443 TLS/HTTP2 加密隧道（令牌按用户独占权限保存并在日志脱敏，TLS 在您自己的 Cloudflare Zero Trust 边缘终结，需后台指向 http://127.0.0.1:8096 转发并关闭 Bot Fight Mode）；使用自建 Caddy / Nginx / FRP 反代时，公网 HTTPS / TLS 1.2/1.3 在您自控网关终结（或经 FRP TLS SNI 透传），本机校验受信任 Host 白名单（未知域名返 421）、阻断 /studio 并执行 OAuth 2.1 PKCE S256 鉴权。</span></div>
                         </div>
                         <div class="card3-subtabs" role="tablist" aria-label="自有资产接入子项">
                           <button type="button" class="card3-subtab-btn active" role="tab" aria-selected="true" data-c3-tab="vps_hub">自有服务器建 24h 主站</button>

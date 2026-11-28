@@ -155,9 +155,11 @@ def normalize_instant_policy(
     pol = str(raw_policy or "").strip().lower()
     if pol in ("openssh_only", "openssh_fixed"):
         return "srv_us_only"
+    if pol == "trycloudflare_only":
+        return "quick_only"
     if pol in ("srv_us_only", "quick_only"):
         return pol
-    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() == "cloudflare":
+    if bool(prefer_quick_tunnel) or str(submode or "").strip().lower() in ("cloudflare", "trycloudflare"):
         return "quick_only"
     if pol in INSTANT_POLICIES:
         return pol
@@ -246,7 +248,7 @@ class GatewaySlotRuntime:
                 "last_error": srv_err,
             },
             "trycloudflare": {
-                "label": "trycloudflare 备用临时通道（重启会变）",
+                "label": "Cloudflare 临时加密通道（trycloudflare 备用，重启换址）",
                 "role": "backup",
                 "enabled": cf_en,
                 "status": cf_st,
@@ -319,7 +321,7 @@ _PERMANENT_TRAY_SKIP_REASONS = frozenset(
 )
 
 
-_WORKERS_GATEWAY_MODES = frozenset({"workers_dev", "cloudflare_workers", "public_gateway"})
+_WORKERS_GATEWAY_MODES = frozenset({"workers_dev", "cf_workers", "cloudflare_workers", "public_gateway"})
 
 
 def _call_probe_public_gateway_online(base_url: str = "", timeout_sec: float = 1.5) -> Dict[str, Any]:
@@ -1287,7 +1289,7 @@ def spawn_detached_daemon(
     while time.monotonic() < deadline:
         live = detect_running_instance(st_root, eff_p)
         if live.get("healthz_ok"):
-            if eff_mode in ("cloudflare", "cloudflare_token", "public_gateway", "openssh", "srv_us"):
+            if eff_mode in ("cloudflare", "trycloudflare", "cloudflare_token", "public_gateway", "openssh", "srv_us"):
                 pub_u = str(live.get("public_url") or "")
                 last_err = str(live.get("last_error") or "")
                 if pub_u.startswith("https://") or "tunnel error" in last_err.lower():
@@ -1435,9 +1437,21 @@ class StandaloneSupervisorLoop:
         saved_mode = str(cfg_doc.get("tunnel_mode") or "").strip().lower()
         if saved_mode in ("openssh", "srv_us"):
             saved_mode = "public_gateway"
+        elif saved_mode == "trycloudflare":
+            saved_mode = "cloudflare"
+        elif saved_mode in ("cf_workers", "cloudflare_workers"):
+            saved_mode = "workers_dev"
+        elif saved_mode == "reverse_proxy":
+            saved_mode = "custom"
         raw_init_m = (mode or "").strip().lower()
         if raw_init_m in ("openssh", "srv_us"):
             raw_init_m = "public_gateway"
+        elif raw_init_m == "trycloudflare":
+            raw_init_m = "cloudflare"
+        elif raw_init_m in ("cf_workers", "cloudflare_workers"):
+            raw_init_m = "workers_dev"
+        elif raw_init_m == "reverse_proxy":
+            raw_init_m = "custom"
         self._explicit_init_mode = raw_init_m
         self.mode = (raw_init_m or saved_mode or "local").strip().lower()
         saved_pub = str(
@@ -3080,6 +3094,10 @@ class StandaloneSupervisorLoop:
     def _sync_instant_slot(self, slot_cfg: Dict[str, Any], doc: Dict[str, Any], *, initial: bool) -> None:
         slot = self._gateway_slots["instant"]
         raw_sub = str(slot_cfg.get("submode") or "public_gateway").strip().lower()
+        if raw_sub in ("openssh", "srv_us"):
+            raw_sub = "public_gateway"
+        elif raw_sub == "trycloudflare":
+            raw_sub = "cloudflare"
         submode = raw_sub if raw_sub in ("public_gateway", "cloudflare") else "public_gateway"
         trycf_backup = bool(
             slot_cfg.get("trycloudflare_backup")

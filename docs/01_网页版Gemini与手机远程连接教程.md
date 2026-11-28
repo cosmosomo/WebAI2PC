@@ -14,7 +14,7 @@
 2. 启动本地控制台：
    - **Windows**：双击 `一键启动_Cosmos_MCP.bat`
    - **macOS / Linux**：在终端运行 `./start_cosmos_mcp.sh`
-3. 浏览器会自动打开本地控制台 `http://127.0.0.1:8096/`，默认直接开启 **「系统内置 OpenSSH 免登录直连」**：直接调用电脑系统自带的 OpenSSH（`ssh`）客户端与本机持久 `Ed25519` 密钥（私钥留存本机不上传），建立 `SSHv2`（`ChaCha20-Poly1305 / AES-256-GCM`）加密反向隧道并经 `srv.us` 公共中继连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，公网 `HTTPS/TLS` + 本地隔离垫片与 `OAuth 2.1 PKCE S256` 二次鉴权，零额外安装，启动等待预算 `10` 秒，重启电脑网址不变），卡片内同时提供备用临时通道 `https://*.trycloudflare.com/mcp` 独立开关（可与 OpenSSH 固定通道同时在线，或在网络封禁 `22` 端口时启用）。
+3. 浏览器会自动打开本地控制台 `http://127.0.0.1:8096/`，默认直接开启 **「系统内置 OpenSSH 免登录直连」**：直接调用电脑系统自带的 OpenSSH（`ssh`）客户端与本机持久 `Ed25519` 密钥（私钥留存本机不上传），建立 `SSHv2`（`ChaCha20-Poly1305 / AES-256-GCM`）加密反向隧道并经 `srv.us` 公共中继连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，公网 `HTTPS/TLS` + 本地隔离垫片与 `OAuth 2.1 PKCE S256` 二次鉴权，零额外安装，启动等待预算 `10` 秒，重启电脑网址不变）；卡片内同时提供 **「Cloudflare 临时加密通道（trycloudflare 备用）」**（`--mode cloudflare` / `--mode trycloudflare`）独立开关，由经 `SHA-256` 校验下载的官方 `cloudflared` 建立出站 `443` `TLS + HTTP/2`（`--protocol http2`）加密隧道，公网 `HTTPS/TLS` 在 Cloudflare 边缘终结后回源本机 `127.0.0.1` 并由本机识别 `Cf-Ray` / `X-Forwarded-*` 阻断 `/studio` 管理面与执行 `OAuth 2.1 + PKCE（SHA-256）` 鉴权（可与 OpenSSH 固定通道同时在线，或在网络封禁 `22` 端口时启用）。
 4. 确认顶部选中 **「网页版 Gemini」**，点击蓝色按钮 **「复制连接地址」**。
 
 ### 第 2 步：把 `/mcp` 地址粘贴到 Gemini 连接器配置栏
@@ -77,19 +77,19 @@
 
 控制台「设置 -> 连接与网关」（`http://127.0.0.1:8096/#settings/gateways`）内 3 张连接卡片右上角均带独立开关，**支持多路网关同时在线**，配置新通道时不会断开当前已连会话（完整排障见 [04. 三大连接通道选型与网络排障手册](04_三大连接通道选型与网络排障手册.md)）：
 
-### 方式 2：Cloudflare 免费 3 秒终身固定网址（推荐长期稳定使用）
+### 方式 2：`Cloudflare 专属固定网关`（`--mode workers_dev` / `cf_workers`，推荐长期稳定使用）
 
-适合没有自有服务器与域名、希望网址终身固定且不依赖 22 端口的用户：
+适合没有自有服务器与域名、希望网址终身固定且不依赖 `22` 端口的用户：
 1. 打开控制台 `#settings/gateways`，展开第 2 张卡片 **「Cloudflare 专属固定网关」**，点击预填好最小权限的 Cloudflare 令牌创建链接并登录账号。
-2. 生成 API 令牌后复制粘贴回控制台输入框（有托管在 Cloudflare 的自有域名也可一并选填），点击 **「一键部署并开启（约 3 秒）」**。
-3. 后台自动认领 `*.workers.dev` 子域并部署免费休眠中继网关，生成固定地址 `https://<子域>.workers.dev/mcp`；部署完成瞬间 API 令牌立即从内存和磁盘清零销毁。
-4. 后续只需拨动卡片开关即可启停，电脑重启、休眠唤醒或切热点自动通过 443 端口重连，网页端连接器地址终身无需重填。
+2. 生成一次性最小权限 API Token 后复制粘贴回控制台输入框（有托管在 Cloudflare 的自有域名也可一并选填），点击 **「一键部署并开启（约 3 秒）」**。
+3. 后台通过纯 Python 标准库 `ssl.create_default_context()` 自动认领 `*.workers.dev` 子域并在**你本人名下的 Cloudflare 账号**部署免费 `Worker + SQLite Hibernation Durable Object` 休眠网关，生成固定地址 `https://<子域>.workers.dev/mcp`；部署完成瞬间立即调用 `shred_cloudflare_api_token` 将 API Token 从内存和磁盘**全零覆写并销毁**（零明文留存，支持导出 `scrypt + AES-256-GCM` 加密恢复卡 PNG）。
+4. 日常运行由纯 Python 标准库建立出站 **`443 WSS`（`TLS 1.2 / TLS 1.3` 加密 WebSocket）** 多路复用长连接（零外部二进制依赖），凭本机当前用户独占权限的 **`256-bit` `workers_tunnel_secret`** 在 Worker 端 `/_cosmos_tunnel` 做常量时间比对校验；公网 `HTTPS/TLS` 在本人 Cloudflare 账号边缘终结（仅放行 OAuth 与 `/mcp*` 白名单路由），回源本机后拦截 `/studio` 管理面并强制执行 **`OAuth 2.1 + PKCE（SHA-256）`** 与 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离。电脑重启、休眠唤醒或切热点自动重连，网页端连接器地址终身无需重填。
 
-### 方式 3：自有云服务器 24 小时主站 或 自有固定域名
+### 方式 3：自有云服务器 `24h` 主站 或 自有固定域名（`self_hosted`）
 
 适合已有 Linux 云服务器或自有域名的用户：
-1. **一键部署 24 小时云服务器主站**：展开第 3 张卡片，填写服务器公网 IP 与 SSH 密码（仅当次内存使用不落盘）或本地 SSH 私钥，点击一键部署。部署后单个连接器默认通过 `target="auto"` 自动按路径路由到云服务器或本地电脑；本地电脑关机期间，云服务器仍 24 小时在线可用。
-2. **绑定自有固定域名（命令行 / 反向代理）**：
+1. **子项 A · 一键部署自有云服务器 `24h` 主站（`--mode vps_hub`）与自有服务器 SSH 反向隧道（`--mode vps`）**：展开第 3 张卡片，填写服务器公网 IP，优先使用本机独立生成的 **`Ed25519`** 密钥对（`secrets/vps_id_ed25519`，当前用户独占权限）或指定本地 SSH 私钥，首次一键部署填写的 SSH 密码**仅当次内存握手使用、绝不落盘**。程序自动在你的 Linux 服务器部署 **Caddy v2.11+** 签发并续期 **`TLS 1.2 / TLS 1.3` ACME 证书**（绑域名签发 Let's Encrypt 证书，未填域名自动签发公网 IP 短期 ACME 证书 + `sslip.io` 备用证书），**公网 TLS 完全在你自己的服务器上终结、零第三方云平台过境解密**；本机经 CA 校验的出站 **`443 WSS`（`TLS 1.2/1.3`）** 与 **`256-bit` `vps_node_secret`**（`hmac.compare_digest` 常量时间鉴权）挂载 `/_cosmos_node`（Caddy 阻断外网 `/studio` 且云端 `auth.json` 自动剥离 `local_api_token`），单个连接器默认通过 `target="auto"` 自动路由到云服务器或本地电脑，电脑关机期间云服务器仍 `24` 小时在线；`--mode vps` 则调用系统内置 OpenSSH 建立 **`SSHv2`**（`ChaCha20-Poly1305 / AES-256-GCM`）`-R` 加密反向隧道。
+2. **子项 B · 绑定自有固定域名（`Cloudflare Named Tunnel` `--mode cloudflare_token` 与通用自建 HTTPS 反代 `--mode custom` / `reverse_proxy`）**：`cloudflare_token` 由经 **`SHA-256`** 校验的 `cloudflared` 建立出站 `443` **`TLS + HTTP/2`**（`--protocol http2`）加密隧道，令牌按用户独占权限存于 `secrets/` 并在日志脱敏为 `[REDACTED_TUNNEL_TOKEN]`，TLS 在本人 Cloudflare Zero Trust 边缘终结；`custom` / `reverse_proxy` 公网 **`HTTPS / TLS 1.2/1.3`** 在用户自控的 Caddy / Nginx 反代终结（或经 FRP TLS SNI 透传），本机校验受信任 `Host` 白名单（未知域名返 `421`）；回源后均阻断 `/studio` 并执行 **`OAuth 2.1 + PKCE（SHA-256）`** 与 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 受众隔离。
 
 <details>
 <summary>展开查看命令行启动与自有域名示例</summary>
@@ -98,11 +98,14 @@
 # 默认模式指定工作区启动
 cosmos-mcp start --workspace D:\Projects\my-app
 
-# Cloudflare Named Tunnel 固定域名
+# Cloudflare Named Tunnel 固定域名（SHA-256 校验 cloudflared + 443 TLS/HTTP2）
 cosmos-mcp start --mode cloudflare_token --tunnel-token <粘贴你的TOKEN> --public-url https://mcp.example.com --autostart
 
-# 自有 VPS 反向代理 / SSH 反向映射
+# 自有 VPS SSHv2 加密反向隧道
 cosmos-mcp start --mode vps --vps-ssh user@vps.example.com --vps-remote-port 18096 --public-url https://mcp.example.com --autostart
+
+# 通用自建 HTTPS 反代（Caddy / Nginx 自有终结 TLS 1.2/1.3 或 FRP TLS SNI 透传）
+cosmos-mcp start --mode custom --public-url https://mcp.example.com --workspace D:\Projects\my-app
 ```
 
 </details>

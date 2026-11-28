@@ -712,6 +712,14 @@ def _extract_active_gateways_and_grace(
                     if gid == "instant"
                     else ("workers_dev" if gid == "workers_dev" else ("vps_hub" if gid == "self_hosted" else (raw_tm or "custom")))
                 )
+            elif submode == "trycloudflare":
+                submode = "cloudflare"
+            elif submode in ("openssh", "srv_us"):
+                submode = "public_gateway"
+            elif submode in ("cf_workers", "cloudflare_workers"):
+                submode = "workers_dev"
+            elif submode == "reverse_proxy":
+                submode = "custom"
             if gid == "instant" and submode == "cloudflare":
                 if d_url.lower().endswith(".srv.us"):
                     d_url = ""
@@ -763,6 +771,12 @@ def _extract_active_gateways_and_grace(
             _add_ep(exp_u, "explicit", fallback_tunnel_mode or raw_tm or "local")
 
         if raw_tm != "local":
+            if raw_tm == "trycloudflare":
+                raw_tm = "cloudflare"
+            elif raw_tm in ("cf_workers", "cloudflare_workers"):
+                raw_tm = "workers_dev"
+            elif raw_tm == "reverse_proxy":
+                raw_tm = "custom"
             scalar_candidates = [
                 _clean_public_gateway_url((cfg_doc or {}).get("public_base") or (cfg_doc or {}).get("public_base_url")),
                 _clean_public_gateway_url((cfg_doc or {}).get("public_gateway_url")) if raw_tm in ("public_gateway", "openssh", "srv_us") else "",
@@ -770,7 +784,7 @@ def _extract_active_gateways_and_grace(
                 _clean_public_gateway_url((cfg_doc or {}).get("vps_hub_url")) if raw_tm in ("vps_hub", "vps") else "",
                 _clean_public_gateway_url((d_doc or {}).get("public_url")) if d_running else "",
             ]
-            slot_for_tm = "workers_dev" if raw_tm == "workers_dev" else ("self_hosted" if raw_tm in ("vps_hub", "vps", "custom") else "instant")
+            slot_for_tm = "workers_dev" if raw_tm == "workers_dev" else ("self_hosted" if raw_tm in ("vps_hub", "vps", "cloudflare_token", "custom") else "instant")
             for sc_u in scalar_candidates:
                 if sc_u:
                     _add_ep(sc_u, slot_for_tm, raw_tm)

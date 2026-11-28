@@ -1834,7 +1834,7 @@ def mode_to_gateway_slot(tunnel_mode: str) -> Tuple[str, str]:
     tm = (tunnel_mode or "").strip().lower()
     if not tm or tm == "local":
         return ("", "local")
-    if tm == "cloudflare":
+    if tm in ("cloudflare", "trycloudflare"):
         return ("instant", "cloudflare")
     if tm in ("public_gateway", "openssh", "srv_us"):
         return ("instant", "public_gateway")
@@ -2049,6 +2049,8 @@ def normalize_gateways_config(cfg_doc: Mapping[str, Any]) -> Tuple[Dict[str, Dic
                 if gid == "instant":
                     if raw_sub in ("openssh", "srv_us"):
                         dst["submode"] = "public_gateway"
+                    elif raw_sub == "trycloudflare":
+                        dst["submode"] = "cloudflare"
                     elif raw_sub in INSTANT_SUBMODES:
                         dst["submode"] = raw_sub
                 elif gid == "workers_dev":
@@ -2084,6 +2086,16 @@ def normalize_gateways_config(cfg_doc: Mapping[str, Any]) -> Tuple[Dict[str, Dic
                     selected = _apply_legacy_mode_to_slots(slots, raw_tm, cfg_doc)
                 elif tgt_gw in GATEWAY_IDS:
                     selected = tgt_gw
+
+    top_ip = str(cfg_doc.get("instant_policy") or "").strip().lower()
+    if top_ip and "instant_policy" not in slots["instant"]:
+        slots["instant"]["instant_policy"] = top_ip
+    if "instant_policy" in slots["instant"]:
+        raw_ip = str(slots["instant"].get("instant_policy") or "").strip().lower()
+        if raw_ip in ("openssh_only", "openssh_fixed"):
+            slots["instant"]["instant_policy"] = "srv_us_only"
+        elif raw_ip == "trycloudflare_only":
+            slots["instant"]["instant_policy"] = "quick_only"
 
     enabled_ids = [gid for gid in GATEWAY_IDS if bool(slots[gid].get("enabled"))]
     if enabled_ids:
@@ -2243,7 +2255,13 @@ def ensure_initialized(
 
     seed_bytes = _load_or_create_master_seed(secrets_dir)
     raw_tm = tunnel_mode if (tunnel_mode is not None and str(tunnel_mode).strip()) else saved_cfg.get("tunnel_mode")
-    eff_tunnel_mode = str(raw_tm or DEFAULT_TUNNEL_MODE).strip() or DEFAULT_TUNNEL_MODE
+    eff_tunnel_mode = str(raw_tm or DEFAULT_TUNNEL_MODE).strip().lower() or DEFAULT_TUNNEL_MODE
+    if eff_tunnel_mode == "trycloudflare":
+        eff_tunnel_mode = "cloudflare"
+    elif eff_tunnel_mode in ("cf_workers", "cloudflare_workers"):
+        eff_tunnel_mode = "workers_dev"
+    elif eff_tunnel_mode == "reverse_proxy":
+        eff_tunnel_mode = "custom"
 
     raw_pg_base = (
         public_gateway_base
@@ -3264,8 +3282,10 @@ class LiveRuntimePolicy:
             if submode is not None and str(submode).strip():
                 clean_sub = str(submode).strip().lower()
                 if gw_id == "instant":
-                    if clean_sub == "srv_us":
+                    if clean_sub in ("openssh", "srv_us"):
                         clean_sub = "public_gateway"
+                    elif clean_sub == "trycloudflare":
+                        clean_sub = "cloudflare"
                     if clean_sub not in INSTANT_SUBMODES:
                         raise ValueError(f"Invalid instant submode `{submode}` (expected {INSTANT_SUBMODES}).")
                     slot["submode"] = clean_sub
