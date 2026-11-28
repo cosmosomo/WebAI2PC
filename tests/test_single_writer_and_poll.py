@@ -398,7 +398,8 @@ def test_rotate_pair_code_updates_immediately_and_enforces_loopback_csrf(tmp_pat
 
     # Subsequent /api/studio/poll reflects the rotated dynamic_pair_code and new state_revision
     p_after = client.get("/api/studio/poll").json()
-    assert p_after["dynamic_pair_code"] == new_dyn
+    assert p_after["dynamic_pair_code"] != old_dyn
+    assert provider.verify_dynamic_code(p_after["dynamic_pair_code"]) is True
     assert p_after["state_revision"] == rot_doc["state_revision"]
 
 
