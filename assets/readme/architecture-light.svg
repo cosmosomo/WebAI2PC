@@ -44,7 +44,7 @@
 
   <rect x="338" y="106" width="220" height="86" rx="12" fill="#F1F5F9" stroke="#00A870" stroke-opacity="0.55"/>
   <text x="352" y="131" class="t-b">方式 1 · 系统 OpenSSH 免登录</text>
-  <text x="352" y="151" class="t-s">内置 ssh 直连 *.srv.us 固定网址</text>
+  <text x="352" y="151" class="t-s">Ed25519+SSHv2/TLS 加密 · srv.us</text>
   <text x="352" y="172" class="t-m">22 端口受限 10 秒切 trycloudflare</text>
 
   <rect x="338" y="206" width="220" height="86" rx="12" fill="#F1F5F9" stroke="#2563EB" stroke-opacity="0.55"/>

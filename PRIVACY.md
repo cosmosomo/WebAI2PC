@@ -13,8 +13,8 @@ Cosmos MCP 面向 **网页版 Google Gemini（任务模式，含同账号手机�
 本项目维护者不自建集中式业务中转服务器留存用户流量。控制台提供 3 类远程 HTTPS 加密网关，支持按需单开或多路网关独立开关同时并存，也可关闭全部公网网关仅在本机回环自检：
 
 1. **方式 1：系统内置 OpenSSH 免登录直连与快速回退（首次启动默认开启，`--mode openssh` / `--mode public_gateway` 及 `--mode cloudflare`）**：
-   - 默认直接调用操作系统自带的 OpenSSH（`ssh`）客户端，使用本机生成的 Ed25519 持久密钥（`<状态目录>/secrets/srvus_ed25519`）向公共 SSH 反向隧道中继 `srv.us:22` 发起远程端口转发，获取跨关机重启不变的 `https://xxxxx.srv.us` 固定 HTTPS 地址；若当前网络限制 22 端口，10 秒内自动切换至本机 `cloudflared` 客户端建立 Cloudflare Quick Tunnel（`https://*.trycloudflare.com`）。
-   - 该通道用于免注册接通网页版 Google Gemini 与网页版 ChatGPT，TLS 流量经所选隧道转发至本机监听端口，并由本机执行 OAuth 2.1 与 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 资源受众校验。
+   - 默认直接调用操作系统自带的 OpenSSH（`ssh`）客户端，使用本机生成的 `Ed25519` 持久非对称密钥（`<状态目录>/secrets/srvus_ed25519`，私钥仅留存本机并限制当前用户访问权限，不上传至任何远端）向公共 SSH 反向隧道中继 `srv.us:22` 建立 `SSHv2` 加密反向隧道（优先协商 `chacha20-poly1305@openssh.com` 或 `aes256-gcm@openssh.com` 对称认证加密与 `curve25519-sha256` 密钥交换，并以 `User=nomatch` 与 `IdentitiesOnly=yes` 隔离本机系统用户名及其他 SSH 密钥），获取跨关机重启不变的 `https://xxxxx.srv.us` 固定 HTTPS 地址；若当前网络限制 22 端口，10 秒内自动切换至本机 `cloudflared` 客户端建立 Cloudflare Quick Tunnel（`https://*.trycloudflare.com`）。
+   - **加密链路与边缘终结边界**：网页版 Google Gemini 与网页版 ChatGPT 访问公网网关时全程走标准 `HTTPS/TLS` 加密；公网 TLS 在 `srv.us`（或 Cloudflare）公共边缘节点终结后，请求经上述 OpenSSH `SSHv2`（或 `cloudflared`）加密隧道回源至本机回环入站垫片（`_LocalTunnelIngressShim`，在 `127.0.0.1` 入口直接 HTTP `403` 拦截 `/studio`、`/api/studio`、`/oauth/local-bridge` 等本地管理路径），再配合 `/u/<endpoint_secret>/mcp` 隐身路径、OAuth 2.1 + `PKCE S256`（SHA-256）及 [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) 资源受众校验放行（该模式并非端到端零知识盲转；若需公网 TLS 直接在本人名下主机终结，可选用方式 3 自有 Linux 云服务器主站）。可选导出的身份恢复卡 PNG 采用 `scrypt`（`n=16384, r=8, p=1`）+ `AES-256-GCM` 认证加密。
 2. **方式 2：`Cloudflare Workers` 专属固定网关（`--mode workers_dev`）**：
    - 使用用户本人一次性提供的最小权限 Cloudflare API 令牌，在用户自有 Cloudflare 账号下部署免费 SQLite Durable Object 休眠中继网关（如 `https://your-worker.your-subdomain.workers.dev` 或同账号自定义域名）；部署完成后 API 令牌立即在内存与临时缓存中全零覆写销毁，本机磁盘零明文 API Token 留存。日常运行通过出站 443 WebSocket 直连用户自有网关，可与方式 1 或方式 3 同时在线并存。
 3. **方式 3：`24h Linux VPS` 常驻主站与自有固定域名（`--mode vps_hub`、`vps`、`cloudflare_token`、`custom`）**：

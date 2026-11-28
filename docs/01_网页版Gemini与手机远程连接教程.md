@@ -14,7 +14,7 @@
 2. 启动本地控制台：
    - **Windows**：双击 `一键启动_Cosmos_MCP.bat`
    - **macOS / Linux**：在终端运行 `./start_cosmos_mcp.sh`
-3. 浏览器会自动打开本地控制台 `http://127.0.0.1:8096/`，默认直接开启 **「系统内置 OpenSSH 免登录直连」**：直接调用电脑系统自带的 OpenSSH（`ssh`）客户端经 `srv.us` 公共中继连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，零额外安装，启动等待预算 `10` 秒，重启电脑网址不变），卡片内同时提供备用临时通道 `https://*.trycloudflare.com/mcp` 独立开关（可与 OpenSSH 固定通道同时在线，或在网络封禁 `22` 端口时启用）。
+3. 浏览器会自动打开本地控制台 `http://127.0.0.1:8096/`，默认直接开启 **「系统内置 OpenSSH 免登录直连」**：直接调用电脑系统自带的 OpenSSH（`ssh`）客户端与本机持久 `Ed25519` 密钥（私钥留存本机不上传），建立 `SSHv2`（`ChaCha20-Poly1305 / AES-256-GCM`）加密反向隧道并经 `srv.us` 公共中继连接免登录固定网址（如 `https://xxxxx.srv.us/mcp`，公网 `HTTPS/TLS` + 本地隔离垫片与 `OAuth 2.1 PKCE S256` 二次鉴权，零额外安装，启动等待预算 `10` 秒，重启电脑网址不变），卡片内同时提供备用临时通道 `https://*.trycloudflare.com/mcp` 独立开关（可与 OpenSSH 固定通道同时在线，或在网络封禁 `22` 端口时启用）。
 4. 确认顶部选中 **「网页版 Gemini」**，点击蓝色按钮 **「复制连接地址」**。
 
 ### 第 2 步：把 `/mcp` 地址粘贴到 Gemini 连接器配置栏

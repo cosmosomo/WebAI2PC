@@ -650,8 +650,9 @@ def render_quickstart_txt(version: str) -> bytes:
         "      跨应用长程交付与定时任务用 Work 模式。",
         "",
         "连接通道前置依赖与国内代理速查：",
-        "  · 通道 1 默认首选系统内置 OpenSSH 免登录固定直连（--mode openssh，调用系统自带 ssh 出站 22 端口经 srv.us 中继，10 秒启动预算，免注册且重启网址不变，",
-        "    国内家庭宽带通常免代理直连）+ 备用 *.trycloudflare.com 临时通道（配独立开关可与 OpenSSH 固定通道同时在线，",
+        "  · 通道 1 默认首选系统内置 OpenSSH 免登录固定直连（--mode openssh，调用系统自带 ssh 出站 22 端口经 srv.us 中继，",
+        "    本机 Ed25519 密钥 + OpenSSH SSHv2 ChaCha20-Poly1305/AES-256-GCM + HTTPS/TLS + OAuth 2.1 PKCE 加密鉴权，",
+        "    10 秒启动预算，免注册且重启网址不变，国内家庭宽带通常免代理直连）+ 备用 *.trycloudflare.com 临时通道（配独立开关可与 OpenSSH 固定通道同时在线，",
         "    或在 22 端口受阻未连上时兜底启用；首次从 GitHub Releases 或 COSMOS_CLOUDFLARED_MIRROR 自动下载 cloudflared，重启会换域名）。",
         "  · 通道 2 Cloudflare 专属固定网关（workers_dev）：纯 Python 零外部二进制依赖，",
         "    免费层每日 100,000 次请求上限（超限返 1027）与 125 秒边缘读超时；",
@@ -996,12 +997,29 @@ def build_release_zip(
     }
 
 
+_SSH_PROTOCOL_ALG_DOMAINS: frozenset[str] = frozenset({"openssh.com", "libssh.org"})
+_SSH_PROTOCOL_ALG_PREFIXES: Tuple[str, ...] = (
+    "chacha20-",
+    "aes128-",
+    "aes192-",
+    "aes256-",
+    "curve25519-",
+    "hmac-",
+    "umac-",
+    "ssh-",
+    "ecdsa-",
+)
+
+
 def scan_text_email_leaks(txt: str, *, is_test_file: bool = False) -> List[str]:
     """Return unredacted personal email addresses found in `txt` while allowing connector mentions & doc placeholders."""
     leaked: List[str] = []
     for em_match in _EMAIL_ADDR_RE.finditer(txt):
         full_em = em_match.group(0).lower()
+        em_local = em_match.group(1).lower()
         em_dom = em_match.group(2).lower()
+        if em_dom in _SSH_PROTOCOL_ALG_DOMAINS and em_local.startswith(_SSH_PROTOCOL_ALG_PREFIXES):
+            continue
         is_placeholder_dom = em_dom in _ALLOWED_DOC_EMAIL_DOMAINS or any(
             em_dom.endswith("." + d) for d in _ALLOWED_DOC_EMAIL_DOMAINS
         )

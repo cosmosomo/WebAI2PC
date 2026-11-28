@@ -694,5 +694,41 @@ def test_cloudflare_channel_dependencies_and_proxy_boundaries_aligned(
     from scripts.build_release import render_quickstart_txt
 
     qs_txt = render_quickstart_txt("1.2.1").decode("utf-8")
-    for qs_tok in ("gemini.google.com/customize/connectors", "Plugin Creator", "srv.us", "trycloudflare", "workers.dev"):
+    for qs_tok in (
+        "gemini.google.com/customize/connectors",
+        "Plugin Creator",
+        "srv.us",
+        "trycloudflare",
+        "workers.dev",
+        "Ed25519",
+        "SSHv2",
+    ):
         assert qs_tok in qs_txt, f"render_quickstart_txt missing `{qs_tok}`"
+
+    # Verify Channel 1 built-in OpenSSH encryption algorithms & edge boundary are documented across SSOT & mirrors
+    crypto_checked_files = (
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "README_EN.md",
+        REPO_ROOT / "PRIVACY.md",
+        REPO_ROOT / "PRIVACY_EN.md",
+        doc04_zh,
+        doc04_en,
+        REPO_ROOT / "docs/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "docs/en/AI_SETUP_GUIDE.md",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/index.html",
+        REPO_ROOT / "src/cosmos_mcp/studio/static/tutorials.html",
+        REPO_ROOT / "src/cosmos_mcp/core/tutorials_catalog.py",
+        REPO_ROOT / "host_skills/webai2pc-setup-tutorial/SKILL.md",
+    )
+    for c_fp in crypto_checked_files:
+        c_txt = c_fp.read_text(encoding="utf-8")
+        c_rel = c_fp.relative_to(REPO_ROOT).as_posix()
+        for c_tok in ("Ed25519", "SSHv2", "AES-256-GCM", "PKCE"):
+            assert c_tok in c_txt, f"{c_rel} missing Channel 1 encryption detail `{c_tok}`"
+        assert "ChaCha20-Poly1305" in c_txt or "chacha20-poly1305" in c_txt, (
+            f"{c_rel} missing OpenSSH ChaCha20-Poly1305 cipher detail"
+        )
+
+    bp_js = (REPO_ROOT / "src/cosmos_mcp/studio/static/brand-packs.js").read_text(encoding="utf-8")
+    assert "加密方式与前置依赖：" in bp_js and "Encryption & dependencies:" in bp_js
+

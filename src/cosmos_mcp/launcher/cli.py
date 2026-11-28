@@ -1831,7 +1831,7 @@ def _cmd_setup_or_start(args: argparse.Namespace, *, is_setup: bool) -> int:
 
     if is_interactive:
         print("\n=== Cosmos MCP 连接向导 ===")
-        print(" [1] 系统内置 OpenSSH 免登录直连（调用本机自带 ssh 经 srv.us 中继生成固定 HTTPS 地址，22 端口受阻自动切换 Cloudflare 临时通道）")
+        print(" [1] 系统内置 OpenSSH 免登录直连（本机 Ed25519 密钥 + SSHv2/TLS 加密，经 srv.us 生成固定 HTTPS 地址，22 端口受阻自动切换 Cloudflare 临时通道）")
         print(" [2] Cloudflare 固定域名通道（粘贴 Named Tunnel 固定 Token，开机自启永久固定域名）")
         print(" [3] 自有云服务器 SSH 反向隧道（自动维护 ssh -R 反向转发）")
         print(" [4] 自有 HTTPS 反代固定域名（外部已配置网关转发）")
@@ -2893,7 +2893,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
             "--mode",
             choices=list(SUPPORTED_TUNNEL_MODES),
             default="",
-            help="连接通道：openssh（或 public_gateway，首次默认：调用系统内置 OpenSSH 生成免登录固定地址） / cloudflare / workers_dev / vps_hub / cloudflare_token / vps / custom / local",
+            help="连接通道：openssh（或 public_gateway，首次默认：调用系统内置 OpenSSH 以 Ed25519 + SSHv2/TLS 加密生成免登录固定地址） / cloudflare / workers_dev / vps_hub / cloudflare_token / vps / custom / local",
         )
         sp.add_argument("--tunnel-token", default=None, help="Cloudflare Named Tunnel 固定域名 Token（配合 --public-url 永久固定域名）")
         sp.add_argument("--port", type=int, default=0, help="本地监听端口（默认沿用已保存端口或 8096）")

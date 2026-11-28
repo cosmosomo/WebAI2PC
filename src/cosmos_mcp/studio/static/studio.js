@@ -1128,12 +1128,12 @@
       fbBox.style.display = instEnabled && !pubGwOnline && !srvusFixed && fallbackActive ? "block" : "none";
       if (isExplicitQuick) {
         fbBox.className = "callout callout-warn";
-        fbBox.innerHTML =
-          "当前处于临时快速通道（<code>*.trycloudflare.com</code>，重启会变网址）；点击下方「恢复 OpenSSH 固定网址（推荐）」可切回系统 OpenSSH 固定网址（<code>*.srv.us</code>），或同时开启第 2 类 Cloudflare 网关。";
+        fbBox.textContent =
+          "当前处于临时快速通道（*.trycloudflare.com，重启会变网址）；点击下方「恢复 OpenSSH 固定网址（推荐）」可切回系统 OpenSSH 固定网址（*.srv.us），或同时开启第 2 类 Cloudflare 网关。";
       } else {
         fbBox.className = "callout callout-ok";
-        fbBox.innerHTML =
-          "当前为免登录临时网址（<code>*.trycloudflare.com</code>，重启会变）；连上系统 OpenSSH 固定网址（<code>*.srv.us</code>）或部署第 2 类 Cloudflare 网关后可导出永久恢复卡。";
+        fbBox.textContent =
+          "当前为免登录临时网址（*.trycloudflare.com，重启会变）；连上系统 OpenSSH 固定网址（*.srv.us）或部署 Cloudflare 网关后可导出加密恢复卡。";
       }
     }
     var hasExportableFixedIdentity = Boolean(
@@ -6422,7 +6422,7 @@
       } else if (obState.hasVps) {
         sumTxt.textContent = "已选自有云服务器 / 域名：下一步将引导你一键部署 24h 主站或绑定自有 HTTPS 域名。";
       } else {
-        sumTxt.textContent = "未勾选额外资源：默认调用系统内置 OpenSSH 免登录直连，零注册直接生成固定连接网址。";
+        sumTxt.textContent = "未勾选额外资源：默认调用系统内置 OpenSSH 免登录直连（本机 Ed25519 密钥 + SSHv2 / HTTPS 加密），零注册直接生成固定连接网址。";
       }
     }
 
